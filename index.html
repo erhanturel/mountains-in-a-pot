@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Uplift</title>
+<style>
+  html,body{margin:0;min-height:100%;background:#08090c}
+  body{color:#8b929c;font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    font-size:12px;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1140px;margin:0 auto;padding:18px 16px 40px}
+  h1{font-size:13px;font-weight:400;letter-spacing:4px;text-transform:uppercase;
+    color:#c9a86a;margin:0 0 12px}
+  .main{display:grid;grid-template-columns:1fr 176px;gap:14px;align-items:start}
+  @media(max-width:780px){.main{grid-template-columns:1fr}}
+  #board{background:#05070a;border:1px solid #1d222a;position:relative}
+  #info{position:absolute;left:10px;top:10px;width:184px;pointer-events:none;
+    background:rgba(10,12,16,.92);border:1px solid #1d222a;font-size:11px;
+    line-height:1.55;padding:8px 10px}
+  #info h4{margin:0 0 5px;font-size:8.5px;font-weight:400;letter-spacing:1.8px;
+    text-transform:uppercase;color:#464e58}
+  #info .r{display:flex;justify-content:space-between;gap:8px}
+  #info .r span:first-child{color:#5c646e}
+  #info .r span:last-child{color:#c3cad3;font-variant-numeric:tabular-nums}
+  #info .r.q span:last-child{color:#6f7681}
+  #info .none{color:#464e58}
+  #info .w{color:#6fb6e8} #info .l{color:#e8853c}
+  #info .g{color:#82c46a} #info .s{color:#c39a5e} #info .v{color:#a99aa8}
+  #cv{display:block;width:100%;height:auto;cursor:crosshair;touch-action:none}
+  .hint{padding:8px 2px 0;letter-spacing:.5px;color:#464e58}
+  .hint b{color:#8b929c;font-weight:400}
+
+  .menu{border:1px solid #1d222a;background:#0e1116}
+  .menu h2{margin:0;padding:9px 11px;font-size:9px;font-weight:400;letter-spacing:2px;
+    text-transform:uppercase;color:#464e58;border-bottom:1px solid #1d222a}
+  .pw{display:flex;align-items:center;gap:10px;width:100%;padding:11px;
+    border-bottom:1px solid #12161c;border-left:2px solid transparent;
+    background:none;color:#8b929c;font-family:inherit;font-size:12px;
+    letter-spacing:1px;cursor:pointer;text-align:left}
+  .pw:last-child{border-bottom:none}
+  .pw:hover{background:#12151b}
+  .pw svg{width:18px;height:18px;flex:0 0 18px;stroke:#6f7681;fill:none;
+    stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+  .pw.on{border-left-color:#c9a86a;color:#e5dcc8;background:#171510}
+  .pw.on svg{stroke:#c9a86a}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Uplift</h1>
+  <div class="main">
+    <div>
+      <div id="board"><canvas id="cv"></canvas><div id="info"></div></div>
+      <div class="hint"><b>click a hex</b> — soil gathers below high ground on its
+        own; Seed greens any patch that has soil, water within reach, and no lava.</div>
+    </div>
+    <div class="menu">
+      <h2>Powers</h2>
+      <div id="powers"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+/*==CORE-START==*/
+/* ======================================================================
+   An island of hexes. Four powers. Two liquids that behave the same way.
+
+   STORED per hex:  h    ground height
+                    vol  is this ground VOLCANIC ROCK
+                    src  what stands here — nothing, water, or lava. Both
+                         liquids are ENDLESS SOURCES once they exist.
+
+   DERIVED, rebuilt from scratch after every click:
+                    liq    what is actually standing here
+                    ls     the surface it stands at
+                    moist  how many neighbours are water   (the sea counts)
+                    temp   how many neighbours are lava
+                    Both auras are plain counts. Neither accumulates and
+                    neither can ever turn into the liquid it came from.
+
+   THE RULES
+     A hex is a BASIN if a liquid put on it could not get away — if it must
+     rise above its own ground to escape. Off the rim is SEA at level 0.
+     DELUGE fills the connected basin you click with water, to the brim —
+     and basins NEST, so the water rises only to the first rim it meets.
+     LAVA fills that same basin with lava instead. Off a basin, neither does
+     anything: it runs away.
+     Lava that TOUCHES WATER — the sea, a lake, or water poured onto it —
+     sets on the spot into VOLCANIC ROCK, level with the basin's brim. That
+     is the only way volcanic rock is ever made, and the only thing that
+     ever removes lava.
+   ====================================================================== */
+const R=6, H_MAX=12, SEA=0;
+const NONE=0, WATER=1, LAVA=2;
+const DIRS=[[1,0],[1,-1],[0,-1],[-1,0],[-1,1],[0,1]];   /* E NE NW W SW SE */
+
+const T=[], idx=new Map();
+for(let q=-R;q<=R;q++){
+  const lo=Math.max(-R,-q-R), hi=Math.min(R,-q+R);
+  for(let r=lo;r<=hi;r++){
+    idx.set(q+','+r,T.length);
+    T.push({q,r,x:Math.sqrt(3)*(q+r/2),y:1.5*r,
+            h:0,vol:false,src:NONE,seed:false,
+            liq:NONE,ls:0,moist:0,temp:0,rel:0,soil:0,life:false});
+  }
+}
+for(const t of T) t.nb=DIRS.map(d=>{
+  const j=idx.get((t.q+d[0])+','+(t.r+d[1])); return j===undefined?-1:j});
+for(const t of T) t.coast=t.nb.filter(j=>j<0).length;
+const at=(q,r)=>{const i=idx.get(q+','+r);return i===undefined?-1:i};
+const surf = t => t.liq!==NONE ? t.ls : t.h;
+
+/* ---------------------------------------------------------------------
+   FILL — pour a liquid in at these hexes and let it rise until it finds a
+   way out. Returns what ends up submerged, and the level it stands at.
+
+   The water rises to the FIRST rim it meets, not to the ultimate way out to
+   the sea. That is what makes basins NEST: a hex at -2 in the middle of a
+   -1 plateau fills on its own, to -1, while clicking the plateau itself
+   fills the whole plateau to 0. You choose the scale by where you click.
+   --------------------------------------------------------------------- */
+function fillFrom(seeds){
+  const inS=new Set(seeds);
+  /* the HIGHEST seed, not the lowest: adjacent wet hexes are one pool, and
+     the water has to stand above all of them. Taking the lowest left a
+     shallow seed with its own surface below its own bed. */
+  let level=-Infinity;
+  for(const s of seeds) level=Math.max(level,T[s].h);
+  const hOf = x => x<0 ? SEA : T[x].h;          /* off the rim is the sea */
+  const fr=[];
+  const spread=i=>{ for(const j of T[i].nb) if(j<0||!inS.has(j)) fr.push(j); };
+  for(const s of seeds) spread(s);
+  while(fr.length){
+    let b=0;
+    for(let k=1;k<fr.length;k++) if(hOf(fr[k])<hOf(fr[b])) b=k;
+    const f=fr.splice(b,1)[0];
+    if(f>=0 && inS.has(f)) continue;
+    /* the lowest thing around us stands higher: that is the rim, and the
+       liquid rests against it */
+    if(hOf(f)>level) return {cells:[...inS], level:hOf(f), open:false};
+    /* it found the open sea at or below its own level — it runs away */
+    if(f<0) return {cells:[...inS], level:SEA, open:true};
+    inS.add(f); spread(f);
+  }
+  return {cells:[...inS], level, open:true};
+}
+/* the sea reaches inland only along ground actually BELOW it */
+function seaReach(){
+  const n=T.length, f=new Array(n).fill(false), q=[];
+  for(let i=0;i<n;i++) if(T[i].coast && T[i].h<SEA){ f[i]=true; q.push(i); }
+  while(q.length){
+    const i=q.pop();
+    for(const j of T[i].nb) if(j>=0 && !f[j] && T[j].h<SEA){ f[j]=true; q.push(j); }
+  }
+  return f;
+}
+/* the basin under a hex, or null if a liquid put there would run away.
+   Deluge and Lava both read this same answer. */
+function basinAt(i){
+  if(i<0) return null;
+  const f=fillFrom([i]);
+  return (f.open || f.level<=T[i].h) ? null : f;
+}
+
+function flood(){
+  /* Setting lava raises the ground, which can put a new basin in reach of a
+     new liquid, so this repeats until the board stops changing. Solidifying
+     only ever raises ground, so it always terminates. */
+  for(let guard=0; guard<24; guard++){
+    const fromSea=seaReach();
+    for(const t of T){ t.liq=NONE; t.ls=t.h; }
+
+    /* adjacent sources are one body; each body fills its own basin */
+    const seen=new Array(T.length).fill(false), bodies=[];
+    for(let i=0;i<T.length;i++){
+      if(seen[i]||T[i].src===NONE) continue;
+      /* sea-flooded ground is just the sea — unless you have poured lava
+         into it, which is the whole point of making basalt at the coast */
+      if(fromSea[i]&&T[i].src!==LAVA) continue;
+      const grp=[i], q=[i]; seen[i]=true;
+      let wat=T[i].src===WATER, lav=T[i].src===LAVA;
+      while(q.length){
+        const k=q.pop();
+        for(const j of T[k].nb){
+          if(j<0||seen[j]||T[j].src===NONE) continue;
+          if(fromSea[j]&&T[j].src!==LAVA) continue;
+          seen[j]=true; grp.push(j); q.push(j);
+          if(T[j].src===WATER) wat=true; else lav=true;
+        }
+      }
+      const f=fillFrom(grp);
+      bodies.push({cells:f.cells, level:f.level, open:f.open, wat, lav});
+    }
+    for(const b of bodies){
+      if(b.open){ for(const i of b.cells) T[i].src=NONE; continue; }  /* it ran away */
+      const kind=b.wat?WATER:LAVA;
+      for(const i of b.cells){ T[i].liq=kind; T[i].ls=b.level; T[i].src=kind; }
+    }
+    /* the sea is laid over the top of everything, at its own level */
+    for(let i=0;i<T.length;i++) if(fromSea[i]){
+      T[i].liq=WATER; T[i].ls=SEA; T[i].src=WATER;
+    }
+    /* lava meeting water sets into volcanic rock, level with the brim */
+    let set=false;
+    for(const b of bodies){
+      if(!b.lav||b.open) continue;
+      const quenched = b.wat || b.cells.some(i =>
+        fromSea[i] || T[i].coast>0 ||
+        T[i].nb.some(j=>j>=0 && T[j].liq===WATER));
+      if(!quenched) continue;
+      for(const i of b.cells){
+        T[i].h=b.level; T[i].vol=true; T[i].src=NONE; T[i].liq=NONE;
+      }
+      set=true;
+    }
+    if(set) continue;                        /* the ground moved — solve again */
+    for(let i=0;i<T.length;i++) if(T[i].src!==NONE && T[i].liq===NONE) T[i].src=NONE;
+    break;
+  }
+  /* the two auras: plain counts of what is next to you */
+  for(const t of T){
+    let m=0, tp=0;
+    if(t.liq===NONE){
+      m=t.coast;
+      for(const j of t.nb) if(j>=0 && T[j].liq===WATER) m++;
+    }
+    if(t.liq!==LAVA) for(const j of t.nb) if(j>=0 && T[j].liq===LAVA) tp++;
+    t.moist=m; t.temp=tp;
+  }
+  soils();
+  lives();
+}
+
+/* ---------------------------------------------------------------------
+   SOIL is not placed. It is what the shape of the land does with itself.
+
+   For each hex, d is the drop to each lower neighbour and D the sum of all
+   six. D measures how EXPOSED a hex is, so the middle of a plateau does not
+   weather at all and only its edges do.
+
+     WEATHERING  a hex breaks rock down at  D x (1 + moisture)  — water is
+                 what does the work, so sea cliffs and lake shores go
+                 fastest — doubled on basalt, and nil where life has bound
+                 the ground with roots.
+     TRANSPORT   it hands that load to each lower neighbour in proportion to
+                 that neighbour's own drop, so sediment follows the steepest
+                 way down. Of what it RECEIVES it keeps 1/(1+D): flat ground
+                 keeps everything it is handed, steep ground keeps almost
+                 none. Freshly weathered rock always moves on, which is what
+                 keeps high ground bare.
+
+   Carried as a real number and only bucketed to 0-5 at the end. Splitting
+   it into whole units meant handing out a remainder, and the remainder
+   always went the same way round the ring — so a perfectly symmetric peak
+   grew a lopsided apron, always to the east. Determinism is the point;
+   a fixed direction winning is not.
+   --------------------------------------------------------------------- */
+/* Off the rim counts as ground AT sea level for sediment. Putting it any
+   lower made every coastal hex read as sloped, so it carried everything
+   straight out to sea and a coastal plain could never hold soil. */
+const BED=SEA, RATE=0.35, SOIL_MAX=5;
+function soils(){
+  const n=T.length, load=new Array(n).fill(0), fall=[];
+  for(let i=0;i<n;i++){
+    const d=[]; let D=0;
+    for(let k=0;k<6;k++){
+      const j=T[i].nb[k], hh = j<0 ? BED : T[j].h;
+      const dd=Math.max(0, T[i].h-hh);
+      d.push(dd); D+=dd;
+    }
+    fall.push(d); T[i].rel=D;
+  }
+  /* high ground first: a hex can only be fed from strictly above it, so by
+     the time it is reached its load is complete. Hexes at equal height never
+     exchange, so ties cannot change the answer. */
+  const order=T.map((t,i)=>i).sort((a,b)=>T[b].h-T[a].h);
+  for(const i of order){
+    const t=T[i], d=fall[i], D=t.rel;
+    if(t.life){ t.soil=Math.min(SOIL_MAX,load[i]); continue; }   /* roots hold it */
+    const weather = D * (1+t.moist) * (t.vol?2:1) * RATE;
+    if(D===0){ t.soil=Math.min(SOIL_MAX, load[i]+weather); continue; }  /* nowhere to go */
+    const keep=load[i]/(1+D);
+    t.soil=Math.min(SOIL_MAX, keep);
+    const move=(load[i]-keep)+weather;
+    for(let k=0;k<6;k++){
+      if(d[k]<=0) continue;
+      const j=T[i].nb[k];
+      if(j>=0) load[j] += move*d[k]/D;      /* proportional — nothing left over */
+    }
+  }
+}
+/* ---------------------------------------------------------------------
+   LIFE holds where there is soil to root in, water within reach, and no
+   lava beside it. A seed greens its whole connected patch at once, and
+   every living hex becomes a seed itself, so the patch remembers where it
+   is. Change the ground and it re-solves — it can be cut in two, and it
+   can die.
+   --------------------------------------------------------------------- */
+const habit = t => t.liq===NONE && t.soil>=1 && t.moist>=1 && t.temp===0;
+function lives(){
+  for(const t of T) t.life=false;
+  const q=[];
+  for(let i=0;i<T.length;i++) if(T[i].seed && habit(T[i])){ T[i].life=true; q.push(i); }
+  while(q.length){
+    const i=q.pop();
+    for(const j of T[i].nb)
+      if(j>=0 && !T[j].life && habit(T[j])){ T[j].life=true; q.push(j); }
+  }
+  for(const t of T) t.seed = t.life;          /* it remembers itself, like water */
+}
+/* the patch a seed here would green — for the overlay */
+function patchAt(i){
+  if(i<0||!habit(T[i])) return null;
+  const cells=[i], seen=new Set([i]), q=[i];
+  while(q.length){
+    const k=q.pop();
+    for(const j of T[k].nb)
+      if(j>=0 && !seen.has(j) && habit(T[j])){ seen.add(j); q.push(j); cells.push(j); }
+  }
+  return cells;
+}
+
+const legal=(i,p)=> p.d===0 ? true
+                  : p.d>0 ? T[i].h<H_MAX : T[i].h>-H_MAX;
+function use(i,p){
+  if(i==null||i<0||!T[i]||!legal(i,p)) return false;
+  if(p.k==='seed'){
+    if(!habit(T[i])) return false;               /* nothing will take there */
+    T[i].seed=true;
+  } else if(p.d===0){
+    if(!basinAt(i)) return false;                /* it just runs off */
+    T[i].src = p.k==='lava' ? LAVA : WATER;
+  } else T[i].h+=p.d;
+  flood();
+  return true;
+}
+/*==CORE-END==*/
+
+
+/* ===================== presentation ===================== */
+const POWERS=[
+  {k:'uplift', nm:'Uplift',  d:+1,
+   ic:'<svg viewBox="0 0 18 18"><path d="M2 15h14"/><path d="M4.5 12 9 4l4.5 8z"/></svg>'},
+  {k:'subduct',nm:'Subduct', d:-1,
+   ic:'<svg viewBox="0 0 18 18"><path d="M2 3h14"/><path d="M4.5 6 9 14l4.5-8z"/></svg>'},
+  {k:'deluge', nm:'Deluge',  d:0,
+   ic:'<svg viewBox="0 0 18 18"><path d="M3 2.5 4.5 6"/><path d="M7.5 1.5 9 5"/>'+
+      '<path d="M12 2.5 13.5 6"/><path d="M2.5 15.5h13"/>'+
+      '<path d="M5.5 15.5c0-2.5 3.5-3 3.5-6 0 3 3.5 3.5 3.5 6z"/></svg>'},
+  {k:'lava',   nm:'Lava',    d:0,
+   ic:'<svg viewBox="0 0 18 18"><path d="M1.5 15.5h15"/>'+
+      '<path d="M4 15.5 7.2 8h3.6l3.2 7.5z"/><path d="M7.2 8h3.6"/>'+
+      '<path d="M7.6 5.5C7.6 4 6.6 3.4 7.6 1.8"/>'+
+      '<path d="M10.4 5.5c.6-1.5 1.6-2.1 1-3.7"/></svg>'},
+  {k:'seed',   nm:'Seed',    d:0,
+   ic:'<svg viewBox="0 0 18 18"><path d="M9 16V8"/>'+
+      '<path d="M9 8C9 4.5 11.5 2.5 15 2.5 15 6 12.5 8 9 8z"/>'+
+      '<path d="M9 10C9 7.5 7 6 4 6c0 2.5 2 4 5 4z"/></svg>'}
+];
+let POWER=POWERS[0];
+
+const cv=document.getElementById('cv'), cx=cv.getContext('2d');
+let HS=32, OX=0, OY=0, RISE=0, HOVER=-1, HEAD=-1, FOOT=-1;
+
+/* the sea, one ring beyond the island, so it reads as an island */
+const SEARING=[];
+for(let q=-R-1;q<=R+1;q++){
+  const lo=Math.max(-R-1,-q-R-1), hi=Math.min(R+1,-q+R+1);
+  for(let r=lo;r<=hi;r++){
+    const d=(Math.abs(q)+Math.abs(r)+Math.abs(q+r))/2;
+    if(d===R+1) SEARING.push({x:Math.sqrt(3)*(q+r/2),y:1.5*r});
+  }
+}
+const mix=(a,b,f)=>a.map((v,n)=>v+(b[n]-v)*f);
+/* the ground: bare rock or basalt, darkened by the soil lying on it, and
+   green where something is growing */
+function ground(t,m){
+  const k=Math.max(-H_MAX,Math.min(H_MAX,t.h))/H_MAX;
+  const a  = t.vol?[60,52,55]  :[74,70,63];
+  const up = t.vol?[178,166,172]:[240,221,178];
+  const dn = t.vol?[17,15,18]  :[22,22,25];
+  let c = k>=0 ? mix(a,up,k) : mix(a,dn,-k);
+  if(t.soil>0) c=mix(c,[96,68,40],0.16+0.5*(t.soil/5));   /* loam */
+  if(t.life)   c=mix(c,[86,150,70],0.78);                 /* green */
+  return 'rgb('+c.map(v=>Math.round(v*(m===undefined?1:m))).join(',')+')';
+}
+const vx=(px,py,s,k)=>{const a=Math.PI/180*(60*k-30);
+  return[px+s*Math.cos(a),py+s*Math.sin(a)]};
+/* the only two edges a vertical extrusion can show: the SE and SW flanks */
+const WALLS=[{v:[1,2], d:5, k:0.62},{v:[2,3], d:4, k:0.46}];
+
+function layout(){
+  const w=document.getElementById('board').clientWidth||900;
+  HS=w/(Math.sqrt(3)*(2*R+4.2));
+  RISE=HS*0.34;
+  let tall=0, deep=0;
+  for(const t of T){ const u=surf(t);
+    if(u>tall) tall=u; if(-t.h>deep) deep=-t.h; }
+  HEAD=RISE*(tall?tall+1:0); FOOT=RISE*(deep?deep+1:0);
+  const half=HS*1.5*(R+1)+HS*1.2;
+  const h=Math.ceil(2*half+HEAD+FOOT);
+  const dpr=window.devicePixelRatio||1;
+  cv.width=w*dpr; cv.height=h*dpr; cv.style.height=h+'px';
+  cx.setTransform(dpr,0,0,dpr,0,0);
+  OX=w/2; OY=HEAD+half;
+}
+function face(px,py,s){
+  cx.beginPath();
+  for(let k=0;k<6;k++){const[X,Y]=vx(px,py,s,k);k?cx.lineTo(X,Y):cx.moveTo(X,Y)}
+  cx.closePath();
+}
+const drawOrder=()=>T.map((t,i)=>i).sort((a,b)=>T[a].y-T[b].y||a-b);
+
+function render(){
+  let tall=0, deep=0;
+  for(const t of T){ const u=surf(t);
+    if(u>tall) tall=u; if(-t.h>deep) deep=-t.h; }
+  if(RISE*(tall?tall+1:0)!==HEAD||RISE*(deep?deep+1:0)!==FOOT) layout();
+  cx.fillStyle='#05070a'; cx.fillRect(0,0,cv.width,cv.height);
+  const s=HS*0.97;
+
+  for(const c of SEARING){                                   /* the surrounding sea */
+    const px=OX+c.x*HS, py=OY+c.y*HS;
+    cx.fillStyle='#16384f'; face(px,py,s); cx.fill();
+    cx.strokeStyle='rgba(0,0,0,.3)'; cx.lineWidth=1; face(px,py,s); cx.stroke();
+  }
+
+  for(const i of drawOrder()){
+    const t=T[i], px=OX+t.x*HS, py=OY+t.y*HS, top=py-t.h*RISE;
+    /* a wall exists only where there is a real step, and it runs from this
+       hex's surface to that neighbour's — never down to the datum */
+    for(const W of WALLS){
+      const j=t.nb[W.d], nh = j<0 ? 0 : T[j].h;
+      if(t.h<=nh) continue;
+      const bot=py-nh*RISE;
+      const [ax,ay]=vx(px,0,s,W.v[0]), [bx,by]=vx(px,0,s,W.v[1]);
+      cx.fillStyle=ground(t,W.k);
+      cx.beginPath();
+      cx.moveTo(ax,ay+top); cx.lineTo(bx,by+top);
+      cx.lineTo(bx,by+bot); cx.lineTo(ax,ay+bot);
+      cx.closePath(); cx.fill();
+    }
+    cx.fillStyle=ground(t);
+    face(px,top,s); cx.fill();
+    cx.strokeStyle='rgba(0,0,0,.35)'; cx.lineWidth=1;
+    face(px,top,s); cx.stroke();
+
+    if(t.liq!==NONE){
+      /* the liquid stands at the brim of its basin */
+      const lava=t.liq===LAVA, wy=py-t.ls*RISE;
+      for(const W of WALLS){
+        const [ax,ay]=vx(px,0,s,W.v[0]), [bx,by]=vx(px,0,s,W.v[1]);
+        cx.fillStyle = lava ? 'rgba(150,42,14,.9)' : 'rgba(30,86,124,.85)';
+        cx.beginPath();
+        cx.moveTo(ax,ay+wy); cx.lineTo(bx,by+wy);
+        cx.lineTo(bx,by+top); cx.lineTo(ax,ay+top);
+        cx.closePath(); cx.fill();
+      }
+      cx.fillStyle = lava ? 'rgba(226,88,30,.94)' : 'rgba(52,124,170,.88)';
+      face(px,wy,s); cx.fill();
+      cx.strokeStyle = lava ? 'rgba(255,190,90,.75)' : 'rgba(140,200,235,.4)';
+      cx.lineWidth = lava?1.5:1; face(px,wy,s); cx.stroke();
+      cx.fillStyle = lava ? 'rgba(60,16,6,.8)' : 'rgba(255,255,255,.72)';
+      cx.font=(HS*0.40|0)+'px ui-monospace,monospace';
+      cx.textAlign='center'; cx.textBaseline='middle';
+      cx.fillText(t.h,px,wy+HS*0.04);
+    } else {
+      if(t.h!==0){
+        cx.fillStyle=t.h>0?'rgba(0,0,0,.5)':'rgba(222,228,238,.72)';
+        cx.font=(HS*0.42|0)+'px ui-monospace,monospace';
+        cx.textAlign='center'; cx.textBaseline='middle';
+        cx.fillText(t.h,px,top+HS*0.04);
+      }
+      /* the two auras: a dot for each neighbour that is water, or lava.
+         Nothing to add up — they are counts, not quantities. */
+      const dots=(n,col,dy)=>{
+        if(!n) return;
+        cx.fillStyle=col;
+        const w0=(n-1)*s*0.19/2;
+        for(let k=0;k<n;k++){
+          cx.beginPath(); cx.arc(px-w0+k*s*0.19, top+dy, s*0.068, 0, 7); cx.fill();
+        }
+      };
+      dots(t.moist,'rgba(90,175,225,.9)', s*0.46);
+      dots(t.temp ,'rgba(240,130,50,.95)',-s*0.46);
+    }
+  }
+
+  /* The hover marks go in a pass of their OWN, after every hex is down.
+     Drawn inside the loop they were painted over by whatever lies to the
+     south, so a deluge showed four of its seven hexes instead of all of them. */
+  if(HOVER>=0){
+    const t=T[HOVER];
+    const ring=j=>{ const u=T[j];
+      face(OX+u.x*HS, OY+u.y*HS-surf(u)*RISE, s*0.90); cx.stroke(); };
+    cx.strokeStyle = POWER.k==='deluge' ? '#5aafe1'
+                   : POWER.k==='lava'   ? '#e0793c'
+                   : POWER.k==='seed'   ? '#7fd06a'
+                   : POWER.d>0 ? '#fff' : '#c9a86a';
+    if(POWER.k==='seed'){
+      /* the whole patch this seed would green */
+      const cells=patchAt(HOVER);
+      cx.lineWidth=Math.max(1.3,HS*0.06);
+      if(cells) for(const j of cells) if(!T[j].life) ring(j);
+    } else if(POWER.d===0){
+      /* the whole basin this click would act on, so you can see whether you
+         are aiming at a basin at all before you spend it */
+      const b=basinAt(HOVER);
+      cx.lineWidth=Math.max(1.3,HS*0.06);
+      if(b) for(const j of b.cells)
+        if(POWER.k==='lava' || T[j].liq!==WATER) ring(j);
+    }
+    cx.lineWidth=Math.max(1.8,HS*0.1);
+    face(OX+t.x*HS, OY+t.y*HS-surf(t)*RISE, s); cx.stroke();
+  }
+}
+function inHex(mx,my,px,py,s){
+  const dx=Math.abs(mx-px), dy=Math.abs(my-py), w=s*Math.sqrt(3)/2;
+  return dx<=w && dy <= s - (dx/w)*(s/2);
+}
+function hexAt(mx,my){
+  const o=drawOrder();
+  for(let n=o.length-1;n>=0;n--){
+    const t=T[o[n]], px=OX+t.x*HS, py=OY+t.y*HS - surf(t)*RISE;
+    if(inHex(mx,my,px,py,HS*0.97)) return o[n];
+  }
+  return -1;
+}
+/* what the hex under the cursor actually is */
+function drawInfo(){
+  const el=document.getElementById('info');
+  if(HOVER<0){
+    el.innerHTML='<h4>hex</h4><span class="none">hover the board</span>';
+    return;
+  }
+  const t=T[HOVER];
+  const row=(k,v,cls)=>'<div class="r'+(cls==='q'?' q':'')+'"><span>'+k+
+    '</span><span'+(cls&&cls!=='q'?' class="'+cls+'"':'')+'>'+v+'</span></div>';
+  const b=basinAt(HOVER);
+  let h='<h4>'+t.q+', '+t.r+'</h4>';
+  h+=row('ground', t.h + (t.vol?'  basalt':'  rock'), t.vol?'v':'');
+  h+=row('relief', t.rel);
+  h+= t.liq===WATER ? row('water','surface '+t.ls,'w')
+    : t.liq===LAVA  ? row('lava','surface '+t.ls,'l')
+    : row('basin', b ? 'fills to '+b.level : '—', b?'':'q');
+  h+=row('moisture', t.moist||'—', t.moist?'w':'q');
+  h+=row('heat',     t.temp ||'—', t.temp ?'l':'q');
+  h+=row('soil',     t.soil>0 ? t.soil.toFixed(2) : '—', t.soil>0?'s':'q');
+  h+=row('life',     t.life ? 'growing' : (habit(t)?'could grow':'—'),
+         t.life?'g':'q');
+  el.innerHTML=h;
+}
+function drawMenu(){
+  document.getElementById('powers').innerHTML=POWERS.map(p=>
+    '<button class="pw'+(p.k===POWER.k?' on':'')+'" data-k="'+p.k+'">'+
+    p.ic+'<span>'+p.nm+'</span></button>').join('');
+  document.querySelectorAll('.pw').forEach(b=>b.onclick=()=>{
+    POWER=POWERS.find(p=>p.k===b.dataset.k); drawMenu(); render(); drawInfo();
+  });
+}
+cv.addEventListener('mousemove',e=>{
+  const r=cv.getBoundingClientRect();
+  const i=hexAt(e.clientX-r.left,e.clientY-r.top);
+  if(i!==HOVER){ HOVER=i; render(); drawInfo(); }
+});
+cv.addEventListener('mouseleave',()=>{HOVER=-1;render();drawInfo()});
+cv.addEventListener('click',e=>{
+  const r=cv.getBoundingClientRect();
+  const i=hexAt(e.clientX-r.left,e.clientY-r.top);
+  if(use(i,POWER)){ render(); drawInfo(); }
+});
+window.addEventListener('resize',()=>{layout();render()});
+drawMenu(); layout(); flood(); render(); drawInfo();
+</script>
+</body>
+</html>
