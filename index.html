@@ -54,9 +54,23 @@
       <div class="hint"><b>click a hex</b> — soil gathers below high ground on its
         own; Seed greens any patch that has soil, water within reach, and no lava.</div>
     </div>
-    <div class="menu">
-      <h2>Powers</h2>
-      <div id="powers"></div>
+    <div>
+      <div class="menu">
+        <h2>Powers</h2>
+        <div id="powers"></div>
+      </div>
+      <div class="menu" style="margin-top:14px">
+        <h2>View</h2>
+        <button class="pw" id="rotL"><svg viewBox="0 0 18 18">
+          <path d="M15 9a6 6 0 1 1-1.8-4.3"/><path d="M13.2 1.5v3.2H10"/></svg>
+          <span>Turn left</span></button>
+        <button class="pw" id="rotR"><svg viewBox="0 0 18 18">
+          <path d="M3 9a6 6 0 1 0 1.8-4.3"/><path d="M4.8 1.5v3.2H8"/></svg>
+          <span>Turn right</span></button>
+        <button class="pw" id="ovMoist"><svg viewBox="0 0 18 18">
+          <path d="M9 2.2c3.1 3.6 4.7 5.9 4.7 7.9a4.7 4.7 0 0 1-9.4 0c0-2 1.6-4.3 4.7-7.9z"/>
+          </svg><span>Moisture</span></button>
+      </div>
     </div>
   </div>
 </div>
@@ -116,9 +130,71 @@ for(let q=-R;q<=R;q++){
 }
 for(const t of T) t.nb=DIRS.map(d=>{
   const j=idx.get((t.q+d[0])+','+(t.r+d[1])); return j===undefined?-1:j});
+/* the ring at distance TWO — moisture reaches further than one hex now */
+const RING2=[];
+for(let dq=-2;dq<=2;dq++) for(let dr=-2;dr<=2;dr++)
+  if((Math.abs(dq)+Math.abs(dr)+Math.abs(dq+dr))/2===2) RING2.push([dq,dr]);
+for(const t of T) t.nb2=RING2.map(d=>{
+  const j=idx.get((t.q+d[0])+','+(t.r+d[1])); return j===undefined?-1:j});
 for(const t of T) t.coast=t.nb.filter(j=>j<0).length;
 const at=(q,r)=>{const i=idx.get(q+','+r);return i===undefined?-1:i};
 const surf = t => t.liq!==NONE ? t.ls : t.h;
+
+/* ---------------------------------------------------------------------
+   THE VERTEX LATTICE — the graph rivers run on.
+
+   Rivers do not run through the middles of hexes, they run along the SEAMS
+   between them, so they need their own graph. Every hex corner is a NODE,
+   shared by the three hexes meeting there (the pot wall standing in for any
+   that are off the board), and every hex edge is an ARC joining two nodes.
+   A node's height is the average of its three hexes — the height you would
+   get by interpolating between hex centres.
+
+   That average is the whole reason seam rivers are possible. Two hexes at
+   the same height have no drop between them and can never exchange, so on
+   the hex graph the seam between them carries nothing. But the two ENDS of
+   that seam average in different third hexes, so they sit at different
+   heights and water runs ALONG it. Measured on a peak of 1 over six 0s: the
+   seam direction is lower than the neighbour direction at every radius.
+
+   Heights are carried in THIRDS, as integers, so equal heights compare
+   exactly and no float ever decides where a river goes.
+   --------------------------------------------------------------------- */
+const VERT=[], CORNERS=[], ARC=[], HARC=[];
+{
+  const vat=new Map(), aat=new Map();
+  const key2=(x,y)=>(Math.round(x*1000)/1000).toFixed(3)+','+
+                    (Math.round(y*1000)/1000).toFixed(3);
+  for(let i=0;i<T.length;i++){
+    const row=[];
+    for(let c=0;c<6;c++){
+      const a=Math.PI/180*(60*c-30);          /* same corner order as vx() */
+      const x=T[i].x+Math.cos(a), y=T[i].y+Math.sin(a);
+      const k=key2(x,y);
+      let v=vat.get(k);
+      if(v===undefined){ v=VERT.length; vat.set(k,v);
+        VERT.push({x,y,hex:[],arc:[],h3:0,surf3:0,in:0}); }
+      VERT[v].hex.push(i); row.push(v);
+    }
+    CORNERS.push(row);
+  }
+  /* which two corners an edge spans, in DIRS order. Checked against the
+     WALLS table the renderer already uses: dir 5 -> (1,2), dir 4 -> (2,3). */
+  const CPAIR=[[0,1],[5,0],[4,5],[3,4],[2,3],[1,2]];
+  for(let i=0;i<T.length;i++){
+    const row=[];
+    for(let d=0;d<6;d++){
+      const a=CORNERS[i][CPAIR[d][0]], b=CORNERS[i][CPAIR[d][1]];
+      const k=Math.min(a,b)+','+Math.max(a,b);
+      let n=aat.get(k);
+      if(n===undefined){ n=ARC.length; aat.set(k,n); ARC.push({a,b,flow:0,drop:0,side:[]}); }
+      ARC[n].side.push(i);       /* the one or two hexes this seam separates */
+      row.push(n);
+    }
+    HARC.push(row);
+  }
+  for(let k=0;k<ARC.length;k++){ VERT[ARC[k].a].arc.push(k); VERT[ARC[k].b].arc.push(k); }
+}
 
 /* ---------------------------------------------------------------------
    FILL — pour a liquid in at these hexes and let it rise until it finds a
@@ -238,15 +314,20 @@ function flood(){
   /* the two auras: plain counts of what is next to you */
   for(const t of T){
     let m=0, tp=0;
-    /* the wall is rock, so it gives nothing: moisture now comes only from
-       water the player has actually put on the board */
-    if(t.liq===NONE)
-      for(const j of t.nb) if(j>=0 && T[j].liq===WATER) m++;
+    /* MOISTURE reaches two hexes: two points for water alongside, one for
+       water a hex further off. The wall is rock and gives nothing, so all of
+       it comes from water the player actually put on the board. Still a plain
+       count — it accumulates nothing and can never turn into water itself. */
+    if(t.liq===NONE){
+      for(const j of t.nb)  if(j>=0 && T[j].liq===WATER) m+=2;
+      for(const j of t.nb2) if(j>=0 && T[j].liq===WATER) m+=1;
+    }
     if(t.liq!==LAVA) for(const j of t.nb) if(j>=0 && T[j].liq===LAVA) tp++;
     t.moist=m; t.temp=tp;
   }
   soils();
   lives();
+  rains();          /* a leaf: it reads settled ground and water, and nothing reads it */
 }
 
 /* ---------------------------------------------------------------------
@@ -324,23 +405,209 @@ function soils(){
    can die.
    --------------------------------------------------------------------- */
 const habit = t => t.liq===NONE && t.soil>=1 && t.moist>=1 && t.temp===0;
+/* Life BINDS the ground it stands on, and habitability needs soil to stand
+   in, so the two define each other. Life owns that knot rather than leaving
+   it to whoever calls: it re-solves the soil itself, and keeps doing it until
+   life stops moving.
+
+   One pass each was not enough. It left the board a click stale wherever a
+   patch had just greened or just died, and even after re-solving the soil
+   once, life was still being decided on the soil from half a step earlier.
+   That was harmless while moisture only reached one hex and life was rare —
+   zero cases in a thousand boards. Widening moisture to two hexes made life
+   common enough to find it: one board in two hundred settled to a different
+   patch when left alone. The seeds are taken ONCE at the top, because
+   t.seed = t.life at the bottom would otherwise eat them between passes. */
 function lives(){
-  for(const t of T) t.life=false;
-  const q=[];
-  for(let i=0;i<T.length;i++) if(T[i].seed && habit(T[i])){ T[i].life=true; q.push(i); }
-  while(q.length){
-    const i=q.pop();
-    for(const j of T[i].nb)
-      if(j>=0 && !T[j].life && habit(T[j])){ T[j].life=true; q.push(j); }
+  const seeds=T.map(t=>t.seed);
+  let prev='';
+  for(let pass=0; pass<8; pass++){
+    for(const t of T) t.life=false;
+    const q=[];
+    for(let i=0;i<T.length;i++) if(seeds[i] && habit(T[i])){ T[i].life=true; q.push(i); }
+    while(q.length){
+      const i=q.pop();
+      for(const j of T[i].nb)
+        if(j>=0 && !T[j].life && habit(T[j])){ T[j].life=true; q.push(j); }
+    }
+    soils();                                  /* the soil life now binds */
+    const now=T.map(t=>t.life?1:0).join('');
+    if(now===prev) break;
+    prev=now;
   }
   for(const t of T) t.seed = t.life;          /* it remembers itself, like water */
-  /* Life has just moved, and life BINDS the ground it stands on — so the soil
-     we solved a moment ago is not the soil that now stands here. Re-solve it
-     from inside, rather than asking every caller to remember the order: what
-     changes life owns the soil that changes with it. Without this the board
-     was one click stale wherever a patch had just greened or just died. */
-  soils();
 }
+/* ---------------------------------------------------------------------
+   RIVERS — where the rain goes.
+
+   Rain is MOISTURE meeting HEIGHT, and both are read off the hex itself.
+
+   A hex rains when it is damp enough — above MOIST_MIN — and it rains harder
+   the higher it stands. That is orography in one line: moist air coming off
+   the water, forced up over ground near it, and dropping what it carries.
+   A pot with no water has no moisture anywhere and so no rivers anywhere,
+   which falls out rather than being a rule.
+
+   The point of it is that it is LOCAL. The rain used to be a global sum —
+   total standing water anywhere on the board — so pouring a lake in one
+   corner changed rivers in the other and nothing you could look at explained
+   why. Now a hex's rain depends on that hex's own two readings, both of
+   which are already on the panel.
+
+   Each hex sheds its rain to its six corners in proportion to how far each
+   corner sits below it, then the lattice routes it downhill by STEEPEST
+   DESCENT: all of it to the lowest way out, split equally when several tie.
+   Not shared out in proportion — that braids every river into a delta and
+   nothing ever clears the threshold. And not broken by ring order either:
+   that is precisely how a symmetric peak grew a lopsided apron, always to
+   the east, back when soil handed out a remainder. A tie is a real saddle
+   and a real saddle really does fork.
+
+   Level ground is gathered into REGIONS of equal height and each region
+   routes as one. That is what carries a river across a lake: a lake is
+   already brim-full by construction — fillFrom stops at the first rim it
+   meets — so it is a flat region that spills at its lowest way out. Rivers
+   pass through lakes rather than dying in them, and no volume is tracked
+   anywhere. A hollow with no way out is a sink and the water stops there.
+   --------------------------------------------------------------------- */
+/* RAIN is the abundance knob, as RATE is for soil. MOIST_MIN is the damp a
+   hex needs before it rains at all — moisture runs 0..24 now (two a side,
+   one at a hex's remove, twelve hexes in that outer ring). FALL_MIN is in
+   THIRDS, and because two nodes on a seam share two of their three hexes, a
+   seam's drop in thirds is exactly the height difference between the hexes
+   capping its ends — so 3 means a three-step cliff. Calibrated against a
+   board somebody would actually build rather than against extremes, and none
+   of it playtested hard. */
+const RAIN=0.2, MOIST_MIN=2, RIVER_MIN=1.0, FALL_MIN=3;
+function rains(){
+  for(const A of ARC){ A.flow=0; A.drop=0; }
+  for(const t of T){ t.river=0; t.disc=0; }
+  let wet=0;
+  for(const t of T) if(t.liq===WATER) wet++;
+  if(!wet) return;                      /* a dry pot has no weather at all */
+
+  /* node heights, in thirds. top3 is the real surface — ground, or the lid
+     of any water standing over it. surf3 is what we ROUTE on, and it gets
+     raised where a pit has to be filled. */
+  for(const v of VERT){
+    let s=0, w=-Infinity;
+    for(const i of v.hex){ s+=T[i].h; if(T[i].liq!==NONE) w=Math.max(w,T[i].ls); }
+    s += WALL*(3-v.hex.length);          /* corners off the board are the wall */
+    v.h3=s; v.in=0;
+    v.wet = w!==-Infinity && 3*w>=s;
+    v.top3 = w===-Infinity ? s : Math.max(s, 3*w);
+    v.surf3 = v.top3;
+  }
+  for(const A of ARC) A.drop=Math.abs(VERT[A.a].top3-VERT[A.b].top3);
+
+  /* rain onto the high ground, shed to the corners below each hex */
+  for(let i=0;i<T.length;i++){
+    const t=T[i];
+    if(t.liq!==NONE) continue;           /* it falls straight in */
+    const r=RAIN*Math.max(0,t.moist-MOIST_MIN)*Math.max(0,t.h);
+    if(r<=0) continue;
+    const h3=3*t.h, dd=[]; let D=0;
+    for(let c=0;c<6;c++){
+      const d=Math.max(0,h3-VERT[CORNERS[i][c]].top3); dd.push(d); D+=d;
+    }
+    if(D===0) continue;                  /* every corner stands over it */
+    for(let c=0;c<6;c++) if(dd[c]>0) VERT[CORNERS[i][c]].in += r*dd[c]/D;
+  }
+
+  /* gather level ground — and every lake — into regions that route as one */
+  const reg=new Array(VERT.length).fill(-1);
+  let regs=[];
+  const group=()=>{
+    reg.fill(-1); regs=[];
+    for(let v=0;v<VERT.length;v++){
+      if(reg[v]>=0) continue;
+      const n=regs.length, cells=[v], q=[v]; reg[v]=n;
+      let holds=VERT[v].wet;
+      while(q.length){
+        const u=q.pop();
+        for(const k of VERT[u].arc){
+          const w=ARC[k].a===u?ARC[k].b:ARC[k].a;
+          if(reg[w]<0 && VERT[w].surf3===VERT[u].surf3){
+            reg[w]=n; cells.push(w); q.push(w); if(VERT[w].wet) holds=true; }
+        }
+      }
+      regs.push({cells, h3:VERT[v].surf3, in:0, holds});
+    }
+  };
+  /* Averaging three hexes invents little pits that are not really in the
+     ground — a node lower than everything around it, where a river would
+     simply vanish. Left alone they swallowed 86% of the rain.
+
+     PRIORITY FLOOD, from the lowest node on the board outwards. A node's
+     routing height becomes the lowest level at which it can still reach that
+     outlet — so a real hollow is raised to its own brim and spills, exactly
+     as fillFrom does for hexes, while everything already draining is left at
+     its true height.
+
+     It has to be seeded from the outlet rather than fixed pit by pit. The
+     pot is SEALED: its lowest ground has no way out at all, so raising every
+     sink to its lowest neighbour never terminated sensibly — it walked the
+     whole floor upwards until it merged into the nearest lake, and a river
+     arriving at a lake was declared to have arrived at the bottom of the
+     world. Rivers died in lakes instead of running through them. */
+  const fill=new Array(VERT.length).fill(Infinity), heap=[];
+  const push=(h,v)=>{ heap.push([h,v]); let n=heap.length-1;
+    while(n>0){ const p=(n-1)>>1; if(heap[p][0]<=heap[n][0]) break;
+      const t=heap[p]; heap[p]=heap[n]; heap[n]=t; n=p; } };
+  const pop=()=>{ const top=heap[0], last=heap.pop();
+    if(heap.length){ heap[0]=last; let n=0;
+      for(;;){ const l=2*n+1, r=l+1; let m=n;
+        if(l<heap.length&&heap[l][0]<heap[m][0]) m=l;
+        if(r<heap.length&&heap[r][0]<heap[m][0]) m=r;
+        if(m===n) break; const t=heap[m]; heap[m]=heap[n]; heap[n]=t; n=m; } }
+    return top; };
+  let low=0;
+  for(let v=1;v<VERT.length;v++) if(VERT[v].top3<VERT[low].top3) low=v;
+  fill[low]=VERT[low].top3; push(fill[low],low);
+  while(heap.length){
+    const [h,v]=pop();
+    if(h>fill[v]) continue;
+    for(const k of VERT[v].arc){
+      const w=ARC[k].a===v?ARC[k].b:ARC[k].a;
+      const nh=Math.max(VERT[w].top3,h);
+      if(nh<fill[w]){ fill[w]=nh; push(nh,w); }
+    }
+  }
+  for(let v=0;v<VERT.length;v++) VERT[v].surf3=fill[v];
+  group();
+  for(let v=0;v<VERT.length;v++) regs[reg[v]].in += VERT[v].in;
+
+  /* high to low: a region can only be fed from strictly above it, so by the
+     time it is reached its total is complete. Equal regions never exchange,
+     so ties in the ordering cannot change the answer. */
+  const order=regs.map((g,n)=>n).sort((a,b)=>regs[b].h3-regs[a].h3);
+  for(const n of order){
+    const g=regs[n];
+    if(g.in<=0) continue;
+    let best=Infinity, exits=[];
+    for(const v of g.cells) for(const k of VERT[v].arc){
+      const w=ARC[k].a===v?ARC[k].b:ARC[k].a;
+      if(reg[w]===n) continue;
+      const hw=VERT[w].surf3;
+      if(hw>=g.h3) continue;
+      if(hw<best){ best=hw; exits=[[k,w]]; }
+      else if(hw===best) exits.push([k,w]);
+    }
+    if(!exits.length) continue;          /* a sink — the water stops here */
+    const share=g.in/exits.length;
+    for(const [k,w] of exits){ ARC[k].flow+=share; regs[reg[w]].in+=share; }
+  }
+
+  /* read it back onto the hexes, for the panel and for hit-free drawing */
+  for(let i=0;i<T.length;i++){
+    let mx=0;
+    for(let d=0;d<6;d++){ const f=ARC[HARC[i][d]].flow; if(f>mx) mx=f; }
+    T[i].river=mx>=RIVER_MIN?mx:0; T[i].disc=mx;
+  }
+}
+const isRiver = k => ARC[k].flow>=RIVER_MIN;
+const isFall  = k => ARC[k].flow>=RIVER_MIN && ARC[k].drop>=FALL_MIN;
+
 /* the patch a seed here would green — for the overlay */
 function patchAt(i){
   if(i<0||!habit(T[i])) return null;
@@ -405,6 +672,7 @@ for(let q=-R-1;q<=R+1;q++){
   }
 }
 const WALLTILE={h:WALL,vol:false,soil:0,life:false};
+const RMAX=Math.max(...RIM.map(c=>Math.hypot(c.x,c.y)))+1;
 /* height anywhere, board or wall or the void beyond it — for drawing flanks */
 const hAnywhere=(q,r)=>{
   const i=at(q,r); if(i>=0) return T[i].h;
@@ -413,10 +681,103 @@ const hAnywhere=(q,r)=>{
 /* The wall and the board are drawn in ONE north-to-south pass. Drawn as two
    passes — the whole ring first, as the sea used to be — every wall hex in
    FRONT of the board was painted under it, and the pot had no near rim. */
+/* ---------------------------------------------------------------------
+   ORIENTATION. A triangular lattice has six-fold symmetry, so the board can
+   be turned in sixths of a turn and still be a hex board. Everything that
+   has a place on screen keeps a VIEW position (vx, vy) which is its own
+   position turned by ROT; nothing in the simulation moves, and no axial
+   coordinate changes — only where things are drawn.
+
+   The two flanks a hex shows are the two facing the viewer, so which AXIAL
+   directions those are shifts with ROT. The corner indices do not: a hexagon
+   turned by a sixth is the same hexagon, so the screen corners stay put. */
+let ROT=0;
 const SCENE=[];
-T.forEach((t,i)=>SCENE.push({y:t.y,i,rim:false}));
-RIM.forEach((c,i)=>SCENE.push({y:c.y,i,rim:true}));
-SCENE.sort((a,b)=>a.y-b.y || (a.rim?1:0)-(b.rim?1:0) || a.i-b.i);
+function orient(){
+  const a=Math.PI/3*ROT, ca=Math.cos(a), sa=Math.sin(a);
+  const turn=o=>{ o.vx=o.x*ca-o.y*sa; o.vy=o.x*sa+o.y*ca; };
+  T.forEach(turn); RIM.forEach(turn); VERT.forEach(turn);
+  SCENE.length=0;
+  T.forEach((t,i)=>SCENE.push({y:t.vy,i,rim:false}));
+  RIM.forEach((c,i)=>SCENE.push({y:c.vy,i,rim:true}));
+  SCENE.sort((a,b)=>a.y-b.y || (a.rim?1:0)-(b.rim?1:0) || a.i-b.i);
+}
+orient();
+
+/* Each seam is drawn with the LOWER of the two hexes it separates, because
+   that is the surface the water lies on. Owned by the more SOUTHERN hex
+   instead, a seam tucked in behind a taller near neighbour got painted on
+   top of that neighbour, and the river appeared to hang in the air over it.
+   Owned by the lower hex, anything nearer or taller is drawn afterwards and
+   covers it, which is what should happen to a river you cannot see. */
+let RIVOWN=[], CONN=[], ARCTOP=[];
+function prepRivers(){
+  RIVOWN=T.map(()=>[]); CONN=T.map(()=>[]); ARCTOP=new Array(ARC.length).fill(0);
+  const low=k=>{
+    const s=ARC[k].side; let o=s[0];
+    for(const i of s) if(T[i].h<T[o].h || (T[i].h===T[o].h && T[i].vy>T[o].vy)) o=i;
+    return o;
+  };
+  for(let k=0;k<ARC.length;k++){
+    if(!shown(k)) continue;
+    const o=low(k); ARCTOP[k]=T[o].h; RIVOWN[o].push(k);
+  }
+  for(let v=0;v<VERT.length;v++){
+    let lo=Infinity, hi=-Infinity, big=0, loK=-1;
+    for(const k of VERT[v].arc){
+      if(!shown(k)) continue;
+      const h=ARCTOP[k];
+      if(h<lo){ lo=h; loK=k; }
+      if(h>hi) hi=h;
+      if(ARC[k].flow>big) big=ARC[k].flow;
+    }
+    /* the fall lands on the low surface, so it belongs to that hex too */
+    if(loK>=0 && hi>lo) CONN[low(loK)].push({v,lo,hi,big});
+  }
+}
+/* A seam is drawn FLAT, at the height of the lower of the two hexes it
+   separates — that is the surface the water actually lies on, hard against
+   the foot of the other one's cliff. Sloping the line between the two nodes'
+   own heights made rivers tilt through the air across a wall face instead of
+   resting on anything.
+
+   Where two seams of one river meet at different heights, the step between
+   them is drawn as a VERTICAL thread at that corner. That is the waterfall:
+   on stepped ground a descent IS a cliff, so it should fall, not lean. */
+const RIVER_FADE=0.25;                  /* of RIVER_MIN — below this, nothing */
+const shown=k=>ARC[k].flow>=RIVER_MIN*RIVER_FADE;
+const RIVCOL='rgb(56,132,190)', FALLCOL='rgb(128,205,248)';
+/* A river still gathers into view rather than snapping on at the threshold,
+   but it does it by getting THINNER, not by going transparent. See-through
+   water read as floating above the ground rather than lying on it. */
+const thread=f=>{
+  const t=Math.max(0,Math.min(1,
+    (f-RIVER_MIN*RIVER_FADE)/(RIVER_MIN*(1-RIVER_FADE))));
+  const grown=f>RIVER_MIN ? HS*0.026*(Math.sqrt(f)-1) : 0;
+  return Math.min(HS*0.15, HS*(0.010+0.032*t)+grown);
+};
+function drawRivers(i){
+  cx.lineCap='round';
+  cx.strokeStyle=RIVCOL;
+  for(const k of RIVOWN[i]){
+    const A=ARC[k], a=VERT[A.a], b=VERT[A.b], y=ARCTOP[k];
+    cx.lineWidth=thread(A.flow);
+    cx.beginPath();
+    cx.moveTo(OX+a.vx*HS, OY+a.vy*HS-y*RISE);
+    cx.lineTo(OX+b.vx*HS, OY+b.vy*HS-y*RISE);
+    cx.stroke();
+  }
+  for(const c of CONN[i]){
+    const fall=(c.hi-c.lo)>=2;          /* a real cliff, not a single step */
+    cx.strokeStyle = fall ? FALLCOL : RIVCOL;
+    cx.lineWidth=thread(c.big)*(fall?1.4:1);
+    cx.beginPath();
+    cx.moveTo(OX+VERT[c.v].vx*HS, OY+VERT[c.v].vy*HS-c.hi*RISE);
+    cx.lineTo(OX+VERT[c.v].vx*HS, OY+VERT[c.v].vy*HS-c.lo*RISE);
+    cx.stroke();
+  }
+  cx.strokeStyle=RIVCOL;
+}
 const mix=(a,b,f)=>a.map((v,n)=>v+(b[n]-v)*f);
 /* the ground: bare rock or basalt, darkened by the soil lying on it, and
    green where something is growing */
@@ -430,11 +791,21 @@ function ground(t,m){
   if(t.life)   c=mix(c,[86,150,70],0.78);                 /* green */
   return 'rgb('+c.map(v=>Math.round(v*(m===undefined?1:m))).join(',')+')';
 }
-const vx=(px,py,s,k)=>{const a=Math.PI/180*(60*k-30);
+/* The corners turn WITH the board. Turning only the centres and leaving the
+   hexagons upright tiles at the six angles where the lattice repeats and
+   comes apart at every angle between them. */
+const vx=(px,py,s,k)=>{const a=Math.PI/180*(60*k-30)+Math.PI/3*ROT;
   return[px+s*Math.cos(a),py+s*Math.sin(a)]};
-/* the only two edges a vertical extrusion can show: the SE and SW flanks */
-const WALLS=[{v:[1,2], d:5, k:0.62},{v:[2,3], d:4, k:0.46}];
-
+/* Which flanks a hex shows is decided PER FACE, from where that face's
+   outward normal points on screen — so it is right at any angle, not only at
+   the six the board started from. Halfway between two sixths a hexagon is
+   flat-topped and shows ONE face, not two, and this handles that on its own.
+   FACE[c] is the axial direction the face between corners c and c+1 divides;
+   the light stays fixed in SCREEN space, so the board turns under it. */
+const FACE=[0,5,4,3,2,1];
+const LIGHT=Math.PI/3;
+const faceNormal=c=>Math.PI/180*(60*c)+Math.PI/3*ROT;
+const faceShade=n=>0.30+0.32*Math.cos(n-LIGHT);
 function layout(){
   const w=document.getElementById('board').clientWidth||900;
   HS=w/(Math.sqrt(3)*(2*R+4.2));
@@ -443,19 +814,39 @@ function layout(){
   for(const t of T){ const u=surf(t);
     if(u>tall) tall=u; if(-t.h>deep) deep=-t.h; }
   HEAD=RISE*(tall?tall+1:0); FOOT=RISE*(deep?deep+1:0);
-  const half=HS*1.5*(R+1)+HS*1.2;
+  const half=HS*(RMAX+1.2);      /* radius, so it is turn-proof */
   const h=Math.ceil(2*half+HEAD+FOOT);
   const dpr=window.devicePixelRatio||1;
   cv.width=w*dpr; cv.height=h*dpr; cv.style.height=h+'px';
   cx.setTransform(dpr,0,0,dpr,0,0);
   OX=w/2; OY=HEAD+half;
 }
+/* MOISTURE AS A BAR. A dot per point stopped being a reading once the count
+   could run to two dozen — two dozen dots on a hex is noise. The bar is a
+   read-out only: it changes no rule, and the exact number is still on the
+   panel. Scale is FIXED, not fitted to the board, so the same length always
+   means the same damp and you can compare one board with another. It stays
+   upright as the board turns, like the height numbers do. */
+let SHOW_MOIST=false;
+const MOIST_FULL=12;
+function moistBar(px,py,s,m){
+  const w=s*0.92, h=Math.max(3,s*0.15), x=px-w/2, y=py-h/2;
+  cx.fillStyle='rgba(0,0,0,.42)';
+  cx.fillRect(x,y,w,h);
+  if(m>0){
+    const f=Math.min(1,m/MOIST_FULL);
+    cx.fillStyle = f>=1 ? 'rgb(158,224,255)' : 'rgb(74,158,214)';
+    cx.fillRect(x,y,w*f,h);
+  }
+  cx.strokeStyle='rgba(0,0,0,.4)'; cx.lineWidth=1;
+  cx.strokeRect(x+0.5,y+0.5,w-1,h-1);
+}
 function face(px,py,s){
   cx.beginPath();
   for(let k=0;k<6;k++){const[X,Y]=vx(px,py,s,k);k?cx.lineTo(X,Y):cx.moveTo(X,Y)}
   cx.closePath();
 }
-const drawOrder=()=>T.map((t,i)=>i).sort((a,b)=>T[a].y-T[b].y||a-b);
+const drawOrder=()=>T.map((t,i)=>i).sort((a,b)=>T[a].vy-T[b].vy||a-b);
 
 function render(){
   let tall=WALL, deep=0;                       /* the wall is always standing */
@@ -463,17 +854,25 @@ function render(){
     if(u>tall) tall=u; if(-t.h>deep) deep=-t.h; }
   if(RISE*(tall?tall+1:0)!==HEAD||RISE*(deep?deep+1:0)!==FOOT) layout();
   cx.fillStyle='#05070a'; cx.fillRect(0,0,cv.width,cv.height);
-  const s=HS*0.97;
+  /* Full size, so the hexes actually TILE. They used to be drawn at 0.97 of
+     the spacing, which left a 1.2px channel between every pair — barely
+     noticeable when the surround was flat sea, and an obvious crack once the
+     rim became standing rock. The dark stroke on each hex is what separates
+     them; it does not need a gap as well. */
+  const s=HS;
+  prepRivers();
 
   for(const S of SCENE){
     if(S.rim){                                 /* a hex of the pot wall */
-      const c=RIM[S.i], px=OX+c.x*HS, py=OY+c.y*HS, top=py-WALL*RISE;
-      for(const W of WALLS){
-        const d=DIRS[W.d], nh=hAnywhere(c.q+d[0], c.r+d[1]);
+      const c=RIM[S.i], px=OX+c.vx*HS, py=OY+c.vy*HS, top=py-WALL*RISE;
+      for(let f=0;f<6;f++){
+        const nrm=faceNormal(f);
+        if(Math.sin(nrm)<=1e-3) continue;      /* turned away from the viewer */
+        const d=DIRS[FACE[f]], nh=hAnywhere(c.q+d[0], c.r+d[1]);
         if(WALL<=nh) continue;
         const bot=py-nh*RISE;
-        const [ax,ay]=vx(px,0,s,W.v[0]), [bx,by]=vx(px,0,s,W.v[1]);
-        cx.fillStyle=ground(WALLTILE,W.k);
+        const [ax,ay]=vx(px,0,s,f), [bx,by]=vx(px,0,s,(f+1)%6);
+        cx.fillStyle=ground(WALLTILE,faceShade(nrm));
         cx.beginPath();
         cx.moveTo(ax,ay+top); cx.lineTo(bx,by+top);
         cx.lineTo(bx,by+bot); cx.lineTo(ax,ay+bot);
@@ -486,15 +885,17 @@ function render(){
       continue;
     }
     const i=S.i;
-    const t=T[i], px=OX+t.x*HS, py=OY+t.y*HS, top=py-t.h*RISE;
+    const t=T[i], px=OX+t.vx*HS, py=OY+t.vy*HS, top=py-t.h*RISE;
     /* a wall exists only where there is a real step, and it runs from this
        hex's surface to that neighbour's — never down to the datum */
-    for(const W of WALLS){
-      const j=t.nb[W.d], nh = j<0 ? WALL : T[j].h;
+    for(let f=0;f<6;f++){
+      const nrm=faceNormal(f);
+      if(Math.sin(nrm)<=1e-3) continue;        /* turned away from the viewer */
+      const j=t.nb[FACE[f]], nh = j<0 ? WALL : T[j].h;
       if(t.h<=nh) continue;
       const bot=py-nh*RISE;
-      const [ax,ay]=vx(px,0,s,W.v[0]), [bx,by]=vx(px,0,s,W.v[1]);
-      cx.fillStyle=ground(t,W.k);
+      const [ax,ay]=vx(px,0,s,f), [bx,by]=vx(px,0,s,(f+1)%6);
+      cx.fillStyle=ground(t,faceShade(nrm));
       cx.beginPath();
       cx.moveTo(ax,ay+top); cx.lineTo(bx,by+top);
       cx.lineTo(bx,by+bot); cx.lineTo(ax,ay+bot);
@@ -508,8 +909,9 @@ function render(){
     if(t.liq!==NONE){
       /* the liquid stands at the brim of its basin */
       const lava=t.liq===LAVA, wy=py-t.ls*RISE;
-      for(const W of WALLS){
-        const [ax,ay]=vx(px,0,s,W.v[0]), [bx,by]=vx(px,0,s,W.v[1]);
+      for(let f=0;f<6;f++){
+        if(Math.sin(faceNormal(f))<=1e-3) continue;
+        const [ax,ay]=vx(px,0,s,f), [bx,by]=vx(px,0,s,(f+1)%6);
         cx.fillStyle = lava ? 'rgba(150,42,14,.9)' : 'rgba(30,86,124,.85)';
         cx.beginPath();
         cx.moveTo(ax,ay+wy); cx.lineTo(bx,by+wy);
@@ -541,9 +943,11 @@ function render(){
           cx.beginPath(); cx.arc(px-w0+k*s*0.19, top+dy, s*0.068, 0, 7); cx.fill();
         }
       };
-      dots(t.moist,'rgba(90,175,225,.9)', s*0.46);
+      if(SHOW_MOIST) moistBar(px, top+s*0.44, s, t.moist);
+      else dots(t.moist,'rgba(90,175,225,.9)', s*0.46);
       dots(t.temp ,'rgba(240,130,50,.95)',-s*0.46);
     }
+    drawRivers(i);          /* the seams this hex owns, on top of its own face */
   }
 
   /* The hover marks go in a pass of their OWN, after every hex is down.
@@ -552,7 +956,7 @@ function render(){
   if(HOVER>=0){
     const t=T[HOVER];
     const ring=j=>{ const u=T[j];
-      face(OX+u.x*HS, OY+u.y*HS-surf(u)*RISE, s*0.90); cx.stroke(); };
+      face(OX+u.vx*HS, OY+u.vy*HS-surf(u)*RISE, s*0.90); cx.stroke(); };
     cx.strokeStyle = POWER.k==='deluge' ? '#5aafe1'
                    : POWER.k==='lava'   ? '#e0793c'
                    : POWER.k==='seed'   ? '#7fd06a'
@@ -571,18 +975,21 @@ function render(){
         if(POWER.k==='lava' || T[j].liq!==WATER) ring(j);
     }
     cx.lineWidth=Math.max(1.8,HS*0.1);
-    face(OX+t.x*HS, OY+t.y*HS-surf(t)*RISE, s); cx.stroke();
+    face(OX+t.vx*HS, OY+t.vy*HS-surf(t)*RISE, s); cx.stroke();
   }
 }
 function inHex(mx,my,px,py,s){
-  const dx=Math.abs(mx-px), dy=Math.abs(my-py), w=s*Math.sqrt(3)/2;
+  /* the hexagon turns with the board, so un-turn the point before testing */
+  const a=-Math.PI/3*ROT, ca=Math.cos(a), sa=Math.sin(a);
+  const ox=mx-px, oy=my-py;
+  const dx=Math.abs(ox*ca-oy*sa), dy=Math.abs(ox*sa+oy*ca), w=s*Math.sqrt(3)/2;
   return dx<=w && dy <= s - (dx/w)*(s/2);
 }
 function hexAt(mx,my){
   const o=drawOrder();
   for(let n=o.length-1;n>=0;n--){
-    const t=T[o[n]], px=OX+t.x*HS, py=OY+t.y*HS - surf(t)*RISE;
-    if(inHex(mx,my,px,py,HS*0.97)) return o[n];
+    const t=T[o[n]], px=OX+t.vx*HS, py=OY+t.vy*HS - surf(t)*RISE;
+    if(inHex(mx,my,px,py,HS)) return o[n];   /* pick the whole hex, not 97% */
   }
   return -1;
 }
@@ -605,6 +1012,8 @@ function drawInfo(){
     : row('basin', b ? 'fills to '+b.level : '—', b?'':'q');
   h+=row('moisture', t.moist||'—', t.moist?'w':'q');
   h+=row('heat',     t.temp ||'—', t.temp ?'l':'q');
+  h+=row('river',    t.river>0 ? t.river.toFixed(1)
+                   : t.disc>0 ? 'a trickle' : '—', t.river>0?'w':'q');
   h+=row('soil',     t.soil>0 ? t.soil.toFixed(2) : '—', t.soil>0?'s':'q');
   h+=row('life',     t.life ? 'growing' : (habit(t)?'could grow':'—'),
          t.life?'g':'q');
@@ -614,7 +1023,9 @@ function drawMenu(){
   document.getElementById('powers').innerHTML=POWERS.map(p=>
     '<button class="pw'+(p.k===POWER.k?' on':'')+'" data-k="'+p.k+'">'+
     p.ic+'<span>'+p.nm+'</span></button>').join('');
-  document.querySelectorAll('.pw').forEach(b=>b.onclick=()=>{
+  /* ONLY the power buttons — the View panel uses the same .pw styling, and
+     an unscoped query stole its clicks and set POWER to undefined */
+  document.querySelectorAll('#powers .pw').forEach(b=>b.onclick=()=>{
     POWER=POWERS.find(p=>p.k===b.dataset.k); drawMenu(); render(); drawInfo();
   });
 }
@@ -628,6 +1039,45 @@ cv.addEventListener('click',e=>{
   const r=cv.getBoundingClientRect();
   const i=hexAt(e.clientX-r.left,e.clientY-r.top);
   if(use(i,POWER)){ render(); drawInfo(); }
+});
+/* Turning changes nothing but the view, so the board is never re-solved —
+   it is safe to do sixty times a second. ROT is a REAL number while a turn
+   is running; everything that reads it was generalised to cope, so the board
+   is a proper hex board at every angle in between and not only at the six
+   where the lattice repeats.
+
+   Presses queue rather than fight: each one adds a sixth to wherever the
+   turn was already heading, so holding the key spins smoothly. */
+let rotTo=0, rotFrom=0, rotAt=0, spinning=false;
+const SPIN=280;
+function step(now){
+  let u=(now-rotAt)/SPIN;
+  if(u>1) u=1;
+  const e=u<0.5 ? 2*u*u : 1-Math.pow(2-2*u,2)/2;      /* ease in, ease out */
+  ROT=rotFrom+(rotTo-rotFrom)*e;
+  orient(); render();
+  if(u<1) requestAnimationFrame(step);
+  else{
+    spinning=false;
+    ROT=rotTo=((rotTo%6)+6)%6;                        /* keep the numbers small */
+    rotFrom=ROT; orient(); render(); drawInfo();
+  }
+}
+function turn(n){
+  rotFrom=ROT; rotTo=Math.round(rotTo)+n; rotAt=performance.now();
+  if(!spinning){ spinning=true; requestAnimationFrame(step); }
+}
+document.getElementById('rotL').onclick=()=>turn(-1);
+document.getElementById('rotR').onclick=()=>turn(1);
+const ovMoist=document.getElementById('ovMoist');
+ovMoist.onclick=()=>{
+  SHOW_MOIST=!SHOW_MOIST;
+  ovMoist.classList.toggle('on',SHOW_MOIST);
+  render();                       /* a read-out: nothing is re-solved */
+};
+window.addEventListener('keydown',e=>{
+  if(e.key==='['||e.key==='q'||e.key==='Q') turn(-1);
+  else if(e.key===']'||e.key==='e'||e.key==='E') turn(1);
 });
 window.addEventListener('resize',()=>{layout();render()});
 drawMenu(); layout(); flood(); render(); drawInfo();
