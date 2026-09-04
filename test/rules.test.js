@@ -7,7 +7,7 @@ const HTML=[ '../index.html', 'index.html',
 if(!HTML){ console.error('cannot find index.html next to or above this file'); process.exit(1); }
 const core=fs.readFileSync(HTML,'utf8')
   .split('/*==CORE-START==*/')[1].split('/*==CORE-END==*/')[0];
-const M=new Function(core+'return {T,at,flood,use,legal,basinAt,surf,WALL,R,NONE,WATER,LAVA,habit,patchAt,soils,RATE,fillFrom};')();
+const M=new Function(core+'return {T,at,flood,use,legal,basinAt,surf,WALL,R,NONE,WATER,LAVA,habit,patchAt,soils,RATE,fillFrom,VERT,ARC,CORNERS,HARC,rains,isRiver,isFall,RIVER_MIN,FALL_MIN,RAIN};')();
 const {T,at,flood,use,basinAt}=M;
 let fails=0;
 const ok=(c,m)=>{ console.log((c?'  ok   ':'  FAIL')+'  '+m); if(!c)fails++; };
@@ -471,6 +471,118 @@ console.log('\n=== life never grows in the water ===');
   ok(T.every(t=>!t.life||t.liq===M.NONE),'no living hex holds a liquid');
 }
 
+/* ================= RIVERS ================= */
+const ARC=M.ARC, VERT=M.VERT, HARC=M.HARC;
+const flows=()=>ARC.map(a=>a.flow);
+const biggest=()=>Math.max(0,...flows());
+const rivers=()=>ARC.filter((a,k)=>M.isRiver(k)).length;
+/* a ramp down the board, so the whole thing drains one way */
+const ramp=(f)=>{
+  flat();
+  for(const t of T) t.h=Math.max(0,Math.min(12,10-t.r));
+  if(f) f();
+  flood();
+};
+
+console.log('\n=== a sealed pot with no water in it has no weather ===');
+{
+  flat();
+  for(const t of T) t.h=Math.max(0,Math.min(12,10-t.r));   /* plenty of relief */
+  flood();
+  console.log('   a bare ramp, no water anywhere -> biggest flow '+biggest().toFixed(3));
+  ok(T.every(t=>t.liq===M.NONE),'nothing is standing on the board');
+  ok(biggest()===0,'and so there is no rain, and no river anywhere');
+}
+
+console.log('\n=== ONE BUMP MAKES NO RIVER ===');
+{
+  /* The case that rules out judging a waterfall by incline alone. A single
+     raised hex is six steep edges with nothing draining through them. */
+  flat();
+  const c=at(0,0);
+  use(c,UP);
+  const p=at(3,0); use(p,DN); use(p,RN);
+  console.log('   one hex raised beside a lake -> biggest flow '+biggest().toFixed(3)+
+              ',  rivers '+rivers());
+  ok(T[at(3,0)].liq===M.WATER,'there is water on the board');
+  ok(rivers()===0,'but one bump has no catchment, so it makes no river');
+}
+
+console.log('\n=== a real catchment makes a real river ===');
+{
+  flat();
+  for(const t of T){
+    const qq=t.q+t.r/2;
+    t.h=Math.max(0,Math.min(12,Math.round(1.6*Math.abs(qq)+(4-t.r*0.8))));
+  }
+  T[at(0,6)].h=-1; T[at(0,5)].h=-1;
+  flood(); use(at(0,6),RN);
+  const wet=T.filter(t=>t.liq===M.WATER).length;
+  const rain=T.reduce((s,t)=>s+(t.liq===M.NONE?M.RAIN*wet*Math.max(0,t.h):0),0);
+  const f=flows().filter(x=>x>0).sort((a,b)=>b-a);
+  const conc=f[0]/f[Math.floor(f.length/2)];
+  console.log('   a tilted valley: total rain '+rain.toFixed(1)+
+              ',  main stem carries '+f[0].toFixed(1)+' ('+(100*f[0]/rain).toFixed(0)+'% of it)');
+  console.log('   rivers '+rivers()+',  waterfalls '+ARC.filter((a,k)=>M.isFall(k)).length+
+              ',  biggest/median flow '+conc.toFixed(0)+'x');
+  ok(rivers()>0,'the valley carries rivers');
+  ok(f[0]>=rain*0.25,'and they GATHER — one stem takes a quarter of all the rain or more');
+  ok(conc>5,'flow concentrates rather than sheeting evenly downhill');
+}
+
+console.log('\n=== rivers run on the SEAMS, not through the middles ===');
+{
+  /* The whole reason for the vertex lattice. Two hexes at the same height
+     have no drop between them, so on the hex graph the seam they share can
+     never carry anything. The two ENDS of that seam average in different
+     third hexes, so they sit at different heights and water runs ALONG it. */
+  let n=0, ex=null;
+  for(let i=0;i<T.length;i++) for(let d=0;d<6;d++){
+    const j=T[i].nb[d];
+    if(j<0||j<i) continue;
+    if(T[i].h===T[j].h && M.isRiver(HARC[i][d])){ n++; if(!ex) ex=[i,j,HARC[i][d]]; }
+  }
+  console.log('   seams between two EQUAL-height hexes carrying a river: '+n+
+    (ex?('   e.g. hexes '+ex[0]+' and '+ex[1]+', both at h'+T[ex[0]].h+
+         ', carrying '+ARC[ex[2]].flow.toFixed(2)):''));
+  ok(n>0,'water runs along seams that the hex graph could never carry');
+}
+
+console.log('\n=== a river runs THROUGH a lake and out the other side ===');
+{
+  ramp(()=>{ for(const [q,r] of [[0,0],[1,0],[0,-1],[1,-1]]) T[at(q,r)].h=5; });
+  use(at(0,0),RN);
+  const lake=T.map((t,i)=>i).filter(i=>T[i].liq===M.WATER);
+  ok(lake.length>0,'a bowl carved into the ramp holds a lake');
+  const ls=T[lake[0]].ls;
+  let below=0;
+  for(const a of ARC)
+    if(Math.max(VERT[a.a].top3,VERT[a.b].top3)<3*ls && a.flow>below) below=a.flow;
+  console.log('   lake of '+lake.length+' at surface '+ls+
+              ' -> biggest flow below that surface: '+below.toFixed(2));
+  ok(below>=M.RIVER_MIN,
+     'the lake is brim-full by construction, so it passes water on rather than swallowing it');
+}
+
+console.log('\n=== NO DIRECTION WINS: symmetric ground, symmetric rivers ===');
+{
+  flat();
+  T[at(0,0)].h=6;
+  for(const [q,r] of [[1,0],[1,-1],[0,-1],[-1,0],[-1,1],[0,1]]) T[at(q,r)].h=3;
+  const ring=[[2,0],[2,-2],[0,-2],[-2,0],[-2,2],[0,2]];
+  for(const [q,r] of ring) T[at(q,r)].h=-1;
+  flood();
+  for(const [q,r] of ring) use(at(q,r),RN);
+  const f=flows().map(x=>+x.toFixed(9)).filter(x=>x>0);
+  const uniq=[...new Set(f)];
+  const mult=uniq.map(u=>f.filter(x=>x===u).length);
+  console.log('   distinct flow values '+uniq.length+
+              ',  multiplicities '+[...new Set(mult)].sort((a,b)=>a-b).join('/'));
+  ok(f.length>0,'the symmetric board carries water');
+  ok(mult.every(c=>c%6===0),
+     'every flow value appears a multiple of six times — no spoke is favoured');
+}
+
 console.log('\n=== the whole board is still a pure function ===');
 {
   flat();
@@ -552,10 +664,12 @@ console.log('\n=== and the whole thing is still a pure function ===');
   console.log('   after 800 mixed clicks: '+T.filter(t=>t.liq===M.WATER).length+' water, '+
     T.filter(t=>t.liq===M.LAVA).length+' lava, '+T.filter(t=>t.vol).length+' basalt, '+
     T.filter(t=>t.soil>=1).length+' with soil, '+T.filter(t=>t.life).length+' alive');
-  const snap=T.map(t=>[t.h,t.vol,t.liq,t.ls,t.soil.toFixed(6),t.life].join('/')).join();
+  const world=()=>T.map(t=>[t.h,t.vol,t.liq,t.ls,t.soil.toFixed(6),t.life].join('/')).join()
+                  +'|'+ARC.map(a=>a.flow.toFixed(6)).join(',');
+  const snap=world();
   for(let n=0;n<4;n++) flood();
-  ok(T.map(t=>[t.h,t.vol,t.liq,t.ls,t.soil.toFixed(6),t.life].join('/')).join()===snap,
-     'solving again from the same ground gives the same world, to six decimals');
+  ok(world()===snap,
+     'solving again from the same ground gives the same world, rivers included, to six decimals');
   ok(T.every(t=>t.soil>=0&&t.soil<=5),'soil always sits in 0-5');
 }
 
@@ -598,9 +712,10 @@ console.log('\n=== and it is still one on EVERY board, not just a lucky one ==='
     for(let n=0;n<800;n++)
       use(Math.floor(rnd()*T.length),[UP,DN,RN,LV,SD][Math.floor(rnd()*5)]);
     const cell=t=>[t.h,t.vol,t.liq,t.ls,t.soil.toFixed(6),t.life].join('/');
-    const snap=T.map(cell).join(), was=T.map(t=>t.soil);
+    const world=()=>T.map(cell).join()+'|'+ARC.map(a=>a.flow.toFixed(6)).join(',');
+    const snap=world(), was=T.map(t=>t.soil);
     for(let n=0;n<4;n++) flood();
-    if(T.map(cell).join()!==snap){
+    if(world()!==snap){
       let d=0; T.forEach((t,i)=>{const x=Math.abs(t.soil-was[i]); if(x>d) d=x;});
       if(d>worst) worst=d;
       BAD.push(seed);

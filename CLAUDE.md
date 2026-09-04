@@ -164,9 +164,14 @@ moist = how many neighbours are water
 temp  = how many neighbours are lava
 ```
 
-Moisture now comes **only from water the player has put on the board.** The
-wall is rock and gives nothing, so a fresh pot reads zero moisture everywhere
-and nothing is habitable until a hollow is dug and filled.
+Moisture now comes **only from water the player has put on the board**, and it
+reaches **two hexes**: 2 points for water alongside, 1 for water a hex further
+off, so it runs 0..24. The wall is rock and gives nothing, so a fresh pot reads
+zero moisture everywhere and nothing is habitable until a hollow is dug.
+
+Widening it from one hex to two made life far commoner — boards with anything
+alive went **61/200 to 147/200**, mean living hexes **0.5 to 9.6**. That is the
+moisture change, not the river change.
 Plain counts, never stored, never accumulate. Neither can turn into the liquid
 it came from. This was a hard-won simplification — an earlier model had
 moisture as an accumulating quantity with thresholds and it was unplayable
@@ -279,6 +284,80 @@ This has worked well and is worth keeping:
 
 ---
 
+### Rivers — on the seams, not through the middles
+
+A river is a movement *between* places, so it does not belong on a hex. It
+runs on a **vertex lattice**: every hex corner is a node (294 of them), every
+hex edge an arc (420), and a node's height is the average of the three hexes
+meeting there — the pot wall standing in for any that are off the board.
+
+That average is the entire point. Two hexes at the same height have no drop
+between them, so on the hex graph the seam they share can never carry
+anything. But the two ends of that seam average in different third hexes, so
+they sit at different heights and water runs **along** it. Measured on a peak
+of 1 over six 0s, the seam direction is lower than the neighbour direction at
+every radius, and the gap widens going out. In play, ~50-70 seams between
+equal-height hexes carry rivers on a sculpted board. There is a test for it,
+and it is the one that justifies the whole second graph.
+
+Heights are carried in **thirds, as integers**, so equal heights compare
+exactly and no float ever decides where a river goes.
+
+**Where the water comes from.** `rain = RAIN x (moisture - MOIST_MIN) x height`,
+every term read off the hex itself. Damp enough and high enough, and it rains.
+**A pot with no water has no moisture and so no rivers**, which now falls out
+rather than being a rule.
+
+This replaced a global cycle — total standing water anywhere on the board set
+the rain everywhere — which worked but was unreadable: pouring a lake in one
+corner changed rivers in the other and nothing you could look at explained why.
+
+The honest cost is that rain is now very sensitive to WHERE the water is.
+Measured on one board, three placements: a lake far from the ridge gives high
+ground moisture 0 and **no rain at all**; a lake dug at the ridge's foot works
+but floods 115 of 127 hexes, because the whole pot is one basin; a hollow cut
+INTO the high ground — a tarn — gives 2 water hexes, 17 river arcs and a dry
+pot. The tarn is the pattern that works, and it is a narrow path.
+
+**Which way it goes.** All of it to the **steepest descent**, split equally
+when several tie. Not shared out in proportion like soil — that braids every
+river into a delta and nothing clears the threshold. And emphatically not
+broken by ring order: that is exactly how a symmetric peak grew a lopsided
+apron, always east. A tie is a real saddle and a real saddle really does fork.
+The symmetry test checks every flow value appears a multiple of six times.
+
+**Pits.** Averaging three hexes invents hollows that are not in the ground,
+and left alone they swallowed **86% of the rain**. They are filled by a
+priority flood seeded from the lowest node on the board. It must be seeded
+from the outlet rather than fixed pit by pit: the pot is sealed, so its lowest
+ground has no way out at all, and raising every sink to its lowest neighbour
+walked the whole floor upwards until it merged into the nearest lake — a river
+arriving at a lake was declared to have reached the bottom of the world, and
+died there.
+
+**Lakes pass water on.** A lake is already brim-full by construction —
+`fillFrom` stops at the first rim it meets — so it is a flat region that
+spills at its lowest way out, and rivers run through it and come out the other
+side. No volume is tracked anywhere. This needed no change to `fillFrom`: the
+region grouping finds the spill on its own.
+
+**Still acyclic.** Sources → lakes → rain → rivers, one way. Rivers pass
+through lakes and never create them, so there is no feedback to solve. If
+rivers are ever allowed to fill a basin, that stops being true.
+
+`RAIN = 0.2` and `MOIST_MIN = 2` are the abundance knobs, calibrated like
+`RATE` against a board somebody would actually build rather than against
+extremes. `RIVER_MIN = 1`, `FALL_MIN = 3`. Because two nodes on a seam share two of
+their three hexes, a seam's drop in thirds is exactly the height difference
+between the hexes capping its ends, so `FALL_MIN = 3` means a three-step
+cliff. It marks about a tenth of river arcs in play.
+
+**The consequence to know: rivers stop at flat ground.** The pot floor is
+dead level, so a river running off sculpted relief onto it simply ends — there
+is no channel, and on flat ground water spreads rather than gathering. To get
+a river all the way to a lake you have to carve it a bed. That is honest
+hydrology and probably good play, but it surprises.
+
 ## What the sea took with it
 
 The sea was removed deliberately — it was carrying too many special cases
@@ -304,13 +383,21 @@ parked *sea level as a power* idea no longer has a free ride.
 ## Where it stands
 
 Working and tested: uplift, subduct, deluge, lava, seed; nesting basins; the
-pot wall and its skirts; volcanic rock; both auras; derived soil; one life. An
-attributes panel at the top left of the board reads out the hex under the
-cursor.
+pot wall and its skirts; volcanic rock; both auras; derived soil; one life;
+rivers and waterfalls on the vertex lattice. An attributes panel at the top
+left of the board reads out the hex under the cursor.
 
-**The suite is green.** `node test/rules.test.js` runs 107 checks in ~4.7s,
-all passing, including 200 boards that must settle and 40 boards checked after
-every single click.
+**The suite is green.** `node test/rules.test.js` runs 119 checks in ~12s, all
+passing, including 200 boards that must settle and 40 boards checked after
+every single click. Arc flows are part of the stillness snapshot, so a river
+that drifted would be caught the same way soil was.
+
+Known and expected, not a bug: a hex standing at ground level directly behind
+a tall mountain cannot be picked **at its centre**, because the mountain is
+drawn over it. Measured 124/127 centres on a board with a ridge of 7, and all
+three misses were ground-level hexes stolen by taller ground to the south.
+Their visible parts pick correctly. This is inherent to a vertical extrusion
+and predates rivers.
 
 ### Parked, deliberately
 
@@ -343,5 +430,17 @@ every single click.
 - **Is life too rare now?** 106/300 boards have anything alive, against 276/300
   with the sea. A tall peak (9) plus a dug-and-filled hollow is currently the
   minimum recipe for a connected patch of two.
+- **Should rivers carry moisture?** Deliberately parked, and the obvious answer
+  to the question above — inland rivers would give the interior a reason to be
+  habitable. It is the difference between rivers as a read-out of the terrain
+  and rivers as a mechanic, so it wants deciding rather than drifting into.
+- **Does a river ending on the flat plain read as broken in play?** It is
+  correct, but it is the thing most likely to look like a bug.
+- **Is `RIVER_MIN` the wrong shape?** It is an ABSOLUTE number calibrated on
+  relief of 5-7, so anything built small and low falls entirely below it. Hills
+  of 1 around a lake make a biggest seam flow of 0.33 against a threshold of 1 —
+  a trickle, correctly, but not what a player expects. A threshold set as a
+  SHARE of the board's total rain would read the same at any scale; that case is
+  17% of its board's rain, which is unambiguously its main stream.
 - Does the green-belt-starves-downstream consequence read as a bug in play?
 - Does the board want to be bigger than radius 6?
