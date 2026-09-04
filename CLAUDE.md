@@ -86,8 +86,17 @@ Two corollaries the suite enforces:
 
 ### Geometry
 Pointy-top axial hexes, radius 6 (127 hexes). `DIRS` is in ring order
-(E NE NW W SW SE). Off the rim is **sea at level 0** — it takes anything that
-runs into it, fills anything below it, and radiates like any other water.
+(E NE NW W SW SE). Off the rim is the **wall of the pot**: bare rock at
+`WALL = 5`, all the way round, and nothing the player has can touch it. It
+gives no moisture and quenches nothing. It holds liquid in, it stops soil
+washing out, and it sheds soil down onto the hexes it touches.
+
+The floor starts at 0 and the wall stands at 5, so **the whole pot is one
+basin.** Aim Deluge at undug ground and it fills to the brim, all 127 hexes —
+the preview rings the entire board first, so it is not a lie, but it is one
+click. Only ground raised level with the wall lets a liquid spill over and be
+lost. There was a sea here until it was taken out; see *What the sea took with
+it* below for what that changed.
 
 ### Powers
 | Power | Effect |
@@ -103,7 +112,7 @@ A hex is a **basin** if a liquid put on it could not get away. `fillFrom(seeds)`
 pours in and lets the level rise until it meets a rim, returning the submerged
 set and the surface level.
 
-It rises to the **first rim it meets, not the ultimate way out to the sea.**
+It rises to the **first rim it meets, not the ultimate way out over the wall.**
 That makes basins nest, and it is the mechanic that lets the player choose
 scale by aiming:
 
@@ -121,21 +130,43 @@ Both are **endless sources**: once a hex holds a liquid it becomes a source, so
 digging beside a lake lets it flow in without draining the lake. A source on
 ground that can no longer hold anything is forgotten.
 
-The sea reaches inland **only along ground strictly below sea level.** A plain
-sitting exactly at 0 is not a channel — without this, every pit dug anywhere
-filled itself with no rain.
+**Two sources in the same pool are one body even when they do not touch.**
+`flood()` groups sources by adjacency, but `fillFrom` submerges whatever is in
+the basin — so a source sitting inside a pool filled from elsewhere formed its
+own second body over the same hexes. Both wrote their own level and the last
+one won, leaving a hex holding water at a level its own neighbours did not
+share. The groups are now merged whenever their fills overlap, and re-filled,
+until none do.
+
+This one is worth remembering for *how it hid*, not for what it was. The bad
+state healed on the very next click — once the pool had written `src` across
+all its cells the two groups touched and merged — so it was reachable
+constantly and observable almost never: **11 boards in 40** hit it at some
+point during play, but only **1 board in 200** was still holding it at the end
+of a run, and that single board was the entire visible symptom. Checking an
+invariant at the end of a run is not the same as checking it during one. There
+is a test for each.
+
+**Careful: lifting a filled pit back to floor level floods the pot.** The
+source is not removed, it is moved onto the floor — and the floor's basin is
+the whole pot. Subduct-then-Uplift, the natural undo, drowns the board. Under
+the old sea this same gesture just dried the hex out. There is a test for it.
 
 **Lava that touches water sets into volcanic rock**, level with the brim. That
 is the only way basalt is made and the only thing that removes lava. Because
 two adjacent basins always merge into one, lava can only ever meet water
-*inside its own basin* or *at the sea*, which leaves exactly two deliberate
-routes: rain into a lava pool, or pour lava into the sea.
+inside its own basin — so with the sea gone there is exactly **one** route
+left: rain into a lava pool. Lava standing against the wall never sets.
 
 ### The two auras
 ```
-moist = how many neighbours are water   (each sea-facing side counts)
+moist = how many neighbours are water
 temp  = how many neighbours are lava
 ```
+
+Moisture now comes **only from water the player has put on the board.** The
+wall is rock and gives nothing, so a fresh pot reads zero moisture everywhere
+and nothing is habitable until a hollow is dug and filled.
 Plain counts, never stored, never accumulate. Neither can turn into the liquid
 it came from. This was a hard-won simplification — an earlier model had
 moisture as an accumulating quantity with thresholds and it was unplayable
@@ -152,9 +183,17 @@ retention   keep received/(1+D) — flat keeps everything, steep keeps none
             freshly weathered rock always moves on, which keeps summits bare
 ```
 
-Consequences worth knowing: **a flat island has no soil at all**, so relief is
-the only soil factory; sea cliffs and lake shores weather fastest, which gives
-Deluge a second purpose; basalt weathers twice as fast, which gives Lava one.
+The wall weathers by the same formula: each face standing above a hex hands
+that hex `drop × RATE`, and keeps none of it. **This is the starting
+condition** — a fresh pot is not bare, it has soil at its skirts (3.5 on an
+edge hex, 5 in the six corners) and nothing anywhere else. `BED = WALL`, so
+the wall also stands above every rim hex, which means **nothing washes out of
+the pot**.
+
+Consequences worth knowing: the floor still makes no soil of its own, so
+relief is the only soil factory inland; lake shores weather fastest, which
+gives Deluge a second purpose; basalt weathers twice as fast, which gives Lava
+one.
 
 `RATE = 0.35` is the single abundance knob. `SOIL_MAX = 5`.
 
@@ -177,6 +216,14 @@ everything it is handed. This produces vegetated terracing — a living hex hold
 soil at a steepness bare rock could not — and it means **a green belt starves
 the ground below it**, which is intended but surprising.
 
+Because soil and life each depend on the other, **`lives()` ends by calling
+`soils()` itself.** Solving them one pass each left the board one click stale
+wherever a patch had just greened or just died — the wrong soil showing at the
+exact moment you pressed Seed. Whatever changes life owns the soil that changes
+with it; do not push that ordering back out into `flood()`. Measured: boards
+that drifted when left alone went from 61/1000 to 6/1000. Iterating the pair to
+a fixed point instead was measured and bought nothing over the single re-solve.
+
 ---
 
 ## Rendering notes
@@ -193,6 +240,13 @@ here have bitten before:
   Verify any picking change at both `deviceScaleFactor: 1` and `2`.
 - **Overlays draw in their own pass after the hex loop.** Drawn inside it, the
   southern part of any multi-hex highlight gets painted over.
+- **The wall and the board draw in ONE north-to-south pass** (`SCENE`, sorted
+  by `y`). The sea used to be a whole separate loop painted first, which was
+  fine when it was flat — but a wall standing at 5 has to occlude the board in
+  front of it. Split back into two passes, the near rim disappears behind the
+  floor. Wall hexes are not in `T`, so they are not clickable; verified that
+  picking the centre of all 127 board hexes still returns each hex, and that a
+  point over the wall returns −1, at both `deviceScaleFactor: 1` and `2`.
 
 ---
 
@@ -225,11 +279,38 @@ This has worked well and is worth keeping:
 
 ---
 
+## What the sea took with it
+
+The sea was removed deliberately — it was carrying too many special cases
+(`seaReach`, a sea overlay pass, sea-as-moisture, quenching at the coast).
+Taking it out deleted all of them, and cost these, measured over 300 boards of
+400 mixed clicks each:
+
+| | with the sea | with the wall |
+|---|---|---|
+| boards with anything alive | 276/300 | **106/300** |
+| average living hexes | 3.7 | **0.6** |
+| median largest connected patch | 2 | **0** |
+
+Life went from usually-present to usually-absent, because the sea was the
+board's only free moisture. That is the honest price of the change, not a bug.
+If life should be commoner the knob is the habitability rule or `RATE`, not
+putting the sea back.
+
+Two other things went with it: **pouring lava into the sea to make new land**
+(one of the two routes to basalt), and any reason for a `SEA` constant, so the
+parked *sea level as a power* idea no longer has a free ride.
+
 ## Where it stands
 
 Working and tested: uplift, subduct, deluge, lava, seed; nesting basins; the
-sea; volcanic rock; both auras; derived soil; one life. An attributes panel at
-the top left of the board reads out the hex under the cursor.
+pot wall and its skirts; volcanic rock; both auras; derived soil; one life. An
+attributes panel at the top left of the board reads out the hex under the
+cursor.
+
+**The suite is green.** `node test/rules.test.js` runs 107 checks in ~4.7s,
+all passing, including 200 boards that must settle and 40 boards checked after
+every single click.
 
 ### Parked, deliberately
 
@@ -238,9 +319,11 @@ the top left of the board reads out the hex under the cursor.
   higher and lower neighbours around the ring. It was built once and works (one
   click on a flat re-shapes 7 hexes; ~1.9 on a sculpted board; 16% of clicks
   inert) but it is a second system on top of this one.
-- **Sea level as a power** — `SEA` is already a constant everywhere it matters,
-  so moving it is close to free and would re-frame the whole board at once.
-  This is the most promising unbuilt idea.
+- **Wall height as a power** — `WALL` is a constant everywhere it matters, so
+  moving it is close to free and would re-frame the whole board at once. This
+  is the inheritor of the old *sea level as a power* idea and still the most
+  promising unbuilt one. Note it now cuts both ways: lowering the wall drains
+  the pot, raising it drowns more of the floor.
 - **Erosion as a power** — deliberately rejected. Relief already does erosion's
   job; a power would be Subduct in a costume.
 - **Grades of life** (moss / grass / forest) — the obvious next step and the
@@ -251,6 +334,14 @@ the top left of the board reads out the hex under the cursor.
 ### Open questions
 
 - Is soil abundance right? `RATE` is the knob and it has not been playtested
-  hard.
+  hard. The wall now feeds the skirts through the same knob: `WALL × RATE` is
+  1.75 per wall face, so an edge hex starts at 3.5 and a corner maxes at 5.
+  That may be too generous for a starting condition.
+- **Is one click drowning the pot acceptable?** Deluge on undug ground fills
+  all 127 hexes; the preview warns, but there is no undo and recovery is 635
+  clicks. Chosen deliberately, not yet played.
+- **Is life too rare now?** 106/300 boards have anything alive, against 276/300
+  with the sea. A tall peak (9) plus a dug-and-filled hollow is currently the
+  minimum recipe for a connected patch of two.
 - Does the green-belt-starves-downstream consequence read as a bug in play?
 - Does the board want to be bigger than radius 6?

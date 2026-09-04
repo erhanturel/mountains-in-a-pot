@@ -81,17 +81,26 @@
 
    THE RULES
      A hex is a BASIN if a liquid put on it could not get away — if it must
-     rise above its own ground to escape. Off the rim is SEA at level 0.
+     rise above its own ground to escape. Off the rim is the WALL of the pot,
+     bare rock at height 5, which nothing can change.
      DELUGE fills the connected basin you click with water, to the brim —
      and basins NEST, so the water rises only to the first rim it meets.
      LAVA fills that same basin with lava instead. Off a basin, neither does
      anything: it runs away.
-     Lava that TOUCHES WATER — the sea, a lake, or water poured onto it —
+     The floor starts below the wall, so THE WHOLE POT IS ONE BASIN. Deluge
+     undug ground and it fills to the brim, all of it. Only ground raised
+     level with the wall lets a liquid spill over and be lost.
+     Lava that TOUCHES WATER — a lake, or water poured onto it —
      sets on the spot into VOLCANIC ROCK, level with the basin's brim. That
      is the only way volcanic rock is ever made, and the only thing that
      ever removes lava.
    ====================================================================== */
-const R=6, H_MAX=12, SEA=0;
+/* Off the rim is not sea any more — it is the WALL of the pot: bare rock at
+   this height, all the way round, and nothing the player has can touch it.
+   It stands above the floor, so the whole pot is one basin: aim Deluge at
+   undug ground and it fills to the brim. The preview rings all 127 hexes
+   when that is what a click would do. */
+const R=6, H_MAX=12, WALL=5;
 const NONE=0, WATER=1, LAVA=2;
 const DIRS=[[1,0],[1,-1],[0,-1],[-1,0],[-1,1],[0,1]];   /* E NE NW W SW SE */
 
@@ -127,7 +136,7 @@ function fillFrom(seeds){
      shallow seed with its own surface below its own bed. */
   let level=-Infinity;
   for(const s of seeds) level=Math.max(level,T[s].h);
-  const hOf = x => x<0 ? SEA : T[x].h;          /* off the rim is the sea */
+  const hOf = x => x<0 ? WALL : T[x].h;         /* off the rim is the pot wall */
   const fr=[];
   const spread=i=>{ for(const j of T[i].nb) if(j<0||!inS.has(j)) fr.push(j); };
   for(const s of seeds) spread(s);
@@ -139,21 +148,12 @@ function fillFrom(seeds){
     /* the lowest thing around us stands higher: that is the rim, and the
        liquid rests against it */
     if(hOf(f)>level) return {cells:[...inS], level:hOf(f), open:false};
-    /* it found the open sea at or below its own level — it runs away */
-    if(f<0) return {cells:[...inS], level:SEA, open:true};
+    /* it reached the wall at or above its own level — it spills over and is
+       lost. Only possible once the ground has been raised level with the rim. */
+    if(f<0) return {cells:[...inS], level:WALL, open:true};
     inS.add(f); spread(f);
   }
   return {cells:[...inS], level, open:true};
-}
-/* the sea reaches inland only along ground actually BELOW it */
-function seaReach(){
-  const n=T.length, f=new Array(n).fill(false), q=[];
-  for(let i=0;i<n;i++) if(T[i].coast && T[i].h<SEA){ f[i]=true; q.push(i); }
-  while(q.length){
-    const i=q.pop();
-    for(const j of T[i].nb) if(j>=0 && !f[j] && T[j].h<SEA){ f[j]=true; q.push(j); }
-  }
-  return f;
 }
 /* the basin under a hex, or null if a liquid put there would run away.
    Deluge and Lava both read this same answer. */
@@ -168,45 +168,62 @@ function flood(){
      new liquid, so this repeats until the board stops changing. Solidifying
      only ever raises ground, so it always terminates. */
   for(let guard=0; guard<24; guard++){
-    const fromSea=seaReach();
     for(const t of T){ t.liq=NONE; t.ls=t.h; }
 
-    /* adjacent sources are one body; each body fills its own basin */
-    const seen=new Array(T.length).fill(false), bodies=[];
+    /* Adjacent sources are one body — and so are sources that do NOT touch
+       but end up in the same pool. A source can sit inside a basin filled
+       from somewhere else, and fillFrom will submerge it without ever
+       knowing it was there. Group by touching first, then merge any two
+       groups whose fills overlap and fill again, until none overlap.
+
+       Without the merge the two bodies both wrote their own level over the
+       shared hex and the last one won, leaving that hex holding water at a
+       level its own neighbours did not share. It corrected itself on the
+       next click — once the pool had written src across all its cells the
+       groups touched and merged — so the board was quietly one click stale.
+       Each merge removes a group, so this always terminates. */
+    const seen=new Array(T.length).fill(false), groups=[];
     for(let i=0;i<T.length;i++){
       if(seen[i]||T[i].src===NONE) continue;
-      /* sea-flooded ground is just the sea — unless you have poured lava
-         into it, which is the whole point of making basalt at the coast */
-      if(fromSea[i]&&T[i].src!==LAVA) continue;
       const grp=[i], q=[i]; seen[i]=true;
-      let wat=T[i].src===WATER, lav=T[i].src===LAVA;
       while(q.length){
         const k=q.pop();
         for(const j of T[k].nb){
           if(j<0||seen[j]||T[j].src===NONE) continue;
-          if(fromSea[j]&&T[j].src!==LAVA) continue;
           seen[j]=true; grp.push(j); q.push(j);
-          if(T[j].src===WATER) wat=true; else lav=true;
         }
       }
-      const f=fillFrom(grp);
-      bodies.push({cells:f.cells, level:f.level, open:f.open, wat, lav});
+      groups.push(grp);
+    }
+    let bodies=[];
+    for(;;){
+      bodies=groups.map(grp=>Object.assign({grp},fillFrom(grp)));
+      let a=-1,b=-1;
+      const owner=new Map();
+      for(let n=0;n<bodies.length && b<0;n++)
+        for(const c of bodies[n].cells){
+          if(!owner.has(c)){ owner.set(c,n); continue; }
+          a=owner.get(c); b=n; break;
+        }
+      if(b<0) break;
+      groups[a]=groups[a].concat(groups[b]);
+      groups.splice(b,1);
+    }
+    for(const bd of bodies){
+      bd.wat=bd.grp.some(i=>T[i].src===WATER);
+      bd.lav=bd.grp.some(i=>T[i].src===LAVA);
     }
     for(const b of bodies){
       if(b.open){ for(const i of b.cells) T[i].src=NONE; continue; }  /* it ran away */
       const kind=b.wat?WATER:LAVA;
       for(const i of b.cells){ T[i].liq=kind; T[i].ls=b.level; T[i].src=kind; }
     }
-    /* the sea is laid over the top of everything, at its own level */
-    for(let i=0;i<T.length;i++) if(fromSea[i]){
-      T[i].liq=WATER; T[i].ls=SEA; T[i].src=WATER;
-    }
-    /* lava meeting water sets into volcanic rock, level with the brim */
+    /* lava meeting water sets into volcanic rock, level with the brim.
+       With no sea there is only one route left: rain into a lava pool. */
     let set=false;
     for(const b of bodies){
       if(!b.lav||b.open) continue;
       const quenched = b.wat || b.cells.some(i =>
-        fromSea[i] || T[i].coast>0 ||
         T[i].nb.some(j=>j>=0 && T[j].liq===WATER));
       if(!quenched) continue;
       for(const i of b.cells){
@@ -221,10 +238,10 @@ function flood(){
   /* the two auras: plain counts of what is next to you */
   for(const t of T){
     let m=0, tp=0;
-    if(t.liq===NONE){
-      m=t.coast;
+    /* the wall is rock, so it gives nothing: moisture now comes only from
+       water the player has actually put on the board */
+    if(t.liq===NONE)
       for(const j of t.nb) if(j>=0 && T[j].liq===WATER) m++;
-    }
     if(t.liq!==LAVA) for(const j of t.nb) if(j>=0 && T[j].liq===LAVA) tp++;
     t.moist=m; t.temp=tp;
   }
@@ -256,12 +273,21 @@ function flood(){
    grew a lopsided apron, always to the east. Determinism is the point;
    a fixed direction winning is not.
    --------------------------------------------------------------------- */
-/* Off the rim counts as ground AT sea level for sediment. Putting it any
-   lower made every coastal hex read as sloped, so it carried everything
-   straight out to sea and a coastal plain could never hold soil. */
-const BED=SEA, RATE=0.35, SOIL_MAX=5;
+/* Off the rim is the wall, so for sediment it is simply ground at WALL.
+   It stands above the floor, which means nothing washes out of the pot —
+   what the wall sheds, the pot keeps. */
+const BED=WALL, RATE=0.35, SOIL_MAX=5;
 function soils(){
   const n=T.length, load=new Array(n).fill(0), fall=[];
+  /* THE SKIRTS. The wall is rock like any other, and it weathers like any
+     other: each face standing above a hex hands that hex what it sheds,
+     by the same D x RATE the rest of the board uses. Freshly weathered rock
+     always moves on, so the wall keeps none of it. This is why a fresh pot
+     is not bare — there is soil at its skirts before you touch anything. */
+  for(let i=0;i<n;i++){
+    const drop = WALL - T[i].h;
+    if(drop>0) load[i] += T[i].coast * drop * RATE;
+  }
   for(let i=0;i<n;i++){
     const d=[]; let D=0;
     for(let k=0;k<6;k++){
@@ -308,6 +334,12 @@ function lives(){
       if(j>=0 && !T[j].life && habit(T[j])){ T[j].life=true; q.push(j); }
   }
   for(const t of T) t.seed = t.life;          /* it remembers itself, like water */
+  /* Life has just moved, and life BINDS the ground it stands on — so the soil
+     we solved a moment ago is not the soil that now stands here. Re-solve it
+     from inside, rather than asking every caller to remember the order: what
+     changes life owns the soil that changes with it. Without this the board
+     was one click stale wherever a patch had just greened or just died. */
+  soils();
 }
 /* the patch a seed here would green — for the overlay */
 function patchAt(i){
@@ -363,15 +395,28 @@ let POWER=POWERS[0];
 const cv=document.getElementById('cv'), cx=cv.getContext('2d');
 let HS=32, OX=0, OY=0, RISE=0, HOVER=-1, HEAD=-1, FOOT=-1;
 
-/* the sea, one ring beyond the island, so it reads as an island */
-const SEARING=[];
+/* the wall of the pot: one ring beyond the board, standing at WALL */
+const RIM=[];
 for(let q=-R-1;q<=R+1;q++){
   const lo=Math.max(-R-1,-q-R-1), hi=Math.min(R+1,-q+R+1);
   for(let r=lo;r<=hi;r++){
     const d=(Math.abs(q)+Math.abs(r)+Math.abs(q+r))/2;
-    if(d===R+1) SEARING.push({x:Math.sqrt(3)*(q+r/2),y:1.5*r});
+    if(d===R+1) RIM.push({q,r,x:Math.sqrt(3)*(q+r/2),y:1.5*r});
   }
 }
+const WALLTILE={h:WALL,vol:false,soil:0,life:false};
+/* height anywhere, board or wall or the void beyond it — for drawing flanks */
+const hAnywhere=(q,r)=>{
+  const i=at(q,r); if(i>=0) return T[i].h;
+  return (Math.abs(q)+Math.abs(r)+Math.abs(q+r))/2===R+1 ? WALL : 0;
+};
+/* The wall and the board are drawn in ONE north-to-south pass. Drawn as two
+   passes — the whole ring first, as the sea used to be — every wall hex in
+   FRONT of the board was painted under it, and the pot had no near rim. */
+const SCENE=[];
+T.forEach((t,i)=>SCENE.push({y:t.y,i,rim:false}));
+RIM.forEach((c,i)=>SCENE.push({y:c.y,i,rim:true}));
+SCENE.sort((a,b)=>a.y-b.y || (a.rim?1:0)-(b.rim?1:0) || a.i-b.i);
 const mix=(a,b,f)=>a.map((v,n)=>v+(b[n]-v)*f);
 /* the ground: bare rock or basalt, darkened by the soil lying on it, and
    green where something is growing */
@@ -394,7 +439,7 @@ function layout(){
   const w=document.getElementById('board').clientWidth||900;
   HS=w/(Math.sqrt(3)*(2*R+4.2));
   RISE=HS*0.34;
-  let tall=0, deep=0;
+  let tall=WALL, deep=0;                       /* the wall is always standing */
   for(const t of T){ const u=surf(t);
     if(u>tall) tall=u; if(-t.h>deep) deep=-t.h; }
   HEAD=RISE*(tall?tall+1:0); FOOT=RISE*(deep?deep+1:0);
@@ -413,25 +458,39 @@ function face(px,py,s){
 const drawOrder=()=>T.map((t,i)=>i).sort((a,b)=>T[a].y-T[b].y||a-b);
 
 function render(){
-  let tall=0, deep=0;
+  let tall=WALL, deep=0;                       /* the wall is always standing */
   for(const t of T){ const u=surf(t);
     if(u>tall) tall=u; if(-t.h>deep) deep=-t.h; }
   if(RISE*(tall?tall+1:0)!==HEAD||RISE*(deep?deep+1:0)!==FOOT) layout();
   cx.fillStyle='#05070a'; cx.fillRect(0,0,cv.width,cv.height);
   const s=HS*0.97;
 
-  for(const c of SEARING){                                   /* the surrounding sea */
-    const px=OX+c.x*HS, py=OY+c.y*HS;
-    cx.fillStyle='#16384f'; face(px,py,s); cx.fill();
-    cx.strokeStyle='rgba(0,0,0,.3)'; cx.lineWidth=1; face(px,py,s); cx.stroke();
-  }
-
-  for(const i of drawOrder()){
+  for(const S of SCENE){
+    if(S.rim){                                 /* a hex of the pot wall */
+      const c=RIM[S.i], px=OX+c.x*HS, py=OY+c.y*HS, top=py-WALL*RISE;
+      for(const W of WALLS){
+        const d=DIRS[W.d], nh=hAnywhere(c.q+d[0], c.r+d[1]);
+        if(WALL<=nh) continue;
+        const bot=py-nh*RISE;
+        const [ax,ay]=vx(px,0,s,W.v[0]), [bx,by]=vx(px,0,s,W.v[1]);
+        cx.fillStyle=ground(WALLTILE,W.k);
+        cx.beginPath();
+        cx.moveTo(ax,ay+top); cx.lineTo(bx,by+top);
+        cx.lineTo(bx,by+bot); cx.lineTo(ax,ay+bot);
+        cx.closePath(); cx.fill();
+      }
+      cx.fillStyle=ground(WALLTILE);
+      face(px,top,s); cx.fill();
+      cx.strokeStyle='rgba(0,0,0,.35)'; cx.lineWidth=1;
+      face(px,top,s); cx.stroke();
+      continue;
+    }
+    const i=S.i;
     const t=T[i], px=OX+t.x*HS, py=OY+t.y*HS, top=py-t.h*RISE;
     /* a wall exists only where there is a real step, and it runs from this
        hex's surface to that neighbour's — never down to the datum */
     for(const W of WALLS){
-      const j=t.nb[W.d], nh = j<0 ? 0 : T[j].h;
+      const j=t.nb[W.d], nh = j<0 ? WALL : T[j].h;
       if(t.h<=nh) continue;
       const bot=py-nh*RISE;
       const [ax,ay]=vx(px,0,s,W.v[0]), [bx,by]=vx(px,0,s,W.v[1]);

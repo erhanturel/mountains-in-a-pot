@@ -7,7 +7,7 @@ const HTML=[ '../index.html', 'index.html',
 if(!HTML){ console.error('cannot find index.html next to or above this file'); process.exit(1); }
 const core=fs.readFileSync(HTML,'utf8')
   .split('/*==CORE-START==*/')[1].split('/*==CORE-END==*/')[0];
-const M=new Function(core+'return {T,at,flood,use,legal,basinAt,surf,SEA,R,NONE,WATER,LAVA,habit,patchAt,soils,RATE,fillFrom};')();
+const M=new Function(core+'return {T,at,flood,use,legal,basinAt,surf,WALL,R,NONE,WATER,LAVA,habit,patchAt,soils,RATE,fillFrom};')();
 const {T,at,flood,use,basinAt}=M;
 let fails=0;
 const ok=(c,m)=>{ console.log((c?'  ok   ':'  FAIL')+'  '+m); if(!c)fails++; };
@@ -17,21 +17,30 @@ const W=(q,r)=>T[at(q,r)].liq===M.WATER, HH=(q,r)=>T[at(q,r)].h;
 const nw=()=>T.filter(t=>t.liq===M.WATER).length;
 const inland=at(0,0);
 
-console.log('\n=== a flat island is dry, and its coast is damp ===');
+console.log('\n=== a fresh pot is dry, with soil already at its skirts ===');
 {
   flat();
+  const skirt=T.filter(t=>t.coast>0), mid=T.filter(t=>!t.coast);
+  console.log('   '+skirt.length+' hexes against the wall, soil '+
+    [...new Set(skirt.map(t=>+t.soil.toFixed(2)))].sort((a,b)=>a-b).join(' / ')+
+    ';   '+mid.length+' inland, soil '+[...new Set(mid.map(t=>t.soil))].join('/'));
   ok(nw()===0,'no water anywhere');
-  ok(T.filter(t=>t.coast).every(t=>t.moist>0),'every coastal hex reads damp');
-  ok(T[inland].moist===0,'the middle does not');
+  ok(T.every(t=>t.moist===0),'and no moisture either — the wall is rock, not sea');
+  ok(skirt.every(t=>t.soil>0),'the wall has shed onto every hex it touches');
+  ok(mid.every(t=>t.soil===0),'and nowhere else — the floor is still bare');
+  ok(T.every(t=>t.rel===0),'a flat floor is sloped nowhere, not even against the wall');
 }
 
-console.log('\n=== deluge on flat ground does nothing at all ===');
+console.log('\n=== THE WHOLE POT IS ONE BASIN: deluge undug ground and it fills ===');
 {
   flat();
-  for(let n=0;n<5;n++) use(inland,RN);
-  console.log('   five deluges on the same flat hex -> '+nw()+' water tiles');
-  ok(nw()===0,'the water simply runs off, every time');
-  ok(!T[inland].src,'and nothing is remembered');
+  const b=basinAt(inland);
+  console.log('   preview on the undug floor: '+b.cells.length+' hexes to level '+b.level);
+  ok(!!b && b.cells.length===T.length,'the preview rings the entire board');
+  ok(b.level===M.WALL,'it would stand level with the wall');
+  use(inland,RN);
+  console.log('   after that one click -> '+nw()+'/'+T.length+' under water');
+  ok(nw()===T.length,'and it does exactly what it said');
 }
 
 console.log('\n=== deluge fills a one-hex basin to the brim ===');
@@ -43,7 +52,7 @@ console.log('\n=== deluge fills a one-hex basin to the brim ===');
   console.log('   pit at h '+HH(0,0)+' -> water '+W(0,0)+', surface at '+T[inland].ls);
   ok(W(0,0),'one deluge fills it');
   ok(T[inland].ls===0,'and the surface sits level with the plain, at 0');
-  ok(T[inland].nb.every(j=>!T[j].w),'nothing around it flooded');
+  ok(T[inland].nb.every(j=>T[j].liq===M.NONE),'nothing around it flooded');
 }
 
 console.log('\n=== deluge one hex of a 3-hex basin, the whole basin fills ===');
@@ -85,43 +94,67 @@ console.log('\n=== dig beside a full basin and the water flows in ===');
   ok((T[c].liq===M.WATER),'and the original did not drain to pay for it');
 }
 
-console.log('\n=== raise the ground and the water goes ===');
+console.log('\n=== two pools that never touch are still ONE pool ===');
 {
+  /* A source can sit inside a basin filled from somewhere else without the
+     two ever touching. Grouping bodies by which SOURCES touch missed that:
+     both bodies wrote their own level over the shared hex and the last one
+     won, leaving a hex holding water at a level its own neighbours did not
+     share. It healed itself on the next click — once the pool had written
+     src across all its cells the groups touched — so the board was quietly
+     one click stale, and only the seed sweep at the bottom ever caught it. */
+  flat();
+  const A=at(0,0), MID=at(1,0), B=at(2,0);
+  T[A].h=2; T[MID].h=2; T[B].h=0;
+  for(const [q,r] of [[1,-1],[0,-1],[-1,0],[-1,1],[0,1],[2,-1],[1,1],[3,0],[3,-1],[2,1]])
+    T[at(q,r)].h=3;
+  flood();
+  use(B,RN);                        /* the low hollow — a small basin of its own */
+  ok(T[B].liq===M.WATER && T[MID].liq===M.NONE,'the low hollow fills on its own');
+  use(A,RN);                        /* the higher pour, whose pool engulfs it */
+  console.log('   A h'+T[A].h+' surface '+T[A].ls+'  |  middle h'+T[MID].h+
+              ' surface '+T[MID].ls+'  |  B h'+T[B].h+' surface '+T[B].ls);
+  ok([A,MID,B].every(i=>T[i].liq===M.WATER),'the bigger pour takes in all three');
+  ok(T[A].ls===T[MID].ls && T[MID].ls===T[B].ls,'and all three stand at ONE surface');
+}
+
+console.log('\n=== fill a pit, lift it back, and the POT floods ===');
+{
+  /* The sharp edge of a walled pot, and worth a test of its own because it is
+     not obvious. Water is an endless source, so lifting a full pit back to the
+     floor does not remove the water — it moves the SOURCE onto the floor, and
+     the floor's basin is the entire pot. Subduct-then-Uplift, the natural undo,
+     drowns the board. Under the old sea this same gesture just dried the hex. */
   flat();
   const c=at(0,0);
   use(c,DN); use(c,RN);
-  ok(W(0,0),'filled');
+  ok(W(0,0)&&nw()===1,'one pit, filled, and nothing else wet');
   use(c,UP);
-  console.log('   lifted back to h '+HH(0,0)+' -> '+((T[c].liq===M.WATER)?'still water':'dry'));
-  ok(!(T[c].liq===M.WATER),'no longer a basin, so no longer water');
-  ok(!T[c].src,'and it has forgotten it ever was');
+  console.log('   lifted back to h '+HH(0,0)+' -> '+nw()+'/'+T.length+' under water');
+  ok(nw()===T.length,'the source now stands on the floor, and the floor is one basin');
 }
 
-console.log('\n=== cut a channel to the sea and a lake drains ===');
+console.log('\n=== raise the floor to the brim and liquid spills over the wall ===');
 {
   flat();
-  const c=at(0,0);
-  use(c,DN); use(c,RN);
-  ok(W(0,0),'a lake at -1');
-  /* trench from the lake out to the rim, one step lower so it carries */
-  const path=[at(0,1),at(0,2),at(0,3),at(0,4),at(0,5),at(0,6)];
-  for(const i of path){ use(i,DN); }
-  console.log('   after cutting a trench to the coast: lake '+
-    ((T[c].liq===M.WATER)?'still full':'drained')+', trench '+
-    path.map(i=>T[i].liq===M.WATER?'w':'.').join(''));
-  ok(path.every(i=>T[i].liq===M.WATER),'the trench itself is at sea level, so the sea fills it');
-  ok((T[c].liq===M.WATER),'and the lake stays, being level with it');
+  for(let pass=0;pass<M.WALL;pass++) for(let i=0;i<T.length;i++) use(i,UP);
+  console.log('   floor raised to '+Math.min(...T.map(t=>t.h))+', level with the wall at '+M.WALL);
+  ok(T.every(t=>t.h===M.WALL),'the whole floor now stands at the wall height');
+  ok(basinAt(at(0,0))===null,'nothing is a basin any more — it runs over the rim');
+  use(at(0,0),RN);
+  console.log('   a deluge up there -> '+nw()+' water tiles');
+  ok(nw()===0,'so it simply spills away, and nothing is remembered');
+  ok(!T[at(0,0)].src,'no source is left behind');
 }
 
-console.log('\n=== the sea floods anything dug below it on the coast ===');
+console.log('\n=== the wall is rock, so it neither wets nor quenches ===');
 {
   flat();
   const e=T.findIndex(t=>t.coast>0);
   use(e,DN);
-  console.log('   coastal hex dug to '+T[e].h+' -> '+((T[e].liq===M.WATER)?'flooded':'dry')+
-              ', surface '+T[e].ls);
-  ok((T[e].liq===M.WATER),'the sea comes in with no deluge at all');
-  ok(T[e].ls===0,'and stands at sea level');
+  console.log('   a pit dug against the wall -> '+['dry','water','LAVA'][T[e].liq]);
+  ok(T[e].liq===M.NONE,'it stays dry — nothing seeps in from outside');
+  ok(T[e].moist===0,'and it reads no moisture from the wall beside it');
 }
 
 console.log('\n=== the preview tells the truth ===');
@@ -135,7 +168,12 @@ console.log('\n=== the preview tells the truth ===');
   ok(T.every((t,i)=>(t.liq===M.WATER)===before[i]),'and it changed nothing on the board');
   use(cells[0],RN);
   ok(T.every((t,i)=>t.liq!==M.WATER||b.cells.includes(i)),'and the real click matches');
-  ok(basinAt(at(5,-3))===null,'flat ground is not a basin');
+  /* There is no "not a basin" in a walled pot any more — undug floor is the
+     pot's own basin, to the brim. NESTING is the entire reason the little
+     hollow you dug still fills to the floor and stops there. */
+  ok(b.level===0,'the hollow fills to the floor around it, not up to the wall');
+  const whole=basinAt(at(5,-3));
+  ok(!!whole && whole.level===M.WALL,'while undug floor reports the pot itself, brim-full');
 }
 
 const LV={k:'lava',d:0};
@@ -183,16 +221,18 @@ console.log('\n=== water and lava cannot share a basin: it ends as rock ===');
   ok([c,n1].every(i=>T[i].h===0),'the ground is level with the brim');
 }
 
-console.log('\n=== pouring lava into the sea makes volcanic rock ===');
+console.log('\n=== lava against the wall does NOT set ===');
 {
+  /* Removing the sea removed one of the two routes to basalt. Pouring lava
+     into the sea used to make new land at the coast; there is no coast now,
+     and raining into a lava pool is the only way left. */
   flat();
   const e=T.findIndex(t=>t.coast>0);
-  use(e,DN);
-  ok(T[e].liq===M.WATER,'the sea floods the coastal dig');
-  use(e,LV);
-  console.log('   lava into it -> h '+T[e].h+', volcanic='+T[e].vol+
-              ', '+['dry','water','LAVA'][T[e].liq]);
-  ok(T[e].vol&&T[e].liq===M.NONE&&T[e].h===0,'new basalt land, level with the sea');
+  use(e,DN); use(e,LV);
+  console.log('   lava in a pit against the wall -> h '+T[e].h+
+              ', volcanic='+T[e].vol+', '+['dry','water','LAVA'][T[e].liq]);
+  ok(T[e].liq===M.LAVA,'it stays lava');
+  ok(!T[e].vol,'the wall is rock, not water, so nothing quenches it');
 }
 
 console.log('\n=== deluge onto a lava pool sets it too ===');
@@ -264,6 +304,8 @@ console.log('\n=== nothing runs away, and the board is a pure function ===');
   console.log('   after 900 clicks: '+nw()+' water tiles');
   ok(T.every(t=>Math.abs(t.h)<=M.R*2),'heights stay sane');
   ok(T.every(t=>t.liq===M.NONE||t.ls>=t.h),'no liquid surface below its own bed');
+  ok(T.every(t=>t.liq===M.NONE||t.nb.every(j=>j<0||T[j].liq!==t.liq||T[j].ls===t.ls)),
+     'adjacent hexes holding the same liquid always share one surface');
   const snap=T.map(t=>t.liq+'/'+t.ls+'/'+t.h);
   for(let n=0;n<5;n++) flood();
   ok(T.map(t=>t.liq+'/'+t.ls+'/'+t.h).join()===snap.join(),
@@ -274,11 +316,14 @@ console.log('\n=== nothing runs away, and the board is a pure function ===');
 const SD={k:'seed',d:0};
 const soil=(q,r)=>T[at(q,r)].soil;
 
-console.log('\n=== a flat island has no soil at all ===');
+console.log('\n=== a fresh pot has soil only at its skirts ===');
 {
   flat();
   console.log('   hexes with any soil: '+T.filter(t=>t.soil>0).length+' of '+T.length);
-  ok(T.every(t=>t.soil===0),'nothing to grow in until you make some relief');
+  ok(T.filter(t=>!t.coast).every(t=>t.soil===0),
+     'the floor makes none of its own until you give it some relief');
+  ok(T.filter(t=>t.coast>0).every(t=>t.soil>0),
+     'but the wall has already fed its skirts — that is the starting condition');
 }
 
 console.log('\n=== soil gathers at the FOOT of high ground, not on it ===');
@@ -332,24 +377,37 @@ console.log('\n=== soil is a pure function of the shape ===');
 }
 
 /* ================= LIFE ================= */
-console.log('\n=== nothing will grow on a bare island ===');
+console.log('\n=== nothing will grow in a bare pot ===');
 {
   flat();
-  ok(T.every(t=>!M.habit(t)),'no hex is habitable');
+  ok(T.every(t=>!M.habit(t)),'no hex is habitable — the skirts have soil but no water');
   ok(!use(at(0,0),SD),'and a seed simply does not take');
 }
 
-console.log('\n=== a mountain by the sea makes somewhere to live ===');
+/* The standing recipe for somewhere to live, now that there is no sea to
+   supply moisture for free: a tall peak for soil, and a hollow dug and filled
+   below it for water. The peak has to be TALL — 9 — because soil is the scarce
+   half of the pair once the coast stops weathering. */
+const LIFE=()=>{
+  flat();
+  const peak=at(1,-2);
+  for(let n=0;n<9;n++) use(peak,UP);
+  use(at(0,0),DN); use(at(1,0),DN); use(at(0,0),RN);
+  return peak;
+};
+
+console.log('\n=== a mountain AND a lake make somewhere to live ===');
 {
   flat();
-  /* a peak two hexes in from the rim: its foot gets soil, the sea gives it water */
-  const peak=T.findIndex(t=>t.coast===0 && t.nb.some(j=>j>=0&&T[j].coast>0));
-  for(let n=0;n<6;n++) use(peak,UP);
+  const peak=at(1,-2);
+  for(let n=0;n<9;n++) use(peak,UP);
+  ok(T.every(t=>!M.habit(t)),'a mountain on its own is not enough — the pot is dry');
+  use(at(0,0),DN); use(at(1,0),DN); use(at(0,0),RN);
   const good=T.map((t,i)=>i).filter(i=>M.habit(T[i]));
-  console.log('   peak of '+T[peak].h+' beside the coast -> habitable hexes: '+good.length+
-    '   (soil '+good.map(i=>T[i].soil.toFixed(1)).join(',')+
+  console.log('   peak of '+T[peak].h+' with a two-hex lake below it -> habitable: '+good.length+
+    '   (soil '+good.map(i=>T[i].soil.toFixed(2)).join(',')+
     ' | moisture '+good.map(i=>T[i].moist).join(',')+')');
-  ok(good.length>0,'somewhere is now habitable');
+  ok(good.length>0,'dig a hollow beside it and fill it, and somewhere becomes habitable');
   ok(good.every(i=>T[i].soil>=1&&T[i].moist>=1),'each has both soil and water');
   const took=good.length?use(good[0],SD):false;
   console.log('   after one seed: '+T.filter(t=>t.life).length+' hexes are alive');
@@ -381,25 +439,24 @@ console.log('\n=== life remembers itself, and can be cut in two ===');
 
 console.log('\n=== lava kills what it touches ===');
 {
-  flat();
-  const peak=T.findIndex(t=>t.coast===0 && t.nb.some(j=>j>=0&&T[j].coast>0));
-  for(let n=0;n<5;n++) use(peak,UP);
+  LIFE();
   const good=T.map((t,i)=>i).filter(i=>M.habit(T[i]));
   if(good.length) use(good[0],SD);
   const n0=T.filter(t=>t.life).length;
   ok(n0>0,'a living patch');
-  /* dig a pit against a living hex and fill it with lava. It has to be
-     INLAND and low — a coastal pit floods from the sea and would quench the
-     lava the moment it arrived. */
+  /* dig a pit against a living hex and fill it with lava. It must not touch
+     the lake — two adjacent basins are one basin, so the water would arrive
+     with the lava and quench it on the spot. */
   let victim=-1, pit=-1;
   for(let i=0;i<T.length && pit<0;i++){
     if(!T[i].life) continue;
     for(const j of T[i].nb){
-      if(j<0||T[j].coast>0||T[j].life||T[j].h>0) continue;
+      if(j<0||T[j].life||T[j].liq!==M.NONE||T[j].h>0) continue;
+      if(T[j].nb.some(k=>k>=0&&T[k].liq===M.WATER)) continue;   /* not beside water */
       victim=i; pit=j; break;
     }
   }
-  ok(pit>=0,'found somewhere inland to open a vent');
+  ok(pit>=0,'found somewhere dry to open a vent');
   use(pit,DN); use(pit,LV);
   console.log('   lava next door: '+n0+' alive -> '+T.filter(t=>t.life).length+
               '   (pit is '+['dry','water','LAVA'][T[pit].liq]+
@@ -473,9 +530,7 @@ console.log('\n=== water drives the weathering ===');
 
 console.log('\n=== life binds the ground it stands on ===');
 {
-  flat();
-  const peak=T.findIndex(t=>t.coast===0 && t.nb.some(j=>j>=0&&T[j].coast>0));
-  for(let n=0;n<6;n++) use(peak,UP);
+  LIFE();
   const good=T.map((t,i)=>i).filter(i=>M.habit(T[i]));
   ok(good.length>0,'somewhere is habitable');
   const before=good.map(i=>T[i].soil);
@@ -502,6 +557,59 @@ console.log('\n=== and the whole thing is still a pure function ===');
   ok(T.map(t=>[t.h,t.vol,t.liq,t.ls,t.soil.toFixed(6),t.life].join('/')).join()===snap,
      'solving again from the same ground gives the same world, to six decimals');
   ok(T.every(t=>t.soil>=0&&t.soil<=5),'soil always sits in 0-5');
+}
+
+console.log('\n=== a pool never stands at two surfaces, at ANY point in play ===');
+{
+  /* The split pool healed itself on the very next click, so looking at the
+     END of a run almost never saw it — 0/200 boards. Looking after EVERY
+     click sees it on 11 boards in 40. That gap is the whole lesson: the
+     state was reachable constantly and observable almost never, and the
+     only thing that ever caught it was a board that happened to stop while
+     it was still broken. Cheap, so check every click. */
+  let boards=0, hits=0;
+  for(let seed=1;seed<=40;seed++){
+    flat();
+    let z=seed; const rnd=()=>{z^=z<<13;z^=z>>>17;z^=z<<5;return((z>>>0)/4294967296)};
+    let hit=false;
+    for(let n=0;n<800;n++){
+      use(Math.floor(rnd()*T.length),[UP,DN,RN,LV,SD][Math.floor(rnd()*5)]);
+      if(!T.every(t=>t.liq===M.NONE ||
+          t.nb.every(j=>j<0||T[j].liq!==t.liq||T[j].ls===t.ls))){ hits++; hit=true; }
+    }
+    if(hit) boards++;
+  }
+  console.log('   40 boards x 800 clicks, checked after every single click -> '+
+              hits+' clicks left a pool split across two surfaces');
+  ok(boards===0,'no pool is ever left standing at two different surfaces');
+}
+
+console.log('\n=== and it is still one on EVERY board, not just a lucky one ===');
+{
+  /* One seed can be lucky. This suite was green on seeds 31 and 77 for a long
+     while, and all the time roughly one board in sixteen was quietly drifting.
+     So sweep a FIXED range instead of trusting a single roll. Fixed, because a
+     suite that fails only sometimes is worse than one that passes by luck —
+     this either fails every run or never. ~3s. */
+  const BAD=[]; let worst=0;
+  for(let seed=1;seed<=200;seed++){
+    flat();
+    let z=seed; const rnd=()=>{z^=z<<13;z^=z>>>17;z^=z<<5;return((z>>>0)/4294967296)};
+    for(let n=0;n<800;n++)
+      use(Math.floor(rnd()*T.length),[UP,DN,RN,LV,SD][Math.floor(rnd()*5)]);
+    const cell=t=>[t.h,t.vol,t.liq,t.ls,t.soil.toFixed(6),t.life].join('/');
+    const snap=T.map(cell).join(), was=T.map(t=>t.soil);
+    for(let n=0;n<4;n++) flood();
+    if(T.map(cell).join()!==snap){
+      let d=0; T.forEach((t,i)=>{const x=Math.abs(t.soil-was[i]); if(x>d) d=x;});
+      if(d>worst) worst=d;
+      BAD.push(seed);
+    }
+  }
+  console.log('   200 boards x 800 mixed clicks -> '+BAD.length+' moved when left alone'+
+    (BAD.length?'   (seed'+(BAD.length>1?'s':'')+' '+BAD.join(' ')+
+     ', worst soil drift '+worst.toFixed(3)+' of 5)':''));
+  ok(BAD.length===0,'leave any board alone and nothing moves');
 }
 
 console.log('\n=== BASINS NEST: you choose the scale by where you click ===');
