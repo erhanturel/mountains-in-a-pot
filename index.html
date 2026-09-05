@@ -102,26 +102,28 @@ import { OrbitControls } from './vendor/addons/controls/OrbitControls.js';
 
    THE RULES
      A hex is a BASIN if a liquid put on it could not get away — if it must
-     rise above its own ground to escape. Off the rim is the WALL of the pot,
-     bare rock at height 5, which nothing can change.
+     rise above its own ground to escape. Off the rim is the VOID — the
+     board is a disc floating in space, and anything reaching an edge falls
+     off it.
      DELUGE fills the connected basin you click with water, to the brim —
      and basins NEST, so the water rises only to the first rim it meets.
      LAVA fills that same basin with lava instead. Off a basin, neither does
      anything: it runs away.
-     The floor starts below the wall, so THE WHOLE POT IS ONE BASIN. Deluge
-     undug ground and it fills to the brim, all of it. Only ground raised
-     level with the wall lets a liquid spill over and be lost.
      Lava that TOUCHES WATER — a lake, or water poured onto it —
      sets on the spot into VOLCANIC ROCK, level with the basin's brim. That
      is the only way volcanic rock is ever made, and the only thing that
      ever removes lava.
    ====================================================================== */
-/* Off the rim is not sea any more — it is the WALL of the pot: bare rock at
-   this height, all the way round, and nothing the player has can touch it.
-   It stands above the floor, so the whole pot is one basin: aim Deluge at
-   undug ground and it fills to the brim. The preview rings all 127 hexes
-   when that is what a click would do. */
-const R=6, H_MAX=12, WALL=5;
+/* THE EDGE IS THE VOID. There was a sea here once, then a wall standing at
+   5 that replaced it. The wall stood ABOVE the floor, which made the whole
+   board one basin — one Deluge drowned all 127 hexes, any hollow dug near a
+   hill flooded to the brim, and rivers had nowhere on earth to drain, so the
+   priority flood had to be seeded from the lowest cell to mean anything.
+
+   Now the board is a disc in open space. Anything that reaches an edge goes
+   over it. That gives the outlet back and deletes that whole class of
+   problem at once. */
+const R=6, H_MAX=12;
 const NONE=0, WATER=1, LAVA=2;
 const DIRS=[[1,0],[1,-1],[0,-1],[-1,0],[-1,1],[0,1]];   /* E NE NW W SW SE */
 
@@ -218,7 +220,7 @@ function fillFrom(seeds){
      shallow seed with its own surface below its own bed. */
   let level=-Infinity;
   for(const s of seeds) level=Math.max(level,T[s].h);
-  const hOf = x => x<0 ? WALL : T[x].h;         /* off the rim is the pot wall */
+  const hOf = x => x<0 ? -Infinity : T[x].h;    /* off the rim is nothing at all */
   const fr=[];
   const spread=i=>{ for(const j of T[i].nb) if(j<0||!inS.has(j)) fr.push(j); };
   for(const s of seeds) spread(s);
@@ -230,9 +232,8 @@ function fillFrom(seeds){
     /* the lowest thing around us stands higher: that is the rim, and the
        liquid rests against it */
     if(hOf(f)>level) return {cells:[...inS], level:hOf(f), open:false};
-    /* it reached the wall at or above its own level — it spills over and is
-       lost. Only possible once the ground has been raised level with the rim. */
-    if(f<0) return {cells:[...inS], level:WALL, open:true};
+    /* it reached an edge: over it goes, and it is gone */
+    if(f<0) return {cells:[...inS], level:0, open:true};
     inS.add(f); spread(f);
   }
   return {cells:[...inS], level, open:true};
@@ -360,21 +361,12 @@ function flood(){
    grew a lopsided apron, always to the east. Determinism is the point;
    a fixed direction winning is not.
    --------------------------------------------------------------------- */
-/* Off the rim is the wall, so for sediment it is simply ground at WALL.
-   It stands above the floor, which means nothing washes out of the pot —
-   what the wall sheds, the pot keeps. */
-const BED=WALL, RATE=0.35, SOIL_MAX=5;
+/* Off the rim counts as ground at 0 for sediment. Putting it any lower made
+   every edge hex read as sloped, so it carried everything straight over the
+   side and an edge plain could never hold soil. */
+const BED=0, RATE=0.35, SOIL_MAX=5;
 function soils(){
   const n=T.length, load=new Array(n).fill(0), fall=[];
-  /* THE SKIRTS. The wall is rock like any other, and it weathers like any
-     other: each face standing above a hex hands that hex what it sheds,
-     by the same D x RATE the rest of the board uses. Freshly weathered rock
-     always moves on, so the wall keeps none of it. This is why a fresh pot
-     is not bare — there is soil at its skirts before you touch anything. */
-  for(let i=0;i<n;i++){
-    const drop = WALL - T[i].h;
-    if(drop>0) load[i] += T[i].coast * drop * RATE;
-  }
   for(let i=0;i<n;i++){
     const d=[]; let D=0;
     for(let k=0;k<6;k++){
@@ -678,16 +670,6 @@ function use(i,p){
    ====================================================================== */
 const RISE=0.34;                 /* one height step, in hex radii */
 const BASE=-H_MAX-1;             /* every column is solid rock down to here */
-/* the wall of the pot: one ring beyond the board, standing at WALL. It is
-   drawn but is not in T, so it can never be picked or changed. */
-const RIM=[];
-for(let q=-R-1;q<=R+1;q++){
-  const lo=Math.max(-R-1,-q-R-1), hi=Math.min(R+1,-q+R+1);
-  for(let r=lo;r<=hi;r++)
-    if((Math.abs(q)+Math.abs(r)+Math.abs(q+r))/2===R+1)
-      RIM.push({x:Math.sqrt(3)*(q+r/2), y:1.5*r});
-}
-const NW=RIM.length;             /* wall hexes: drawn, never clickable */
 
 /* the powers menu — the five things a click can be */
 const POWERS=[
@@ -752,7 +734,7 @@ const prism=new THREE.CylinderGeometry(1,1,1,6);
    today so this draws exactly what it drew before — but a carved column has
    several, and the count has to be able to grow. Worst case is alternating
    cells, so half a stack per column. */
-const MAXRUN=T.length*Math.ceil(ZN/2)+NW;
+const MAXRUN=T.length*Math.ceil(ZN/2);
 const instHex=new Int16Array(MAXRUN).fill(-1);
 const ground=new THREE.InstancedMesh(
   prism, new THREE.MeshLambertMaterial(), MAXRUN);
@@ -826,7 +808,6 @@ function tint(t){
   C.setRGB(c[0]/255,c[1]/255,c[2]/255);
   return C;
 }
-const WALLTILE={h:WALL,vol:false,soil:0,life:false,liq:NONE,moist:0};
 
 function rebuild(){
   let n=0;
@@ -850,14 +831,6 @@ function rebuild(){
       place(lava,i,t.x,t.y,t.h*RISE,Math.max(t.ls*RISE,t.h*RISE+0.05));
       hide(water,i);
     } else { hide(water,i); hide(lava,i); }
-  }
-  for(let k=0;k<NW;k++){
-    const c=RIM[k];
-    place(ground,n,c.x,c.y,BASE*RISE,WALL*RISE);
-    ground.setColorAt(n,tint(WALLTILE));
-    rim(n,c.x,c.y,WALL*RISE+0.004);
-    instHex[n]=-1;              /* the wall is never a hex you can pick */
-    n++;
   }
   for(let k=n;k<MAXRUN;k++){ hide(ground,k); rim(k,0,-999,0); }
   ground.count=n;
