@@ -45,6 +45,12 @@
     stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
   .pw.on{border-left-color:#c9a86a;color:#e5dcc8;background:#171510}
   .pw.on svg{stroke:#c9a86a}
+  .rates{display:flex;border-top:1px solid #12161c}
+  .rt{flex:1;padding:7px 0;background:none;border:0;border-right:1px solid #12161c;
+    color:#6f7681;font-family:inherit;font-size:11px;letter-spacing:.5px;cursor:pointer}
+  .rt:last-child{border-right:none}
+  .rt:hover{background:#12151b}
+  .rt.on{color:#c9a86a;background:#171510}
 </style>
 </head>
 <body>
@@ -71,6 +77,13 @@
         <button class="pw" id="ovMoist"><svg viewBox="0 0 18 18">
           <path d="M9 2.2c3.1 3.6 4.7 5.9 4.7 7.9a4.7 4.7 0 0 1-9.4 0c0-2 1.6-4.3 4.7-7.9z"/>
           </svg><span>Moisture</span></button>
+      </div>
+      <div class="menu" style="margin-top:14px">
+        <h2>Time</h2>
+        <button class="pw" id="stepBtn"><svg viewBox="0 0 18 18">
+          <circle cx="9" cy="9" r="7"/><path d="M9 4.3V9l3.2 2.1"/></svg>
+          <span>Pass time</span></button>
+        <div class="rates" id="rates"></div>
       </div>
     </div>
   </div>
@@ -528,100 +541,92 @@ function levelFor(cells, vol, cap){
   return Math.min(level,cap);
 }
 
-/* Settle every drop: run the loose water downhill into hollows, stand each
-   hollow at the level its volume gives it, and when one BRIMS hand the
-   excess to the next hollow down rather than throwing it away.
+/* Settle every drop.
 
-   That cascade is what makes a chain of lakes: the top one fills, spills
-   over its own lowest saddle, and the one below starts filling. Spills only
-   ever go to strictly lower ground, so the rounds cannot cycle and there is
-   nothing to converge — it simply runs out of places to put water. The last
-   spill in any chain goes over the edge of the board. */
+   EVERY column belongs to a REGION: the connected run sharing its escape
+   level. A hollow and the rim it escapes over are one region. So is a whole
+   flat plain. A region holds whatever fits below its escape level and hands
+   the rest to the lowest ground just outside — which always has a strictly
+   lower escape level, so spills cannot circle and there is nothing to
+   converge. The last spill in any chain goes over the edge of the board.
+
+   This replaced a per-column routing pass that walked water downhill by
+   steepest descent. That pass could not move water across LEVEL ground: on a
+   plain every neighbour is the same height, nothing is downhill, and the
+   water was quietly deleted. A basin that brimmed lost its overflow instead
+   of spreading it, and the total on the board stopped being conserved.
+   Regions have no such hole — a plain is one region, and it spills off the
+   edge because that is the only lower thing it touches.
+
+   Ground DRINKS WHAT CROSSES IT. Water handed from one region to the next
+   soaks into the receiving ground up to its capacity before any of it moves
+   on, so an overflow wets the land it runs over instead of teleporting to
+   the sea. */
 function settle(){
   const n=T.length, esc=escapes();
   const free=T.map(t=>t.pool);
   for(const t of T) t.pool=0;
 
-  /* the hollows: connected runs sharing an escape level, each with the
-     volume it can hold and the way out it takes when it is full */
-  const hid=new Array(n).fill(-1), hollows=[];
+  const rid=new Array(n).fill(-1), regs=[];
   for(let i=0;i<n;i++){
-    if(hid[i]>=0 || !(esc[i]>T[i].h+1e-9)) continue;
-    const k=hollows.length, cells=[i], q=[i]; hid[i]=k;
+    if(rid[i]>=0) continue;
+    const k=regs.length, cells=[i], q=[i]; rid[i]=k;
     while(q.length){
       const c=q.pop();
-      for(const j of T[c].nb){
-        if(j<0||hid[j]>=0) continue;
-        if(!(esc[j]>T[j].h+1e-9) || esc[j]!==esc[c]) continue;
-        hid[j]=k; cells.push(j); q.push(j);
-      }
+      for(const j of T[c].nb)
+        if(j>=0 && rid[j]<0 && esc[j]===esc[c]){ rid[j]=k; cells.push(j); q.push(j); }
     }
-    const E=esc[i];
-    let brim=0;
-    for(const c of cells) brim+=Math.max(0,E-T[c].h);
-    /* Where it spills: simply the lowest ground just outside it, which may
-       be another hollow and may be the void.
-
-       Note there is no test against E here, and there must not be. The
-       saddle a hollow escapes over sits at EXACTLY its escape level — that
-       is what makes it the way out — so demanding a strictly lower
-       neighbour found nothing at all and every hollow quietly binned its
-       overflow. The saddle is not itself a hollow, so the water lands there
-       and runs on down the next round. */
-    let bE=Infinity, bH=Infinity, spill=[];
-    for(const c of cells) for(const j of T[c].nb){
-      if(j>=0 && hid[j]===k) continue;
+    let brim=0, vol=0;
+    for(const c of cells){ brim+=Math.max(0,esc[i]-T[c].h); vol+=free[c]; }
+    regs.push({k,cells,E:esc[i],brim,vol,spill:[]});
+  }
+  /* the way out of each region: the lowest ground just outside it, by escape
+     level and then by ground. The saddle a hollow escapes over sits at
+     exactly its own escape level, so there is deliberately no test against
+     E here — demanding something strictly lower finds nothing at all. */
+  for(const R of regs){
+    let bE=Infinity, bH=Infinity;
+    for(const c of R.cells) for(const j of T[c].nb){
+      if(j>=0 && rid[j]===R.k) continue;
       const e  = j<0 ? -Infinity : esc[j];
       const hh = j<0 ? -Infinity : T[j].h;
-      if(e<bE || (e===bE && hh<bH)){ bE=e; bH=hh; spill=[j]; }
-      else if(e===bE && hh===bH && !spill.includes(j)) spill.push(j);
+      if(e<bE || (e===bE && hh<bH)){ bE=e; bH=hh; R.spill=[j]; }
+      else if(e===bE && hh===bH && !R.spill.includes(j)) R.spill.push(j);
     }
-    hollows.push({cells,E,brim,spill,vol:0});
   }
-
-  /* high ground first, so a column has everything it is going to get before
-     it hands any on. Equal ground never exchanges, so order cannot matter. */
-  const order=T.map((t,i)=>i).sort((a,b)=>esc[b]-esc[a]||a-b);
   for(let round=0; round<64; round++){
-    for(const i of order){
-      if(free[i]<=0) continue;
-      if(hid[i]>=0){ hollows[hid[i]].vol+=free[i]; free[i]=0; continue; }
-      /* Downhill is (escape level, then ground) — BOTH, and in that order.
-         Escape level alone is not enough: a hollow and the drain column
-         beside it share one, because that IS what an escape level means. On
-         escape alone water reached the drain and stopped one hex short of
-         the hollow, and no lake below another ever filled. Ground breaks
-         that tie, and the pair strictly decreases along any route, so
-         nothing can circle. */
-      let bE=Infinity, bH=Infinity, outs=[];
-      for(const j of T[i].nb){
-        const e  = j<0 ? -Infinity : esc[j];   /* off the board is bottomless */
-        const hh = j<0 ? -Infinity : T[j].h;
-        if(e>esc[i] || (e===esc[i] && hh>=T[i].h)) continue;
-        if(e<bE || (e===bE && hh<bH)){ bE=e; bH=hh; outs=[j]; }
-        else if(e===bE && hh===bH) outs.push(j);
+    let moved=false;
+    for(const R of regs){
+      if(R.vol<=R.brim+1e-9) continue;
+      /* THE REGION'S OWN GROUND DRINKS FIRST, and it drinks in proportion to
+         how much room each column has left. A flat plain is ONE region, so
+         water crossing it never touches the columns one at a time — without
+         this, an overflow ran off the edge and left the whole plain dry but
+         for the hex under the cloud. Proportional rather than in array
+         order: handing it out cell by cell would wet low-numbered hexes
+         first, which is the same lopsided-apron bias that once made a
+         symmetric peak shed east. */
+      let room=0;
+      for(const c of R.cells) room+=Math.max(0,soakCap(T[c])-T[c].soak);
+      if(room>1e-12){
+        const give=Math.min(room,R.vol-R.brim), f=give/room;
+        for(const c of R.cells) T[c].soak+=Math.max(0,soakCap(T[c])-T[c].soak)*f;
+        R.vol-=give;
       }
-      const got=free[i]; free[i]=0;
-      if(!outs.length) continue;
-      const share=got/outs.length;
-      for(const j of outs) if(j>=0) free[j]+=share;   /* j<0 went over the side */
+      if(R.vol<=R.brim+1e-9 || !R.spill.length) continue;
+      const over=R.vol-R.brim; R.vol=R.brim;
+      const share=over/R.spill.length;
+      for(const j of R.spill){
+        if(j<0) continue;                       /* over the side, and gone */
+        regs[rid[j]].vol+=share; moved=true;
+      }
     }
-    let spilled=false;
-    for(const H of hollows){
-      if(H.vol<=H.brim+1e-9) continue;
-      const over=H.vol-H.brim;
-      H.vol=H.brim;
-      if(!H.spill.length) continue;
-      const share=over/H.spill.length;
-      for(const j of H.spill) if(j>=0){ free[j]+=share; spilled=true; }
-    }
-    if(!spilled) break;
+    if(!moved) break;
   }
-
-  for(const H of hollows){
-    if(H.vol<=0) continue;
-    const level=levelFor(H.cells,H.vol,H.E);
-    for(const c of H.cells){ const d=level-T[c].h; if(d>0) T[c].pool=d; }
+  for(const R of regs){
+    if(R.vol<=0) continue;
+    const level=levelFor(R.cells,R.vol,R.E);
+    for(const c of R.cells){ const d=level-T[c].h; if(d>0) T[c].pool=d; }
   }
 }
 
@@ -630,7 +635,14 @@ function tick(){
   for(let i=0;i<T.length;i++)
     if(CELL[i*ZN+CLOUD_Z]===CLOUD) T[i].pool+=RAINFALL;
   for(const t of T){
-    const room=Math.max(0,soakCap(t)-t.soak);
+    const cap=soakCap(t);
+    /* Capacity can FALL — it is built on soil, and soil is derived from
+       relief and moisture, so it drops when a hex dries out. Water already
+       in the ground was stranded above the new ceiling with no way back:
+       the panel read "soaked 2.20 / 1.09" and that water could never come
+       out again. Ground that can no longer hold it gives it back. */
+    if(t.soak>cap){ t.pool+=t.soak-cap; t.soak=cap; }
+    const room=Math.max(0,cap-t.soak);
     const drink=Math.min(room,t.pool);
     t.soak+=drink; t.pool-=drink;
   }
@@ -978,6 +990,22 @@ function drawMenu(){
 const ovMoist=document.getElementById('ovMoist');
 ovMoist.onclick=()=>{ SHOW_MOIST=!SHOW_MOIST;
   ovMoist.classList.toggle('on',SHOW_MOIST); rebuild(); };
+/* Passing time WITHOUT acting. Every power click is already a tick — the
+   weather runs while you sculpt — but watching a basin fill needed something
+   to do that was not also changing the ground. */
+let STEP=1;
+const RATES=[1,2,5,10,100];
+function drawRates(){
+  document.getElementById('rates').innerHTML=RATES.map(r=>
+    '<button class="rt'+(r===STEP?' on':'')+'" data-r="'+r+'">'+r+'×</button>').join('');
+  document.querySelectorAll('#rates .rt').forEach(b=>b.onclick=()=>{
+    STEP=+b.dataset.r; drawRates(); });
+}
+document.getElementById('stepBtn').onclick=()=>{
+  for(let k=0;k<STEP;k++) tick();
+  rebuild(); hover(HOVER);
+};
+
 const ovProj=document.getElementById('ovProj');
 ovProj.onclick=()=>{ ortho=!ortho;
   ovProj.classList.toggle('on',!ortho);
@@ -999,7 +1027,7 @@ window.POT={T,at,flood,use,tick,settle,rebuild,basinAt,habit,POWERS,scene,
    now, and the two must never be confused. */
 function frame(){ controls.update(); renderer.render(scene,cam);
   requestAnimationFrame(frame); }
-drawMenu(); flood(); rebuild(); resize(); drawInfo(); frame();
+drawMenu(); drawRates(); flood(); rebuild(); resize(); drawInfo(); frame();
 </script>
 </body>
 </html>
