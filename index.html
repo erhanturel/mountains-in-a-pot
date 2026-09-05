@@ -528,52 +528,100 @@ function levelFor(cells, vol, cap){
   return Math.min(level,cap);
 }
 
-/* Settle every drop: run the free water downhill into hollows, then stand
-   each hollow at the level its volume gives it. Anything that reaches an
-   edge, or brims a hollow, goes over the side and is gone.
+/* Settle every drop: run the loose water downhill into hollows, stand each
+   hollow at the level its volume gives it, and when one BRIMS hand the
+   excess to the next hollow down rather than throwing it away.
 
-   KNOWN GAP: a hollow that brims does not cascade into the next hollow
-   downstream — the excess simply leaves. Chains of lakes want that and do
-   not have it yet. */
+   That cascade is what makes a chain of lakes: the top one fills, spills
+   over its own lowest saddle, and the one below starts filling. Spills only
+   ever go to strictly lower ground, so the rounds cannot cycle and there is
+   nothing to converge — it simply runs out of places to put water. The last
+   spill in any chain goes over the edge of the board. */
 function settle(){
   const n=T.length, esc=escapes();
   const free=T.map(t=>t.pool);
   for(const t of T) t.pool=0;
-  /* high ground first, so a column has all it is going to get before it
-     hands anything on. Ties never exchange, so the order cannot matter. */
-  const order=T.map((t,i)=>i).sort((a,b)=>esc[b]-esc[a]||a-b);
-  const held=new Array(n).fill(0);
-  for(const i of order){
-    if(free[i]<=0) continue;
-    if(esc[i]>T[i].h+1e-9){ held[i]+=free[i]; free[i]=0; continue; }  /* a hollow */
-    let best=Infinity, outs=[];
-    for(const j of T[i].nb){
-      const e = j<0 ? -Infinity : esc[j];      /* off the board is bottomless */
-      if(e>=esc[i]) continue;
-      if(e<best){ best=e; outs=[j]; } else if(e===best) outs.push(j);
-    }
-    if(!outs.length){ held[i]+=free[i]; free[i]=0; continue; }
-    const share=free[i]/outs.length;
-    for(const j of outs) if(j>=0) free[j]+=share;   /* j<0 goes over the edge */
-    free[i]=0;
-  }
-  /* hollows are the connected runs that share an escape level */
-  const seen=new Array(n).fill(false);
+
+  /* the hollows: connected runs sharing an escape level, each with the
+     volume it can hold and the way out it takes when it is full */
+  const hid=new Array(n).fill(-1), hollows=[];
   for(let i=0;i<n;i++){
-    if(seen[i] || !(esc[i]>T[i].h+1e-9)) continue;
-    const cells=[i], q=[i]; seen[i]=true;
-    let vol=held[i];
+    if(hid[i]>=0 || !(esc[i]>T[i].h+1e-9)) continue;
+    const k=hollows.length, cells=[i], q=[i]; hid[i]=k;
     while(q.length){
-      const k=q.pop();
-      for(const j of T[k].nb){
-        if(j<0||seen[j]) continue;
-        if(!(esc[j]>T[j].h+1e-9) || esc[j]!==esc[k]) continue;
-        seen[j]=true; cells.push(j); q.push(j); vol+=held[j];
+      const c=q.pop();
+      for(const j of T[c].nb){
+        if(j<0||hid[j]>=0) continue;
+        if(!(esc[j]>T[j].h+1e-9) || esc[j]!==esc[c]) continue;
+        hid[j]=k; cells.push(j); q.push(j);
       }
     }
-    if(vol<=0) continue;
-    const level=levelFor(cells,vol,esc[i]);
-    for(const c of cells){ const d=level-T[c].h; if(d>0) T[c].pool=d; }
+    const E=esc[i];
+    let brim=0;
+    for(const c of cells) brim+=Math.max(0,E-T[c].h);
+    /* Where it spills: simply the lowest ground just outside it, which may
+       be another hollow and may be the void.
+
+       Note there is no test against E here, and there must not be. The
+       saddle a hollow escapes over sits at EXACTLY its escape level — that
+       is what makes it the way out — so demanding a strictly lower
+       neighbour found nothing at all and every hollow quietly binned its
+       overflow. The saddle is not itself a hollow, so the water lands there
+       and runs on down the next round. */
+    let bE=Infinity, bH=Infinity, spill=[];
+    for(const c of cells) for(const j of T[c].nb){
+      if(j>=0 && hid[j]===k) continue;
+      const e  = j<0 ? -Infinity : esc[j];
+      const hh = j<0 ? -Infinity : T[j].h;
+      if(e<bE || (e===bE && hh<bH)){ bE=e; bH=hh; spill=[j]; }
+      else if(e===bE && hh===bH && !spill.includes(j)) spill.push(j);
+    }
+    hollows.push({cells,E,brim,spill,vol:0});
+  }
+
+  /* high ground first, so a column has everything it is going to get before
+     it hands any on. Equal ground never exchanges, so order cannot matter. */
+  const order=T.map((t,i)=>i).sort((a,b)=>esc[b]-esc[a]||a-b);
+  for(let round=0; round<64; round++){
+    for(const i of order){
+      if(free[i]<=0) continue;
+      if(hid[i]>=0){ hollows[hid[i]].vol+=free[i]; free[i]=0; continue; }
+      /* Downhill is (escape level, then ground) — BOTH, and in that order.
+         Escape level alone is not enough: a hollow and the drain column
+         beside it share one, because that IS what an escape level means. On
+         escape alone water reached the drain and stopped one hex short of
+         the hollow, and no lake below another ever filled. Ground breaks
+         that tie, and the pair strictly decreases along any route, so
+         nothing can circle. */
+      let bE=Infinity, bH=Infinity, outs=[];
+      for(const j of T[i].nb){
+        const e  = j<0 ? -Infinity : esc[j];   /* off the board is bottomless */
+        const hh = j<0 ? -Infinity : T[j].h;
+        if(e>esc[i] || (e===esc[i] && hh>=T[i].h)) continue;
+        if(e<bE || (e===bE && hh<bH)){ bE=e; bH=hh; outs=[j]; }
+        else if(e===bE && hh===bH) outs.push(j);
+      }
+      const got=free[i]; free[i]=0;
+      if(!outs.length) continue;
+      const share=got/outs.length;
+      for(const j of outs) if(j>=0) free[j]+=share;   /* j<0 went over the side */
+    }
+    let spilled=false;
+    for(const H of hollows){
+      if(H.vol<=H.brim+1e-9) continue;
+      const over=H.vol-H.brim;
+      H.vol=H.brim;
+      if(!H.spill.length) continue;
+      const share=over/H.spill.length;
+      for(const j of H.spill) if(j>=0){ free[j]+=share; spilled=true; }
+    }
+    if(!spilled) break;
+  }
+
+  for(const H of hollows){
+    if(H.vol<=0) continue;
+    const level=levelFor(H.cells,H.vol,H.E);
+    for(const c of H.cells){ const d=level-T[c].h; if(d>0) T[c].pool=d; }
   }
 }
 
