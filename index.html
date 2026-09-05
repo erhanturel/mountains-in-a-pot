@@ -131,9 +131,64 @@ for(let q=-R;q<=R;q++){
   for(let r=lo;r<=hi;r++){
     idx.set(q+','+r,T.length);
     T.push({q,r,x:Math.sqrt(3)*(q+r/2),y:1.5*r,
-            h:0,vol:false,src:NONE,seed:false,
+            src:NONE,seed:false,
             liq:NONE,ls:0,moist:0,temp:0,rel:0,soil:0,life:false});
   }
+}
+
+/* ---------------------------------------------------------------------
+   THE STACK.
+
+   A column is no longer one number. It is a run of CELLS, one per level,
+   each of them air or rock or basalt. `h` and `vol` are now ACCESSORS over
+   that stack: every rule that read a height still reads a height, every rule
+   that wrote one still writes one, and none of them know anything changed.
+   The encoding moved; the interface did not.
+
+   That is the whole of this step, deliberately. Caves and overhangs are
+   impossible with one height per column — but they are also impossible to
+   check against what came before, so the storage changes here and NOTHING
+   else, verified by running the same boards through both and diffing.
+
+   Cell z occupies the slab from height Z0+z to Z0+z+1, so a column whose
+   highest solid cell is z has its surface at Z0+z+1. TOP caches that
+   highest cell: h is read constantly, in every inner loop of soils() and
+   fillFrom(), and rescanning 32 cells each time was not affordable.
+   --------------------------------------------------------------------- */
+const ZN=32, Z0=-13;
+const AIR=0, ROCK=1, BASALT=2;
+const CELL=new Uint8Array(T.length*ZN);
+const TOP=new Int8Array(T.length).fill(-1);
+const cell=(i,z)=>(z<0||z>=ZN)?AIR:CELL[i*ZN+z];
+/* after any direct edit to the cells, the cached surface has to be found again */
+function retop(i){
+  const b=i*ZN;
+  let z=ZN-1;
+  while(z>=0 && !CELL[b+z]) z--;
+  TOP[i]=z;
+  return z;
+}
+/* fill a column solid up to this surface height, keeping the material it
+   already had and clearing everything above */
+function setTop(i,h){
+  const b=i*ZN, t=Math.max(-1,Math.min(ZN-1,h-Z0-1));
+  const m=(TOP[i]>=0 && CELL[b+TOP[i]]) || ROCK;
+  for(let z=0;z<ZN;z++) CELL[b+z] = z<=t ? (CELL[b+z]||m) : AIR;
+  TOP[i]=t;
+}
+for(let i=0;i<T.length;i++){
+  Object.defineProperty(T[i],'h',{
+    get(){ return Z0+TOP[i]+1; },
+    set(v){ setTop(i,v); },
+    enumerable:true});
+  Object.defineProperty(T[i],'vol',{
+    get(){ return TOP[i]>=0 && CELL[i*ZN+TOP[i]]===BASALT; },
+    /* per-hex today, so setting it converts the whole column — the same
+       information the old boolean carried, held one level down */
+    set(v){ const b=i*ZN, m=v?BASALT:ROCK;
+      for(let z=0;z<ZN;z++) if(CELL[b+z]) CELL[b+z]=m; },
+    enumerable:true});
+  setTop(i,0);
 }
 for(const t of T) t.nb=DIRS.map(d=>{
   const j=idx.get((t.q+d[0])+','+(t.r+d[1])); return j===undefined?-1:j});
@@ -693,8 +748,14 @@ controls.update();
 
 /* ---- the ground: one instance per board hex, then one per wall hex ---- */
 const prism=new THREE.CylinderGeometry(1,1,1,6);
+/* One prism per solid RUN, not per column. Every column is a single run
+   today so this draws exactly what it drew before — but a carved column has
+   several, and the count has to be able to grow. Worst case is alternating
+   cells, so half a stack per column. */
+const MAXRUN=T.length*Math.ceil(ZN/2)+NW;
+const instHex=new Int16Array(MAXRUN).fill(-1);
 const ground=new THREE.InstancedMesh(
-  prism, new THREE.MeshLambertMaterial(), T.length+NW);
+  prism, new THREE.MeshLambertMaterial(), MAXRUN);
 ground.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
 scene.add(ground);
 
@@ -713,8 +774,7 @@ scene.add(water); scene.add(lava);
    All of them live in ONE LineSegments, so it stays a single draw call. */
 const COS=[], SIN=[];
 for(let k=0;k<6;k++){ const a=k/6*Math.PI*2; SIN.push(Math.sin(a)); COS.push(Math.cos(a)); }
-const NCOL=T.length+NW;
-const edgePos=new Float32Array(NCOL*6*2*3);
+const edgePos=new Float32Array(MAXRUN*6*2*3);
 const edgeGeo=new THREE.BufferGeometry();
 edgeGeo.setAttribute('position',new THREE.BufferAttribute(edgePos,3));
 const edges=new THREE.LineSegments(edgeGeo,
@@ -769,11 +829,20 @@ function tint(t){
 const WALLTILE={h:WALL,vol:false,soil:0,life:false,liq:NONE,moist:0};
 
 function rebuild(){
+  let n=0;
   for(let i=0;i<T.length;i++){
     const t=T[i];
-    place(ground,i,t.x,t.y,BASE*RISE,t.h*RISE);
-    ground.setColorAt(i,tint(t));
-    rim(i,t.x,t.y,t.h*RISE+0.004);
+    /* walk the column, one prism per unbroken run of solid cells */
+    let z=0;
+    while(z<ZN){
+      if(!cell(i,z)){ z++; continue; }
+      let e=z; while(e+1<ZN && cell(i,e+1)) e++;
+      place(ground,n,t.x,t.y,(Z0+z)*RISE,(Z0+e+1)*RISE);
+      ground.setColorAt(n,tint(t));
+      rim(n,t.x,t.y,(Z0+e+1)*RISE+0.004);
+      instHex[n]=i; n++;
+      z=e+1;
+    }
     if(t.liq===WATER){
       place(water,i,t.x,t.y,t.h*RISE,Math.max(t.ls*RISE,t.h*RISE+0.05));
       hide(lava,i);
@@ -782,12 +851,16 @@ function rebuild(){
       hide(water,i);
     } else { hide(water,i); hide(lava,i); }
   }
-  for(let n=0;n<NW;n++){
-    const c=RIM[n];
-    place(ground,T.length+n,c.x,c.y,BASE*RISE,WALL*RISE);
-    ground.setColorAt(T.length+n,tint(WALLTILE));
-    rim(T.length+n,c.x,c.y,WALL*RISE+0.004);
+  for(let k=0;k<NW;k++){
+    const c=RIM[k];
+    place(ground,n,c.x,c.y,BASE*RISE,WALL*RISE);
+    ground.setColorAt(n,tint(WALLTILE));
+    rim(n,c.x,c.y,WALL*RISE+0.004);
+    instHex[n]=-1;              /* the wall is never a hex you can pick */
+    n++;
   }
+  for(let k=n;k<MAXRUN;k++){ hide(ground,k); rim(k,0,-999,0); }
+  ground.count=n;
   ground.instanceMatrix.needsUpdate=true;
   ground.instanceColor.needsUpdate=true;
   edgeGeo.attributes.position.needsUpdate=true;
@@ -812,12 +885,16 @@ function pick(ev){
   ndc.x=((ev.clientX-r.left)/r.width)*2-1;
   ndc.y=-((ev.clientY-r.top)/r.height)*2+1;
   ray.setFromCamera(ndc,cam);
-  let best=null;
+  let best=null, bestHex=-1;
   for(const m of [ground,water,lava]){
     const hit=ray.intersectObject(m,false)[0];
-    if(hit && hit.instanceId<T.length && (!best||hit.distance<best.distance)) best=hit;
+    if(!hit) continue;
+    /* ground instances are runs now, so the hex comes from a lookup; the
+       liquid meshes are still one instance per hex */
+    const hex = m===ground ? instHex[hit.instanceId] : hit.instanceId;
+    if(hex>=0 && (!best||hit.distance<best.distance)){ best=hit; bestHex=hex; }
   }
-  return best?best.instanceId:-1;
+  return bestHex;
 }
 function hover(i){
   HOVER=i;
@@ -903,6 +980,7 @@ ovProj.onclick=()=>{ ortho=!ortho;
    global — it is how the flat renderer was checked, and it is the only way
    to drive the sim by hand now. */
 window.POT={T,at,flood,use,rebuild,basinAt,habit,POWERS,scene,
+  CELL,TOP,cell,retop,ZN,Z0,AIR,ROCK,BASALT,instHex,ground,
   camera:()=>cam, hover:i=>hover(i),
   get power(){ return POWER.k },
   set power(k){ POWER=POWERS.find(p=>p.k===k)||POWER; drawMenu(); }};
