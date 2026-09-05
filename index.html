@@ -133,7 +133,7 @@ for(let q=-R;q<=R;q++){
   for(let r=lo;r<=hi;r++){
     idx.set(q+','+r,T.length);
     T.push({q,r,x:Math.sqrt(3)*(q+r/2),y:1.5*r,
-            src:NONE,seed:false,
+            src:NONE,seed:false,pool:0,soak:0,
             liq:NONE,ls:0,moist:0,temp:0,rel:0,soil:0,life:false});
   }
 }
@@ -158,7 +158,7 @@ for(let q=-R;q<=R;q++){
    fillFrom(), and rescanning 32 cells each time was not affordable.
    --------------------------------------------------------------------- */
 const ZN=32, Z0=-13;
-const AIR=0, ROCK=1, BASALT=2;
+const AIR=0, ROCK=1, BASALT=2, CLOUD=3;
 const CELL=new Uint8Array(T.length*ZN);
 const TOP=new Int8Array(T.length).fill(-1);
 const cell=(i,z)=>(z<0||z>=ZN)?AIR:CELL[i*ZN+z];
@@ -166,7 +166,7 @@ const cell=(i,z)=>(z<0||z>=ZN)?AIR:CELL[i*ZN+z];
 function retop(i){
   const b=i*ZN;
   let z=ZN-1;
-  while(z>=0 && !CELL[b+z]) z--;
+  while(z>=0 && (!CELL[b+z] || CELL[b+z]===CLOUD)) z--;
   TOP[i]=z;
   return z;
 }
@@ -175,7 +175,8 @@ function retop(i){
 function setTop(i,h){
   const b=i*ZN, t=Math.max(-1,Math.min(ZN-1,h-Z0-1));
   const m=(TOP[i]>=0 && CELL[b+TOP[i]]) || ROCK;
-  for(let z=0;z<ZN;z++) CELL[b+z] = z<=t ? (CELL[b+z]||m) : AIR;
+  for(let z=0;z<ZN;z++)
+    if(CELL[b+z]!==CLOUD) CELL[b+z] = z<=t ? (CELL[b+z]||m) : AIR;
   TOP[i]=t;
 }
 for(let i=0;i<T.length;i++){
@@ -188,7 +189,7 @@ for(let i=0;i<T.length;i++){
     /* per-hex today, so setting it converts the whole column — the same
        information the old boolean carried, held one level down */
     set(v){ const b=i*ZN, m=v?BASALT:ROCK;
-      for(let z=0;z<ZN;z++) if(CELL[b+z]) CELL[b+z]=m; },
+      for(let z=0;z<ZN;z++) if(CELL[b+z] && CELL[b+z]!==CLOUD) CELL[b+z]=m; },
     enumerable:true});
   setTop(i,0);
 }
@@ -251,7 +252,12 @@ function flood(){
      new liquid, so this repeats until the board stops changing. Solidifying
      only ever raises ground, so it always terminates. */
   for(let guard=0; guard<24; guard++){
-    for(const t of T){ t.liq=NONE; t.ls=t.h; }
+    /* free water on a column IS the water: liq and ls read the pool now,
+       and only lava still comes from a stored source */
+    for(const t of T){
+      if(t.pool>WETMIN){ t.liq=WATER; t.ls=t.h+t.pool; }
+      else { t.liq=NONE; t.ls=t.h; }
+    }
 
     /* Adjacent sources are one body — and so are sources that do NOT touch
        but end up in the same pool. A source can sit inside a basin filled
@@ -334,7 +340,6 @@ function flood(){
   }
   soils();
   lives();
-  rains();          /* a leaf: it reads settled ground and water, and nothing reads it */
 }
 
 /* ---------------------------------------------------------------------
@@ -436,190 +441,154 @@ function lives(){
   for(const t of T) t.seed = t.life;          /* it remembers itself, like water */
 }
 /* ---------------------------------------------------------------------
-   RIVERS — where the rain goes.
+   WATER, AS A QUANTITY.
 
-   Rain is MOISTURE meeting HEIGHT, and both are read off the hex itself.
+   Water used to be a PRESENCE: a hex had it or it did not, and a source was
+   endless. That is Minecraft's model and it has Minecraft's faults — two
+   buckets make an ocean, one pour fills a whole basin to the brim however
+   small the pour was, and nothing finds a level except by accident.
 
-   A hex rains when it is damp enough — above MOIST_MIN — and it rains harder
-   the higher it stands. That is orography in one line: moist air coming off
-   the water, forced up over ground near it, and dropping what it carries.
-   A pot with no water has no moisture anywhere and so no rivers anywhere,
-   which falls out rather than being a rule.
+   Here water is an AMOUNT, it is conserved, and the only thing that makes
+   any more of it is a CLOUD: a cell in the air above a column that rains a
+   fixed amount every tick. That is the entire source of water in this world
+   and you can SEE it, which no rain rule before this one managed.
 
-   The point of it is that it is LOCAL. The rain used to be a global sum —
-   total standing water anywhere on the board — so pouring a lake in one
-   corner changed rivers in the other and nothing you could look at explained
-   why. Now a hex's rain depends on that hex's own two readings, both of
-   which are already on the panel.
+   Each column carries two numbers:
+     soak   water held IN the ground, up to what that ground can hold
+     pool   free water lying ON it
 
-   Each hex sheds its rain to its six corners in proportion to how far each
-   corner sits below it, then the lattice routes it downhill by STEEPEST
-   DESCENT: all of it to the lowest way out, split equally when several tie.
-   Not shared out in proportion — that braids every river into a delta and
-   nothing ever clears the threshold. And not broken by ring order either:
-   that is precisely how a symmetric peak grew a lopsided apron, always to
-   the east, back when soil handed out a remainder. A tie is a real saddle
-   and a real saddle really does fork.
+   Ground drinks before it sheds. That is satiety — how much water the
+   material holds against gravity — and it is a different thing from the
+   atmospheric moisture the auras count. Bare rock holds very little, soil
+   holds a lot, which is what finally gives soil a job beyond gating life:
+   a dry catchment soaks the first rain and sheds nothing, and once satiated
+   it sheds all of it.
 
-   Level ground is gathered into REGIONS of equal height and each region
-   routes as one. That is what carries a river across a lake: a lake is
-   already brim-full by construction — fillFrom stops at the first rim it
-   meets — so it is a flat region that spills at its lowest way out. Rivers
-   pass through lakes rather than dying in them, and no volume is tracked
-   anywhere. A hollow with no way out is a sink and the water stops there.
+   A TICK SOLVES, IT DOES NOT STEP. Water never crawls a cell per tick the
+   way Minecraft's does — that is order-dependent and can never find a level.
+   Each tick adds the rain, lets the ground drink, and then settles every
+   drop where it belongs in ONE pass. The gradual soak-then-run you watch
+   happen comes from capacity filling up, not from water moving slowly.
+
+   Capacity depends on soil, and soil depends on water through moisture and
+   life — a loop. It is not a problem here because water is STORED, not
+   derived: a tick reads the soil as it stands, moves the water, and the soil
+   re-derives after. Next tick reads the new soil. That is a simulation step,
+   not a value quietly drifting.
    --------------------------------------------------------------------- */
-/* RAIN is the abundance knob, as RATE is for soil. MOIST_MIN is the damp a
-   hex needs before it rains at all — moisture runs 0..24 now (two a side,
-   one at a hex's remove, twelve hexes in that outer ring). FALL_MIN is in
-   THIRDS, and because two nodes on a seam share two of their three hexes, a
-   seam's drop in thirds is exactly the height difference between the hexes
-   capping its ends — so 3 means a three-step cliff. Calibrated against a
-   board somebody would actually build rather than against extremes, and none
-   of it playtested hard. */
-/* ---------------------------------------------------------------------
-   RIVERS — where the rain goes, tile by tile.
+const RAINFALL=0.55;             /* what one cloud drops each tick */
+const SOAK_ROCK=0.25, SOAK_SOIL=0.4;
+const WETMIN=0.02;               /* below this a column reads as dry */
+const CLOUD_Z=ZN-5;              /* clouds ride up here, clear of any ground */
+const soakCap = t => SOAK_ROCK + SOAK_SOIL*t.soil;
 
-   Rain is MOISTURE meeting HEIGHT, both read off the hex itself. A hex rains
-   when it is damp enough — above MOIST_MIN — and harder the higher it stands.
-   That is orography in one line: moist air off the water, forced up over
-   ground near it, dropping what it carries. A pot with no water has no
-   moisture and so no rivers, which falls out rather than being a rule.
-
-   Water then runs downhill from tile to tile by STEEPEST DESCENT — all of it
-   to the lowest way out, split equally when several tie. Not shared out in
-   proportion like soil: that braids every river into a delta and nothing ever
-   clears the threshold. And never broken by ring order, which is exactly how
-   a symmetric peak once grew a lopsided apron, always east. A tie is a real
-   saddle and a real saddle really does fork.
-
-   It ACCUMULATES, which is the whole point and the thing a spreading rule
-   cannot do. A hundred small flows gather into a dozen and then into one, so
-   a river coming off a range is bigger than a river coming off a bump.
-
-   THE SURFACE IT RUNS ON is the ground plus its soil mantle, h + soil x TILT.
-   Whole heights leave long runs of exactly equal neighbours — a plateau, a
-   valley floor — and between equals there is no downhill at all. Soil is a
-   real number that varies across those runs, so it breaks the ties the ground
-   cannot. TILT keeps the whole soil range under one height step, so soil can
-   only ever settle a tie and never reorder real terrain.
-
-   It is not a complete answer: weathering needs relief, so the middle of a
-   plateau has no soil and no soil gradient either. Whatever stays exactly
-   level is gathered into a REGION and routed as one, which also carries a
-   river across a lake — a lake is brim-full by construction, so it spills at
-   its lowest way out and the river comes out the far side.
-   --------------------------------------------------------------------- */
-const RAIN=0.2, MOIST_MIN=2, RIVER_MIN=1.0, FALL_MIN=2, TILT=0.1;
-function rains(){
-  const n=T.length;
-  for(const t of T){ t.rain=0; t.flow=0; t.river=0; t.outs=[]; }
-  let wet=0;
-  for(const t of T) if(t.liq===WATER) wet++;
-  if(!wet) return;                      /* a dry pot has no weather at all */
-
-  /* top is the real surface — soil-mantled ground, or the lid of water lying
-     over it. surf is what we ROUTE on, and gets raised where a pit is filled. */
-  const top=new Array(n), surf=new Array(n);
-  for(let i=0;i<n;i++){
-    const t=T[i];
-    top[i] = t.liq!==NONE ? t.ls : t.h + t.soil*TILT;
-    surf[i]= top[i];
-    if(t.liq===NONE) t.rain=RAIN*Math.max(0,t.moist-MOIST_MIN)*Math.max(0,t.h);
-  }
-
-  /* PRIORITY FLOOD, out from the lowest tile on the board. A tile's routing
-     height becomes the lowest level at which it can still reach that outlet,
-     so a real hollow is raised to its own brim and spills, exactly as
-     fillFrom does, while everything already draining keeps its true height.
-     It has to be seeded from the outlet: the pot is SEALED, so its lowest
-     ground has no way out at all, and raising each sink to its lowest
-     neighbour instead walked the whole floor up until it merged into the
-     nearest lake — and a river arriving at a lake was then declared to have
-     reached the bottom of the world, and died there. */
-  const fill=new Array(n).fill(Infinity), heap=[];
-  const push=(h,i)=>{ heap.push([h,i]); let k=heap.length-1;
+/* How high water can stand on a column before it finds a way off the board:
+   a priority flood inward from the edge, so esc[i] is the lowest level at
+   which i can still reach open air. Nothing can stand above that — it goes
+   over the side. This is the same flood the river work needed twice, and it
+   is honest here in a way it never was inside a sealed pot. */
+function escapes(){
+  const n=T.length, esc=new Array(n).fill(Infinity), heap=[];
+  const push=(v,i)=>{ heap.push([v,i]); let k=heap.length-1;
     while(k>0){ const p=(k-1)>>1; if(heap[p][0]<=heap[k][0]) break;
       const t=heap[p]; heap[p]=heap[k]; heap[k]=t; k=p; } };
-  const pop=()=>{ const t0=heap[0], last=heap.pop();
+  const pop=()=>{ const top=heap[0], last=heap.pop();
     if(heap.length){ heap[0]=last; let k=0;
       for(;;){ const l=2*k+1, r=l+1; let m=k;
         if(l<heap.length&&heap[l][0]<heap[m][0]) m=l;
         if(r<heap.length&&heap[r][0]<heap[m][0]) m=r;
         if(m===k) break; const t=heap[m]; heap[m]=heap[k]; heap[k]=t; k=m; } }
-    return t0; };
-  let low=0;
-  for(let i=1;i<n;i++) if(top[i]<top[low]) low=i;
-  fill[low]=top[low]; push(fill[low],low);
+    return top; };
+  for(let i=0;i<n;i++) if(T[i].coast){ esc[i]=T[i].h; push(esc[i],i); }
   while(heap.length){
-    const [h,i]=pop();
-    if(h>fill[i]) continue;
+    const [v,i]=pop();
+    if(v>esc[i]) continue;
     for(const j of T[i].nb){
       if(j<0) continue;
-      const nh=Math.max(top[j],h);
-      if(nh<fill[j]){ fill[j]=nh; push(nh,j); }
+      const e=Math.max(T[j].h,v);
+      if(e<esc[j]){ esc[j]=e; push(e,j); }
     }
   }
-  for(let i=0;i<n;i++) surf[i]=fill[i];
+  return esc;
+}
 
-  /* gather what is left exactly level — flats, and every lake — into regions */
-  const reg=new Array(n).fill(-1), regs=[];
+/* Given the columns of one hollow and a volume, where does the surface sit?
+   Walk up through their heights: with k columns already under water, lifting
+   the surface by one costs k. Exact, and it is why a small pour makes a
+   puddle and a big one makes a lake. */
+function levelFor(cells, vol, cap){
+  const hs=cells.map(i=>T[i].h).sort((a,b)=>a-b);
+  let level=hs[0], used=0;
+  for(let k=1;k<=hs.length;k++){
+    const next = k<hs.length ? hs[k] : Infinity;
+    const need = (next-level)*k;
+    if(used+need>=vol){ level += (vol-used)/k; used=vol; break; }
+    used+=need; level=next;
+  }
+  return Math.min(level,cap);
+}
+
+/* Settle every drop: run the free water downhill into hollows, then stand
+   each hollow at the level its volume gives it. Anything that reaches an
+   edge, or brims a hollow, goes over the side and is gone.
+
+   KNOWN GAP: a hollow that brims does not cascade into the next hollow
+   downstream — the excess simply leaves. Chains of lakes want that and do
+   not have it yet. */
+function settle(){
+  const n=T.length, esc=escapes();
+  const free=T.map(t=>t.pool);
+  for(const t of T) t.pool=0;
+  /* high ground first, so a column has all it is going to get before it
+     hands anything on. Ties never exchange, so the order cannot matter. */
+  const order=T.map((t,i)=>i).sort((a,b)=>esc[b]-esc[a]||a-b);
+  const held=new Array(n).fill(0);
+  for(const i of order){
+    if(free[i]<=0) continue;
+    if(esc[i]>T[i].h+1e-9){ held[i]+=free[i]; free[i]=0; continue; }  /* a hollow */
+    let best=Infinity, outs=[];
+    for(const j of T[i].nb){
+      const e = j<0 ? -Infinity : esc[j];      /* off the board is bottomless */
+      if(e>=esc[i]) continue;
+      if(e<best){ best=e; outs=[j]; } else if(e===best) outs.push(j);
+    }
+    if(!outs.length){ held[i]+=free[i]; free[i]=0; continue; }
+    const share=free[i]/outs.length;
+    for(const j of outs) if(j>=0) free[j]+=share;   /* j<0 goes over the edge */
+    free[i]=0;
+  }
+  /* hollows are the connected runs that share an escape level */
+  const seen=new Array(n).fill(false);
   for(let i=0;i<n;i++){
-    if(reg[i]>=0) continue;
-    const g=regs.length, cells=[i], q=[i]; reg[i]=g;
+    if(seen[i] || !(esc[i]>T[i].h+1e-9)) continue;
+    const cells=[i], q=[i]; seen[i]=true;
+    let vol=held[i];
     while(q.length){
       const k=q.pop();
-      for(const j of T[k].nb)
-        if(j>=0 && reg[j]<0 && surf[j]===surf[k]){ reg[j]=g; cells.push(j); q.push(j); }
+      for(const j of T[k].nb){
+        if(j<0||seen[j]) continue;
+        if(!(esc[j]>T[j].h+1e-9) || esc[j]!==esc[k]) continue;
+        seen[j]=true; cells.push(j); q.push(j); vol+=held[j];
+      }
     }
-    regs.push({cells, h:surf[i]});
+    if(vol<=0) continue;
+    const level=levelFor(cells,vol,esc[i]);
+    for(const c of cells){ const d=level-T[c].h; if(d>0) T[c].pool=d; }
   }
-
-  /* high to low: a region can only be fed from strictly above it, so by the
-     time it is reached its total is complete. Equal regions never exchange,
-     so ties in the ordering cannot change the answer. */
-  const got=new Array(n);
-  for(let i=0;i<n;i++) got[i]=T[i].rain;
-  const order=regs.map((g,k)=>k).sort((a,b)=>regs[b].h-regs[a].h);
-  for(const k of order){
-    const g=regs[k];
-    /* where it spills: the lowest ground just outside the region */
-    let best=Infinity, spill=[];
-    for(const i of g.cells) for(const j of T[i].nb){
-      if(j<0 || reg[j]===k || surf[j]>=g.h) continue;
-      if(surf[j]<best){ best=surf[j]; spill=[[i,j]]; }
-      else if(surf[j]===best) spill.push([i,j]);
-    }
-    if(!spill.length) continue;         /* a sink — the water stops here */
-
-    /* Walk the water ACROSS the flat to the nearest way off rather than
-       letting it teleport there. Breadth-first in from the spill tiles gives
-       every tile in the region a step to take, and the tiles it crosses show
-       a channel instead of nothing. Without this a plateau was one region
-       and all its rain left through a single tile: on a massif of twelve,
-       three tiles carried water and nine carried none. */
-    const depth=new Map(), q=[];
-    for(const [i] of spill) if(!depth.has(i)){ depth.set(i,0); q.push(i); }
-    for(let p=0;p<q.length;p++){
-      const i=q[p];
-      for(const j of T[i].nb)
-        if(j>=0 && reg[j]===k && !depth.has(j)){ depth.set(j,depth.get(i)+1); q.push(j); }
-    }
-    /* furthest first, so each tile is complete before it hands on */
-    for(const i of [...g.cells].sort((a,b)=>depth.get(b)-depth.get(a))){
-      if(!(got[i]>0)) continue;
-      const d=depth.get(i);
-      const outs = d===0 ? spill.filter(e=>e[0]===i).map(e=>e[1])
-                         : T[i].nb.filter(j=>j>=0 && reg[j]===k && depth.get(j)===d-1);
-      if(!outs.length) continue;
-      const share=got[i]/outs.length;
-      for(const j of outs) got[j]+=share;
-      T[i].flow=got[i]; T[i].outs=outs;
-    }
-  }
-  for(const t of T) t.river = t.flow>=RIVER_MIN ? t.flow : 0;
 }
-const isFall = i => T[i].river>0 &&
-  T[i].outs.some(j=>(T[i].h-T[j].h)>=FALL_MIN);
+
+/* the clouds rain, the ground drinks, and then everything settles */
+function tick(){
+  for(let i=0;i<T.length;i++)
+    if(CELL[i*ZN+CLOUD_Z]===CLOUD) T[i].pool+=RAINFALL;
+  for(const t of T){
+    const room=Math.max(0,soakCap(t)-t.soak);
+    const drink=Math.min(room,t.pool);
+    t.soak+=drink; t.pool-=drink;
+  }
+  settle();
+  flood();
+}
 
 /* the patch a seed here would green — for the overlay */
 function patchAt(i){
@@ -640,11 +609,16 @@ function use(i,p){
   if(p.k==='seed'){
     if(!habit(T[i])) return false;               /* nothing will take there */
     T[i].seed=true;
-  } else if(p.d===0){
+  } else if(p.k==='cloud'){
+    /* one power places AND removes: click a column to hang a cloud over it,
+       click again to take it away */
+    const z=i*ZN+CLOUD_Z;
+    CELL[z] = CELL[z]===CLOUD ? AIR : CLOUD;
+  } else if(p.k==='lava'){
     if(!basinAt(i)) return false;                /* it just runs off */
-    T[i].src = p.k==='lava' ? LAVA : WATER;
+    T[i].src=LAVA;
   } else T[i].h+=p.d;
-  flood();
+  tick();                       /* every action is a tick: the weather runs */
   return true;
 }
 /*==CORE-END==*/
@@ -677,10 +651,11 @@ const POWERS=[
    ic:'<svg viewBox="0 0 18 18"><path d="M2 15h14"/><path d="M4.5 12 9 4l4.5 8z"/></svg>'},
   {k:'subduct',nm:'Subduct', d:-1,
    ic:'<svg viewBox="0 0 18 18"><path d="M2 3h14"/><path d="M4.5 6 9 14l4.5-8z"/></svg>'},
-  {k:'deluge', nm:'Deluge',  d:0,
-   ic:'<svg viewBox="0 0 18 18"><path d="M3 2.5 4.5 6"/><path d="M7.5 1.5 9 5"/>'+
-      '<path d="M12 2.5 13.5 6"/><path d="M2.5 15.5h13"/>'+
-      '<path d="M5.5 15.5c0-2.5 3.5-3 3.5-6 0 3 3.5 3.5 3.5 6z"/></svg>'},
+  {k:'cloud',  nm:'Cloud',   d:0,
+   ic:'<svg viewBox="0 0 18 18">'+
+      '<path d="M4.6 10.5a2.6 2.6 0 0 1 .3-5.2 3.6 3.6 0 0 1 6.8-1 2.9 2.9 0 0 1 1.7 6.2z"/>'+
+      '<path d="M6 13.5 5 16"/><path d="M9.5 13.5 8.5 16"/><path d="M13 13.5 12 16"/>'+
+      '</svg>'},
   {k:'lava',   nm:'Lava',    d:0,
    ic:'<svg viewBox="0 0 18 18"><path d="M1.5 15.5h15"/>'+
       '<path d="M4 15.5 7.2 8h3.6l3.2 7.5z"/><path d="M7.2 8h3.6"/>'+
@@ -747,6 +722,11 @@ const water=new THREE.InstancedMesh(prism,
   T.length);
 const lava=new THREE.InstancedMesh(prism,
   new THREE.MeshLambertMaterial({color:0xd2551e,emissive:0x5a1c06}), T.length);
+const cloudMesh=new THREE.InstancedMesh(prism,
+  new THREE.MeshLambertMaterial({color:0xc8d4e0,transparent:true,opacity:0.5}),
+  T.length);
+cloudMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+scene.add(cloudMesh);
 water.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
 lava.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
 scene.add(water); scene.add(lava);
@@ -831,6 +811,9 @@ function rebuild(){
       place(lava,i,t.x,t.y,t.h*RISE,Math.max(t.ls*RISE,t.h*RISE+0.05));
       hide(water,i);
     } else { hide(water,i); hide(lava,i); }
+    if(cell(i,CLOUD_Z)===CLOUD)
+      place(cloudMesh,i,t.x,t.y,CLOUD_Z*RISE+Z0*RISE,(CLOUD_Z+1)*RISE+Z0*RISE);
+    else hide(cloudMesh,i);
   }
   for(let k=n;k<MAXRUN;k++){ hide(ground,k); rim(k,0,-999,0); }
   ground.count=n;
@@ -846,8 +829,10 @@ function rebuild(){
      then on — placed correctly, updated correctly, and never drawn. Re-measure
      whenever the instances move. */
   ground.computeBoundingSphere();
+  cloudMesh.instanceMatrix.needsUpdate=true;
   water.computeBoundingSphere();
   lava.computeBoundingSphere();
+  cloudMesh.computeBoundingSphere();
 }
 
 /* ---- picking: the raycaster hands back the instance, which IS the hex ---- */
@@ -923,6 +908,9 @@ function drawInfo(){
   h+= t.liq===WATER ? row('water','surface '+t.ls,'w')
     : t.liq===LAVA  ? row('lava','surface '+t.ls,'l')
     : row('basin', b ? 'fills to '+b.level : '—', b?'':'q');
+  h+=row('pool',  t.pool>0.005 ? t.pool.toFixed(2) : '—', t.pool>0.005?'w':'q');
+  h+=row('soaked',t.soak>0.005 ? t.soak.toFixed(2)+' / '+soakCap(t).toFixed(2)
+                               : '—', t.soak>0.005?'w':'q');
   h+=row('moisture', t.moist||'—', t.moist?'w':'q');
   h+=row('heat',     t.temp ||'—', t.temp ?'l':'q');
   h+=row('soil',     t.soil>0 ? t.soil.toFixed(2) : '—', t.soil>0?'s':'q');
@@ -952,15 +940,18 @@ ovProj.onclick=()=>{ ortho=!ortho;
    Being able to poke the board from the console is worth one deliberate
    global — it is how the flat renderer was checked, and it is the only way
    to drive the sim by hand now. */
-window.POT={T,at,flood,use,rebuild,basinAt,habit,POWERS,scene,
+window.POT={T,at,flood,use,tick,settle,rebuild,basinAt,habit,POWERS,scene,
+  CLOUD,CLOUD_Z,soakCap,escapes,
   CELL,TOP,cell,retop,ZN,Z0,AIR,ROCK,BASALT,instHex,ground,
   camera:()=>cam, hover:i=>hover(i),
   get power(){ return POWER.k },
   set power(k){ POWER=POWERS.find(p=>p.k===k)||POWER; drawMenu(); }};
 
-function tick(){ controls.update(); renderer.render(scene,cam);
-  requestAnimationFrame(tick); }
-drawMenu(); flood(); rebuild(); resize(); drawInfo(); tick();
+/* the draw loop. Named frame(), not tick() — a tick is a step of the world
+   now, and the two must never be confused. */
+function frame(){ controls.update(); renderer.render(scene,cam);
+  requestAnimationFrame(frame); }
+drawMenu(); flood(); rebuild(); resize(); drawInfo(); frame();
 </script>
 </body>
 </html>
