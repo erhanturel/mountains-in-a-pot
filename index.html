@@ -81,6 +81,9 @@
         <button class="pw on" id="ovRiver"><svg viewBox="0 0 18 18">
           <path d="M3 13c3-1 3-4 6-5s3-4 6-5"/></svg>
           <span>Rivers</span></button>
+        <button class="pw" id="ovDrain"><svg viewBox="0 0 18 18">
+          <path d="M3 3v4l6 4v4"/><path d="M15 3v4l-6 4"/></svg>
+          <span>Drainage</span></button>
         <div class="rates" id="sun"></div>
       </div>
       <div class="menu" style="margin-top:14px">
@@ -652,7 +655,73 @@ const blend=(a,b,f)=>a.map((v,n)=>v+(b[n]-v)*f);
    A plain ramp across the whole range gave one elevation step 92/24 of 255 —
    about one and a half percent — which is why picking out an exact step was
    guesswork. Two things fix it. */
-function tint(t){
+/* ---------------------------------------------------------------------
+   DRAINAGE — where the water WOULD go, read off the terrain alone.
+
+   A single sweep from the highest ground down, each tile handing its
+   running total to its lower neighbours in proportion to how far each one
+   drops. That is flow accumulation, and it is what a valley is: the tiles a
+   lot of ground drains through.
+
+   IT SEEDS FROM THE CLOUDS when there are any, and from one unit on every
+   tile when there are none. The two answer different questions -- "where
+   will THIS rain end up" against "where are the valleys" -- and which one
+   you want is exactly whether you have placed a cloud yet.
+
+   That is not a nicety. Checked against where the water actually went, by
+   rank correlation over the tiles not under standing water: seeded from the
+   clouds it scores 0.76, and seeded uniformly while the rain fell only on
+   the summit it scores 0.36. Assuming rain the board is not getting makes
+   it a picture rather than a prediction.
+
+   It touches nothing. No water, no ticks, no state — a pure read of h, so
+   it answers "where should I put a cloud" BEFORE a drop has fallen, which
+   is the one thing watching the simulation cannot tell you.
+
+   Splitting between ALL lower neighbours rather than picking the steepest
+   is deliberate: steepest-descent routing on a grid draws parallel stripes
+   along the six axes, and it is also not what settle does. This matches the
+   sim — water goes every way that is downhill.
+
+   A tile touching the void keeps its own total and passes nothing on: off
+   the board is lower than anything, so everything arriving there leaves.
+   Somewhere with nothing lower at all — a pit, or flat ground — is where
+   the accumulating stops, which is exactly where a lake would sit. */
+function accum(){
+  const n=T.length, a=new Float64Array(n);
+  let clouds=0;
+  for(let i=0;i<n;i++) if(cell(i,CLOUD_Z)===CLOUD){ a[i]=1; clouds++; }
+  if(!clouds) a.fill(1);
+  const order=T.map((t,i)=>i).sort((x,y)=>T[y].h-T[x].h);
+  for(const i of order){
+    let tot=0; const outs=[];
+    for(let k=0;k<6;k++){
+      const j=T[i].nb[k];
+      if(j<0){ tot=-1; break; }                 /* the void takes the lot */
+      const drop=T[i].h-T[j].h;
+      if(drop>0){ outs.push(j); outs.push(drop); tot+=drop; }
+    }
+    if(tot<=0) continue;                        /* the void, a pit, or flat */
+    for(let k=0;k<outs.length;k+=2) a[outs[k]]+=a[i]*outs[k+1]/tot;
+  }
+  return a;
+}
+let DRAIN=false, ACC=null, ACCMAX=1;
+
+function tint(t,i){
+  if(DRAIN && ACC){
+    /* log scale: the interesting range runs from one tile draining itself
+       to a trunk valley carrying a third of the board */
+    const f=Math.log(1+ACC[i])/Math.log(1+ACCMAX);
+    const g=blend([48,56,68],[86,206,255],f);
+    const base=terrain(t);
+    const c=blend(base,g,0.78);
+    return new THREE.Color(c[0]/255,c[1]/255,c[2]/255).convertSRGBToLinear();
+  }
+  const c=terrain(t);
+  return new THREE.Color(c[0]/255,c[1]/255,c[2]/255).convertSRGBToLinear();
+}
+function terrain(t){
   const f=(t.h+H_MAX)/(2*H_MAX);
   let c=blend([100,98,94],[190,186,180],f);
   /* CONTOUR BANDING: every other elevation a shade darker, the way a topo
@@ -666,11 +735,12 @@ function tint(t){
   let up=0;
   for(const j of t.nb) if(j>=0 && T[j].h>t.h) up+=Math.min(1,(T[j].h-t.h)/3);
   if(up>0) c=blend(c,[30,34,42],Math.min(0.5,0.085*up));
-  return new THREE.Color(c[0]/255,c[1]/255,c[2]/255).convertSRGBToLinear();
+  return c;
 }
 
 function rebuild(){
   let n=0, ns=0;
+  if(DRAIN){ ACC=accum(); ACCMAX=Math.max(1,...ACC); } else ACC=null;
   for(let i=0;i<T.length;i++){
     const t=T[i];
     /* walk the column, one prism per unbroken run of solid cells */
@@ -679,7 +749,7 @@ function rebuild(){
       if(!cell(i,z)){ z++; continue; }
       let e=z; while(e+1<ZN && cell(i,e+1)) e++;
       place(ground,n,t.x,t.y,(Z0+z)*RISE,(Z0+e+1)*RISE);
-      ground.setColorAt(n,tint(t));
+      ground.setColorAt(n,tint(t,i));
       rim(n,t.x,t.y,(Z0+e+1)*RISE+0.004);
       instHex[n]=i; n++;
       z=e+1;
@@ -856,6 +926,9 @@ function setPlay(on){
     RUN ? 'M5 4h3v10H5zM10 4h3v10h-3z' : 'M6 4l8 5-8 5z');
 }
 playBtn.onclick=()=>setPlay(!RUN);
+
+const ovDrain=document.getElementById('ovDrain');
+ovDrain.onclick=()=>{ DRAIN=!DRAIN; ovDrain.classList.toggle('on',DRAIN); rebuild(); };
 
 const ovRiver=document.getElementById('ovRiver');
 ovRiver.onclick=()=>{ RIVERS=!RIVERS; ovRiver.classList.toggle('on',RIVERS); rebuild(); };

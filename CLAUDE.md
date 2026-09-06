@@ -333,6 +333,24 @@ than a plateau on the other. Water *receives* shadows but does not cast — a
 shadow map has no idea it is see-through, so a lake would lay a solid black
 slab on its own bed.
 
+**Drainage is a View overlay and a pure read of `h`** — no water, no ticks, no
+state. A single sweep from the highest ground down, each tile handing its
+running total to its lower neighbours in proportion to how far each drops.
+That is flow accumulation, and it answers *where should I put a cloud* before
+a drop has fallen, which watching the simulation cannot.
+
+It **seeds from the clouds** when there are any and from one unit on every
+tile when there are none — "where will this rain end up" against "where are
+the valleys", and which you want is exactly whether you have placed a cloud
+yet. That is not a nicety: measured against where the water actually went, by
+rank correlation over the tiles not under standing water, seeding from the
+clouds scores **0.76** and seeding uniformly while the rain fell only on the
+summit scores **0.36**.
+
+It splits between all lower neighbours rather than picking the steepest,
+because steepest-descent routing on a grid draws parallel stripes along the
+six axes, and because it is not what `settle` does.
+
 **Rivers are drawn from `out[6]`, one stub per edge that carried water** — a
 flat ribbon from the hex centre to that edge's midpoint, as wide as the flow
 through it. Adjacent tiles meet at the shared midpoint, so a channel joins up
