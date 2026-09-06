@@ -552,22 +552,6 @@ function escapes(){
   return esc;
 }
 
-/* Given the columns of one hollow and a volume, where does the surface sit?
-   Walk up through their heights: with k columns already under water, lifting
-   the surface by one costs k. Exact, and it is why a small pour makes a
-   puddle and a big one makes a lake. */
-function levelFor(cells, vol, cap){
-  const hs=cells.map(i=>T[i].h).sort((a,b)=>a-b);
-  let level=hs[0], used=0;
-  for(let k=1;k<=hs.length;k++){
-    const next = k<hs.length ? hs[k] : Infinity;
-    const need = (next-level)*k;
-    if(used+need>=vol){ level += (vol-used)/k; used=vol; break; }
-    used+=need; level=next;
-  }
-  return Math.min(level,cap);
-}
-
 /* Settle every drop.
 
    EVERY column belongs to a REGION: the connected run sharing its escape
@@ -675,7 +659,7 @@ function settle(){
      opposite of the rule. Regions still own the STANDING water, because
      that is what makes a lake find one level; they no longer own the
      film. */
-  const films=(R,vf)=>{
+  const films=(R,vf,sub)=>{
     const out=new Map(R.cells.map(c=>[c,0]));
     if(vf<=1e-12) return out;
     let front = R.entry.length ? R.entry.slice() : R.cells.slice();
@@ -684,10 +668,11 @@ function settle(){
       /* a ring takes only the room it has left, so a column that is already
          full simply passes the water outward instead of hoarding it */
       let room=0;
-      for(const c of front) room+=Math.max(0,FILM-held[c]);
+      const rm=c=>sub(c)?0:Math.max(0,FILM-held[c]);
+      for(const c of front) room+=rm(c);
       if(room>1e-12){
         const f=Math.min(1,vf/room);
-        for(const c of front) out.set(c,Math.max(0,FILM-held[c])*f);
+        for(const c of front) out.set(c,rm(c)*f);
         vf-=room*f;
       }
       const next=[];
@@ -697,18 +682,38 @@ function settle(){
     }
     return out;
   };
-  /* what each column kept is already where it belongs */
-  for(let i=0;i<n;i++) if(held[i]>0) T[i].pool=held[i];
+  /* THE STANDING SURFACE. A column joins the pond when the water passes
+     h+FILM -- its film is the BOTTOM of its water, not a lid floating on
+     top of it -- so joining costs whatever film it has not already got, and
+     from then on its depth is simply level minus ground.
+
+     Adding the film on top instead put two columns of the SAME HEIGHT, dug
+     side by side, at different surfaces: the older hole had a full film
+     from before the dig and the new one only a part film, and the
+     difference stuck out above the waterline. Water in one hollow has to
+     read as one body.
+
+     Solved by bisection rather than by walking the heights, because the
+     cost is no longer smooth -- a column joining pays for its film in one
+     jump. Whatever the level, the volume left over is film, so the split is
+     conserving however the search lands. */
+  const stand=(cells,vol,cap)=>{
+    const vsOf=L=>{ let v=0;
+      for(const c of cells) if(T[c].h+FILM<L-1e-12) v+=L-T[c].h-held[c];
+      return v; };
+    if(vsOf(cap)<=vol) return cap;
+    let lo=Math.min(...cells.map(c=>T[c].h)), hi=cap;
+    for(let it=0;it<64;it++){ const m=(lo+hi)/2; if(vsOf(m)<=vol) lo=m; else hi=m; }
+    return lo;
+  };
+  for(let i=0;i<n;i++) T[i].pool=held[i];
   for(const R of regs){
-    if(R.vol<=0) continue;
-    /* the hollow takes what it can hold; only the surplus is film */
-    const vs=Math.min(R.vol,R.hollow);
-    const level=levelFor(R.cells,vs,R.E);
-    const film=films(R,R.vol-vs);
-    for(const c of R.cells){
-      const d=film.get(c)+Math.max(0,level-T[c].h);
-      if(d>0) T[c].pool+=d;
-    }
+    if(R.vol<=1e-12) continue;
+    const L=stand(R.cells,R.vol,R.E+FILM);
+    const sub=c=>T[c].h+FILM<L-1e-12;
+    let vs=0; for(const c of R.cells) if(sub(c)) vs+=L-T[c].h-held[c];
+    const film=films(R,R.vol-vs,sub);
+    for(const c of R.cells) T[c].pool = sub(c) ? L-T[c].h : held[c]+film.get(c);
   }
 }
 
