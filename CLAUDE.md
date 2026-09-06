@@ -168,7 +168,21 @@ separation is what makes headless testing possible.
 ```
 STORED   h      ground height, whole steps        (in the cell stack)
          pool   how much water stands on it
+
+DERIVED  flow   how much water CROSSED it this tick
 ```
+
+**`flow` is throughput, and it is a different number from `pool`.** The tile
+under a rain cloud holds nothing and passes 70 units a tick; a full lake holds
+five thousand and passes none. `pool` calls both of them wet. Nothing reads
+`flow` yet — it is kept because it is the expensive half of erosion (erosion
+is throughput times drop, so moving water cuts and standing water does not),
+because a river is a tile with throughput rather than a wet one or a sloped
+one, and because it is what would let moving water be drawn at all.
+
+It is derived, never stored: recomputed from the same state every tick, and
+zero on a board at rest. **A smoothed or running value would be stored state**
+— keep it instantaneous and let the renderer do any smoothing.
 
 Nothing else is remembered. Solve the same ground twice and you get the same
 world. Two corollaries worth keeping:

@@ -109,6 +109,10 @@ import { OrbitControls } from './vendor/addons/controls/OrbitControls.js';
    STORED per hex:  h     ground height, in whole steps
                     pool  how much water is standing on it
 
+   DERIVED          flow  how much water CROSSED it this tick, which is a
+                          different number from how much stands on it, and
+                          the one erosion will want
+
    That is the whole state. Soil, life, moisture, heat, relief, lava and
    the endless-source liquids are all GONE while the water is built, so
    that what you are watching is the water and nothing else.
@@ -127,7 +131,7 @@ for(let q=-R;q<=R;q++){
   const lo=Math.max(-R,-q-R), hi=Math.min(R,-q+R);
   for(let r=lo;r<=hi;r++){
     idx.set(q+','+r,T.length);
-    T.push({q,r,x:Math.sqrt(3)*(q+r/2),y:1.5*r,pool:0});
+    T.push({q,r,x:Math.sqrt(3)*(q+r/2),y:1.5*r,pool:0,flow:0});
   }
 }
 
@@ -267,6 +271,24 @@ function settle(){
   const was=T.map(t=>t.pool);
   const top=i=>T[i].h+was[i];
   const add=new Array(n).fill(0);
+  /* THROUGHPUT: what CROSSES a tile, as against what stands on it. The two
+     are different numbers and nothing else here can tell them apart -- the
+     tile under a rain cloud holds nothing and passes seventy units a tick,
+     while a full lake holds five thousand and passes none. `pool` calls
+     both of them wet.
+
+     It is what erosion will want: erosion is throughput times drop, so
+     moving water cuts and standing water does not. Weathering driven by
+     nearby standing water instead is what once had a rain cloud over a
+     rocky basin manufacture five soil out of a lake that was going nowhere.
+     It is also what a river actually is -- not a wet tile, since a lake is
+     wet, and not a sloped tile, since a dry cliff has slope.
+
+     DERIVED, never stored: recomputed from the same state every tick, and
+     zero on a board at rest. A smoothed or running value would be stored
+     state, which is the thing this project has been burnt by more than any
+     other -- keep it instantaneous and let the renderer do any smoothing. */
+  for(const t of T) t.flow=0;
 
   /* the level at which vol, poured onto these heights, comes to rest --
      with base counted in as one more place for it to stand */
@@ -291,7 +313,7 @@ function settle(){
     }
     /* off the board is lower than anything, so under levelling it takes the
        lot and none of it comes back. That is rule 5. */
-    if(off){ add[i]-=w; continue; }
+    if(off){ add[i]-=w; T[i].flow=w; continue; }   /* over the side counts */
     if(!low.length) continue;                    /* nothing lower: it stays */
 
     low.sort((x,y)=>top(x)-top(y));
@@ -305,7 +327,7 @@ function settle(){
       const d=L-hs[k];
       if(d>0){ add[low[k]]+=d; sum+=d; }
     }
-    add[i]-=sum;                                 /* exactly what left it */
+    add[i]-=sum; T[i].flow=sum;                  /* exactly what left it */
   }
   for(let i=0;i<n;i++) T[i].pool=Math.max(0,was[i]+add[i]);
 }
@@ -691,6 +713,8 @@ function drawInfo(){
   h+=row('ground', t.h+'   ('+U(t.h)+' units)');
   h+=row('water',  wet ? U(t.pool)+' units' : '—', wet?'w':'q');
   h+=row('layers', wet ? Math.floor(t.pool/LAYER+1e-9) : '—', wet?'w':'q');
+  const run=t.flow>1e-12;
+  h+=row('flow', run ? U(t.flow)+' units/tick' : '—', run?'w':'q');
   /* the number that decides everything: stone plus the water on it */
   h+=row('height',  U(t.h+t.pool)+' units', wet?'w':'');
   h+=row('cloud',  cell(HOVER,CLOUD_Z)===CLOUD ? 'raining' : '—',
