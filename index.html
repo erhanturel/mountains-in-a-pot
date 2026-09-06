@@ -394,11 +394,15 @@ board.appendChild(renderer.domElement);
 
 const scene=new THREE.Scene();
 scene.background=new THREE.Color(0x05070a);
-scene.add(new THREE.AmbientLight(0xffffff,0.62));
-const sun=new THREE.DirectionalLight(0xffffff,0.95);
+/* A HEMISPHERE rather than flat ambient. Ambient gives every shadowed flank
+   the same muddy value; a hemisphere hands the six side faces six different
+   ones by which way they point, which is most of what makes a hex prism
+   read as a solid. Sky above, bounced ground below. */
+scene.add(new THREE.HemisphereLight(0xdfe9f5,0x585d64,0.85));
+const sun=new THREE.DirectionalLight(0xffffff,0.75);
 sun.position.set(-8,16,10);
 scene.add(sun);
-const fillLight=new THREE.DirectionalLight(0x88aacc,0.25);
+const fillLight=new THREE.DirectionalLight(0x9ab6d8,0.35);
 fillLight.position.set(9,6,-8);
 scene.add(fillLight);
 
@@ -497,9 +501,27 @@ function hide(mesh,n){
 
 /* the same colours the flat renderer used, handed over as a THREE.Color */
 const blend=(a,b,f)=>a.map((v,n)=>v+(b[n]-v)*f);
+/* THE TOPS CARRY THE RELIEF, because the lighting cannot: every top face on
+   the board has the same normal, so a plateau at 8 and a floor at -3 catch
+   exactly the same light. All of it has to come from colour.
+
+   A plain ramp across the whole range gave one elevation step 92/24 of 255 —
+   about one and a half percent — which is why picking out an exact step was
+   guesswork. Two things fix it. */
 function tint(t){
   const f=(t.h+H_MAX)/(2*H_MAX);
-  const c=blend([104,102,98],[196,192,186],f);
+  let c=blend([100,98,94],[190,186,180],f);
+  /* CONTOUR BANDING: every other elevation a shade darker, the way a topo
+     map does it, so a single step reads wherever it sits in the range
+     instead of only near the extremes. */
+  if(((t.h%2)+2)%2) c=blend(c,[16,18,22],0.11);
+  /* OCCLUSION FROM THE SHAPE, not from the lights: how much higher ground
+     stands around this hex. A neighbour three steps up counts full, one step
+     up counts a third. Hollows and the insides of basins darken, ridges come
+     forward, and it costs one pass over six neighbours. */
+  let up=0;
+  for(const j of t.nb) if(j>=0 && T[j].h>t.h) up+=Math.min(1,(T[j].h-t.h)/3);
+  if(up>0) c=blend(c,[30,34,42],Math.min(0.5,0.085*up));
   return new THREE.Color(c[0]/255,c[1]/255,c[2]/255).convertSRGBToLinear();
 }
 

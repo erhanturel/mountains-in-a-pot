@@ -278,6 +278,26 @@ hand-written point-in-hex test.
 Water draws in **whole layers only**: `floor(pool/LAYER) * LAYER`. The
 readout, not the geometry, carries the exact number.
 
+**The tops carry the relief, because the lighting cannot.** Every top face on
+the board has the same normal, so a plateau at 8 and a floor at -3 catch
+exactly the same light — all of it has to come from colour. A plain ramp
+across the full range gave one elevation step 92/24 of 255, about one and a
+half percent, and reading an exact step was guesswork. Two things fix it, both
+inside `tint()`:
+
+- **contour banding** — every other elevation a shade darker, the way a topo
+  map does it, so a single step reads wherever it sits in the range instead
+  of only near the extremes;
+- **occlusion from the shape, not from the lights** — how much higher ground
+  stands around a hex, a neighbour three steps up counting full and one step
+  up a third. Hollows and basin insides darken, ridges come forward, and it
+  costs one pass over six neighbours.
+
+The lights are a **HemisphereLight** plus a sun and a fill. Flat ambient gave
+every shadowed flank the same muddy value; a hemisphere hands the six side
+faces six different ones by which way they point, which is most of what makes
+a hex prism read as a solid.
+
 `OrbitControls` for the camera, with an orthographic/perspective toggle.
 `RATES = [1,2,5,10,100]` drives both *Pass time*, which ticks without acting,
 and *Play*, which does the same on a 10ms interval until you stop it — every
