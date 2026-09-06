@@ -382,7 +382,9 @@ function flood(){
 /* Off the rim counts as ground at 0 for sediment. Putting it any lower made
    every edge hex read as sloped, so it carried everything straight over the
    side and an edge plain could never hold soil. */
-const BED=0, RATE=0.35, SOIL_MAX=5;
+/* RATE=0 switches soil off entirely while the water is under construction.
+   Life goes with it: habitability needs soil>=1, so nothing can root. */
+const BED=0, RATE=0, SOIL_MAX=5;
 function soils(){
   const n=T.length, load=new Array(n).fill(0), fall=[];
   for(let i=0;i<n;i++){
@@ -489,8 +491,33 @@ function lives(){
    re-derives after. Next tick reads the new soil. That is a simulation step,
    not a value quietly drifting.
    --------------------------------------------------------------------- */
-const RAINFALL=0.55;             /* what one cloud drops each tick */
-const SOAK_ROCK=0.25, SOAK_SOIL=0.4;
+/* THE QUANTUM. One elevation step is 72 units; one drawn water layer is 12
+   of them, so six layers make a step. Water is still carried as a REAL
+   NUMBER — nothing in the sim routes on the quantum, it only decides how
+   tall to draw a box. Integers here would have to divide exactly on every
+   split, and they would not: rim counts are not always six. Rounding is
+   where conservation dies, so the rounding lives in the renderer alone. */
+const LAYER=1/6;
+
+/* THE FILM. Water cannot leave a column until it is more than one layer
+   deep. This is depression storage — the puddling that surface roughness
+   causes — and without it an impermeable board with open edges holds
+   NOTHING: every drop that lands runs straight off the side and the ground
+   it crossed shows no sign of it. The film is what makes passing water
+   visible at all.
+
+   Note what it does NOT do. It is a uniform lip on every column, so a lake
+   and the ground around it both stand one layer above their floor and their
+   surfaces stay continuous — water still finds one level. That is the
+   difference between this and letting a lake bulge above its own rim, which
+   would put two brimming lakes at the same height on different surfaces. */
+const FILM=LAYER;
+
+const RAINFALL=LAYER;            /* one cloud drops one layer each tick */
+/* Saturation is OFF while the water is being built: bare stone holds
+   nothing, so every drop is free water and the only thing that can slow it
+   down is the film below. Turn these back up to get satiety back. */
+const SOAK_ROCK=0, SOAK_SOIL=0;
 const WETMIN=0.02;               /* below this a column reads as dry */
 const CLOUD_Z=ZN-5;              /* clouds ride up here, clear of any ground */
 const soakCap = t => SOAK_ROCK + SOAK_SOIL*t.soil;
@@ -577,7 +604,7 @@ function settle(){
         if(j>=0 && rid[j]<0 && esc[j]===esc[c]){ rid[j]=k; cells.push(j); q.push(j); }
     }
     let brim=0, vol=0;
-    for(const c of cells){ brim+=Math.max(0,esc[i]-T[c].h); vol+=free[c]; }
+    for(const c of cells){ brim+=Math.max(0,esc[i]-T[c].h)+FILM; vol+=free[c]; }
     regs.push({k,cells,E:esc[i],brim,vol,spill:[]});
   }
   /* the way out of each region: the lowest ground just outside it, by escape
@@ -625,7 +652,7 @@ function settle(){
   }
   for(const R of regs){
     if(R.vol<=0) continue;
-    const level=levelFor(R.cells,R.vol,R.E);
+    const level=levelFor(R.cells,R.vol,R.E+FILM);
     for(const c of R.cells){ const d=level-T[c].h; if(d>0) T[c].pool=d; }
   }
 }
@@ -864,8 +891,13 @@ function rebuild(){
       instHex[n]=i; n++;
       z=e+1;
     }
-    if(t.liq===WATER){
-      place(water,i,t.x,t.y,t.h*RISE,Math.max(t.ls*RISE,t.h*RISE+0.05));
+    /* water draws in WHOLE LAYERS. Anything shallower than one layer is
+       held but not shown — that remainder is what makes ground bloom into a
+       visible layer several ticks after it first got wet, and it is what
+       stops a sixth of a layer being drawn floating with nothing under it. */
+    const wd = t.liq===WATER ? Math.floor((t.ls-t.h)/LAYER+1e-9)*LAYER : 0;
+    if(wd>0){
+      place(water,i,t.x,t.y,t.h*RISE,(t.h+wd)*RISE);
       hide(lava,i);
     } else if(t.liq===LAVA){
       place(lava,i,t.x,t.y,t.h*RISE,Math.max(t.ls*RISE,t.h*RISE+0.05));
