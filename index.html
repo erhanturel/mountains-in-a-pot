@@ -78,6 +78,9 @@
         <button class="pw on" id="ovBand"><svg viewBox="0 0 18 18">
           <path d="M2 5.5h14M2 9h14M2 12.5h14"/></svg>
           <span>Contours</span></button>
+        <button class="pw on" id="ovRiver"><svg viewBox="0 0 18 18">
+          <path d="M3 13c3-1 3-4 6-5s3-4 6-5"/></svg>
+          <span>Rivers</span></button>
         <div class="rates" id="sun"></div>
       </div>
       <div class="menu" style="margin-top:14px">
@@ -546,6 +549,51 @@ water.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
 water.receiveShadow=true;
 scene.add(water);
 
+/* ---------------------------------------------------------------------
+   RIVERS, drawn from what the water actually did.
+
+   One stub per EDGE that carried water: a flat ribbon from the hex centre
+   out to that edge's midpoint, as wide as the flow through it. Adjacent
+   tiles meet at the shared midpoint, so a channel joins up into a line
+   without anything being inferred, a confluence draws itself, and a fork
+   draws two branches because the tile really did send water two ways.
+
+   THE THRESHOLD IS PER EDGE, not per tile, and that is what stops the
+   spider web that killed the last two attempts at this. A sheet of water
+   spreading over a plain carries as much per tick as a river does -- 73
+   units against 70 -- but it leaves through all six edges at a twelfth
+   each, so no edge clears the bar. A river puts all 70 through one.
+
+   Drawn FLAT and at the height of the water already showing on the tile,
+   never sloped between heights and never faded out. Sloping them looked
+   wrong the first time this was tried, and fading them made the water look
+   like it was floating in the air. Width carries the magnitude instead. */
+const RIVER_MIN=LAYER/2;         /* half a water tile through one edge */
+const MAXSTUB=T.length*6;
+const stubGeo=new THREE.PlaneGeometry(1,1); stubGeo.rotateX(-Math.PI/2);
+const rivers=new THREE.InstancedMesh(stubGeo,
+  new THREE.MeshLambertMaterial({color:0x74c4ea,transparent:true,opacity:0.95}),
+  MAXSTUB);
+rivers.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+rivers.receiveShadow=true;
+scene.add(rivers);
+let RIVERS=true;
+const stubQ=new THREE.Quaternion(), stubAx=new THREE.Vector3(0,1,0);
+function stub(n,t,k,d,y){
+  const v=DIRV[k], ang=Math.atan2(-v[1],v[0]);
+  /* WIDTH TAPERS FROM NOTHING at the threshold. A fixed minimum width drew
+     every marginal trickle as a chunky dash, and a board full of dashes
+     going nowhere is the spider web that killed the last two attempts. A
+     hairline says "a little water went this way" without claiming to be a
+     river. Width, never opacity: fading them made the water look like it
+     was floating in the air. */
+  const wide=0.025+0.44*Math.min(1,(d-RIVER_MIN)/(3*LAYER));
+  P.set(t.x+v[0]*0.433, y, t.y+v[1]*0.433);
+  S.set(0.90,1,wide);
+  stubQ.setFromAxisAngle(stubAx,ang);
+  rivers.setMatrixAt(n,M4.compose(P,stubQ,S));
+}
+
 /* Hex boundaries. Level ground is one smooth plane without them and the grid
    simply is not visible — the flat renderer got this from a stroke per hex.
    All of them live in ONE LineSegments, so it stays a single draw call. */
@@ -622,7 +670,7 @@ function tint(t){
 }
 
 function rebuild(){
-  let n=0;
+  let n=0, ns=0;
   for(let i=0;i<T.length;i++){
     const t=T[i];
     /* walk the column, one prism per unbroken run of solid cells */
@@ -643,10 +691,23 @@ function rebuild(){
     const wd = Math.floor(t.pool/LAYER+1e-9)*LAYER;
     if(wd>0) place(water,i,t.x,t.y,t.h*RISE,(t.h+wd)*RISE);
     else     hide(water,i);
+    /* rivers ride on whatever surface is already showing, so they never
+       hang in the air over a tile that draws no water */
+    if(RIVERS){
+      const y=(t.h+wd)*RISE+0.012;
+      for(let k=0;k<6;k++){
+        const d=t.out[k];
+        if(d>=RIVER_MIN && ns<MAXSTUB) stub(ns++,t,k,d,y);
+      }
+    }
     if(cell(i,CLOUD_Z)===CLOUD)
       place(cloudMesh,i,t.x,t.y,CLOUD_Z*RISE+Z0*RISE,(CLOUD_Z+1)*RISE+Z0*RISE);
     else hide(cloudMesh,i);
   }
+  for(let k=ns;k<MAXSTUB;k++) hide(rivers,k);
+  rivers.count=ns;
+  rivers.instanceMatrix.needsUpdate=true;
+  rivers.computeBoundingSphere();
   for(let k=n;k<MAXRUN;k++){ hide(ground,k); rim(k,0,-999,0); }
   ground.count=n;
   ground.instanceMatrix.needsUpdate=true;
@@ -795,6 +856,9 @@ function setPlay(on){
     RUN ? 'M5 4h3v10H5zM10 4h3v10h-3z' : 'M6 4l8 5-8 5z');
 }
 playBtn.onclick=()=>setPlay(!RUN);
+
+const ovRiver=document.getElementById('ovRiver');
+ovRiver.onclick=()=>{ RIVERS=!RIVERS; ovRiver.classList.toggle('on',RIVERS); rebuild(); };
 
 const ovBand=document.getElementById('ovBand');
 ovBand.onclick=()=>{ BANDS=!BANDS; ovBand.classList.toggle('on',BANDS); rebuild(); };

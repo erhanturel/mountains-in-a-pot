@@ -333,6 +333,27 @@ than a plateau on the other. Water *receives* shadows but does not cast — a
 shadow map has no idea it is see-through, so a lake would lay a solid black
 slab on its own bed.
 
+**Rivers are drawn from `out[6]`, one stub per edge that carried water** — a
+flat ribbon from the hex centre to that edge's midpoint, as wide as the flow
+through it. Adjacent tiles meet at the shared midpoint, so a channel joins up
+into a line without anything being inferred, a confluence draws itself, and a
+fork draws two branches because the tile really did send water two ways.
+
+**The threshold is per edge, not per tile**, and that is what stops the spider
+web that killed the last two attempts. A sheet spreading over a plain carries
+as much per tick as a river — 73 units against 70 — but leaves through all six
+edges at a twelfth each, so no edge clears the bar. A river puts all 70
+through one.
+
+**Width tapers from nothing at the threshold**, so a marginal trickle is a
+hairline rather than a chunky dash going nowhere. Width and never opacity:
+fading them made the water look like it was floating in the air, the first
+time this was tried. Drawn flat, at the height of whatever water already shows
+on the tile, never sloped between heights — sloping looked wrong too.
+
+They are not painted state. Stop the rain and they vanish on their own,
+because `out` goes to zero. Measured: 18 stubs while raining, 0 after.
+
 **The sun is fixed, and moved only by hand.** Four presets in View, NW to SW.
 Tying it to ticks was considered and rejected: the same stored board would
 render differently depending on how long you had been running, so two
