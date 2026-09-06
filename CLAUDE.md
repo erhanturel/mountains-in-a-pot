@@ -50,8 +50,8 @@ This is the whole simulation. If a change cannot be stated as one of these,
 it is a new rule and wants deciding rather than drifting into.
 
 ```
-1  a rain tile drops 12 units on the column below it, every tick
-2  one elevation step is 72 units; one water tile is 12 of them
+1  a rain tile drops 70 units on the column below it, every tick
+2  one elevation step is 420 units; one water tile is 70 of them
 3  a tile's HEIGHT is its stone plus the water standing on it
 4  a tile with water hands its contents to whichever neighbours stand
    lower, split equally between them
@@ -64,23 +64,30 @@ An earlier build solved instead — escape levels, basins filled to a level in
 a single pass, a film of water held against gravity — and all of that is
 gone.
 
-Rule 2 is a **display quantum only**. A tile draws `floor(water/12)` water
-tiles stacked on it, so anything under 12 units is held but not drawn, and a
-tile can carry 20 units and show one. Water itself is a real number; nothing
+Rule 2 is a **display quantum only**. A tile draws `floor(water/70)` water
+tiles stacked on it, so anything under 70 units is held but not drawn, and a
+tile can carry 100 units and show one. Water itself is a real number; nothing
 routes on the quantum.
+
+**420 is the lowest common multiple of 2 through 7**, and a tile shares what
+it sheds between itself and up to six lower neighbours — so every *first*
+split lands on a whole number whatever the neighbour count. It stops being
+exact at the second division, so water is still a float. 420 only makes the
+readings you actually look at legible: where 72 units read 1.714, 420 reads
+10.
 
 ### The two things rule 4 does not say, and has to
 
 **How much it sheds.** Read literally — *hand over the whole contents* — a
 brimming basin empties in a single tick: at the rim all six neighbours become
-lower at once, all 84 units leave, 14 to each, and the lake vanishes and
+lower at once, all 490 units leave, 82 to each, and the lake vanishes and
 begins again forever. So a tile sheds only until it is **level** with the
 highest of the neighbours it is shedding to.
 
 **That level has to count the receivers coming up.** Handing over the whole
 *difference* is nearly right and still wrong: it overshoots by exactly
 double, so a pair of tiles swap heights and swap them back. Measured, boards
-were still sloshing 7.5 units a hex two thousand ticks after the rain
+were still sloshing 44 units a hex two thousand ticks after the rain
 stopped. Hand over `g` and the tile falls by `g` while each of the `N`
 receivers rises by `g/N`, so level means
 
@@ -169,8 +176,8 @@ with its neighbours until none is lower.
 **Motion decays, it does not stop dead.** Levelling is asymptotic, so after
 the rain stops the board keeps making smaller and smaller adjustments rather
 than freezing. Measured over 200 boards, the biggest change any hex makes in
-one tick falls from 17 units after 10 ticks to **0.003 units after 2000** —
-a thousandth of what it would take to change a single drawn layer. The old
+one tick falls from 100 units after 10 ticks to **0.019 units after 2000** —
+a four-thousandth of what it takes to change a single drawn layer. The old
 solving build stopped exactly; this one settles.
 
 ---
@@ -184,7 +191,7 @@ are kept because the reasoning still applies.
 
 **Handing over the whole contents.** Rule 4 read literally. A brimming basin
 emptied itself in one tick, nothing could come to rest, and nothing was ever
-drawn on flat ground because no tile could hold 12 units for a whole tick.
+drawn on flat ground because no tile could hold 70 units for a whole tick.
 
 **Handing over the whole difference.** The obvious correction, and it
 overshoots by double: a pair of tiles swap heights and swap back, forever.
@@ -296,16 +303,19 @@ sets or reads it now).
 ## Where it stands
 
 ```
-one-hex basin at -1, rain on it   12 units a tick for six ticks, 72 at the
+one-hex basin at -1, rain on it   70 units a tick for six ticks, 420 at the
                                   rim, then it sheds the surplus outward
-that basin left raining           settles at 86 units, 14 above the rim --
-                                  the head it needs to push 12 a tick out
+the 7th tick, exactly             70 units of rain shared seven ways: 10 to
+                                  the basin and 10 to each of its six rims,
+                                  all seven then at the same height
+that basin left raining           settles at 504 units, 84 above the rim --
+                                  the head it needs to push 70 a tick out
                                   through six neighbours
-                                  rain off: back to exactly 72, dead level
+                                  rain off: back to exactly 420, dead level
 seven-hex bowl, uneven floor      -2 in the middle, -1 around: settles to one
                                   surface, exactly, every tile
 200 boards, rain off              biggest change any hex makes in a tick
-                                  falls 17 -> 1.1 -> 0.003 units by tick 2000
+                                  falls 100 -> 6.4 -> 0.019 units by tick 2000
 300 boards x 85 ticks             0 ticks created water
 flat board, 40 ticks              distinct depths per ring 1 1 2 2 3 3 4,
                                   exactly the symmetry orbits of each ring
@@ -314,7 +324,7 @@ flat board, 40 ticks              distinct depths per ring 1 1 2 2 3 3 4,
 ### Known, and not bugs
 
 - **Water on flat ground is mostly invisible.** It spreads and levels, so it
-  is nearly always under the 12 units a water tile needs. A rain tile on a
+  is nearly always under the 70 units a water tile needs. A rain tile on a
   flat board wets all 127 hexes and draws one or two. Water shows where it
   gathers — in a basin — which is where it should.
 - **A lake stands about a water tile above its rim while it is raining.**

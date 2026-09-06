@@ -60,8 +60,8 @@
     <div>
       <div id="board"><div id="info"></div></div>
       <div class="hint"><b>click a hex</b> — drag to orbit, scroll to zoom.
-        A rain tile drops 12 units a tick. Water hands itself to whichever
-        neighbours stand lower, until it is level with them.</div>
+        A rain tile drops 70 units a tick — one water tile — and 420 units
+        make one step of stone. Water levels itself with whatever is lower.</div>
     </div>
     <div>
       <div class="menu">
@@ -191,8 +191,8 @@ const at=(q,r)=>{const i=idx.get(q+','+r);return i===undefined?-1:i};
 /* ---------------------------------------------------------------------
    WATER, AND NOTHING ELSE. Five rules, and no sixth.
 
-     1  a rain tile drops 12 units on the column below it, every tick
-     2  one elevation step is 72 units; one water tile is 12 of them
+     1  a rain tile drops 70 units on the column below it, every tick
+     2  one elevation step is 420 units; one water tile is 70 of them
      3  a tile's HEIGHT is stone plus the water standing on it
      4  a tile with water hands its WHOLE contents to whichever neighbours
         stand lower, split equally between them
@@ -203,7 +203,14 @@ const at=(q,r)=>{const i=idx.get(q+','+r);return i===undefined?-1:i};
    on it, so anything under 12 is held but not drawn, and a tile can carry
    20 units and show one.
    --------------------------------------------------------------------- */
-const LAYER=1/6;                 /* 12 units of the 72 in an elevation step */
+/* 420 UNITS TO AN ELEVATION STEP, and 70 of them to a water tile. The number
+   is the lowest common multiple of 2 through 7, and a tile shares what it
+   sheds between itself and up to six lower neighbours -- so every FIRST
+   split lands on a whole number whatever the neighbour count. It stops
+   being exact at the second division, so water is still a float; 420 only
+   makes the readings you actually look at legible. 72 units read 1.714
+   where 420 reads 10. */
+const LAYER=1/6;
 const RAINFALL=LAYER;            /* what one rain tile drops each tick */
 const CLOUD_Z=ZN-5;              /* rain tiles ride up here, clear of the ground */
 
@@ -538,12 +545,13 @@ function drawInfo(){
   const t=T[HOVER];
   const row=(k,v,cls)=>'<div class="r'+(cls==='q'?' q':'')+'"><span>'+k+
     '</span><span'+(cls&&cls!=='q'?' class="'+cls+'"':'')+'>'+v+'</span></div>';
-  const wet=t.pool>1e-9, U=v=>Math.round(v*72);
+  const wet=t.pool>1e-9, U=v=>Math.round(v*420*100)/100;
   let h='<h4>'+t.q+', '+t.r+'</h4>';
   h+=row('ground', t.h+'   ('+U(t.h)+' units)');
   h+=row('water',  wet ? U(t.pool)+' units' : '—', wet?'w':'q');
   h+=row('layers', wet ? Math.floor(t.pool/LAYER+1e-9) : '—', wet?'w':'q');
-  h+=row('surface',wet ? (t.h+t.pool).toFixed(3) : '—', wet?'w':'q');
+  /* the number that decides everything: stone plus the water on it */
+  h+=row('height',  U(t.h+t.pool)+' units', wet?'w':'');
   h+=row('cloud',  cell(HOVER,CLOUD_Z)===CLOUD ? 'raining' : '—',
                    cell(HOVER,CLOUD_Z)===CLOUD?'w':'q');
   el.innerHTML=h;
