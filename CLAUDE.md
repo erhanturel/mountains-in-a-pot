@@ -67,18 +67,35 @@ column you just raised has a way off in every direction and keeps nothing.
 That one clause is what dries the board, and it is why no evaporation rule
 is needed on any terrain with relief.
 
-**The two comparisons are deliberately different, and differ by direction.**
-Leaving a column, water stands at its surface - ground plus whatever film it
-holds. Arriving at one, it reads the **bare ground**, because the film is not
-an obstruction: it is water the rock is holding and more water runs over it
-freely. A hollow is the one place the two really diverge and it is read as a
-pond - full, it stands at its rim and takes nothing; not full, it stands at
-its floor and swallows whatever reaches it.
+### The three comparisons, and why none of them is the same
 
-Deciding *retention* by net elevation instead empties the board. A hex with
-12 beside a hex with 0 would shed, and so would the next, all the way to the
-rim where the void is lower than everything. A tick solves, so that happens
-at once: a cloud on a flat board would show nothing even while raining.
+**Retention is a SILL test: is there a neighbour whose WATER SURFACE lies
+below MY OWN GROUND?** That is the only way water can actually run off a
+column. Both halves matter and each was wrong once.
+
+*Against the neighbour's bare ground* it drew a target. Dig a hex, rain into
+it until it brims, and the six around it stayed permanently dry while the
+ring beyond them filled: basin, dry ring, wet ring. Those six have the basin
+below them, so by ground they could never hold anything — but the basin was
+FULL, its surface level with their own floor, and their water had nowhere to
+go.
+
+*Against my own surface* it empties the board. A hex holding a film beside a
+dry one at the same height would shed to it, and so would the next, all the
+way to the rim where the void is lower than everything. A tick solves, so a
+cloud on a flat board would show nothing even while it was still raining.
+
+**Flow reads net elevation, and not the same number in both directions.**
+Leaving a node, water stands at its surface — a pond at its level, a column
+at its ground plus the film it holds. Arriving at a column it reads the
+**bare ground**, because the film is not an obstruction: it is water the rock
+is holding and more water runs over it freely. Reading the film as a wall on
+the way in stopped a full basin spilling onto a plain that had any film at
+all, and destroyed the entire overflow.
+
+A hollow is the one place net elevation really diverges from ground, and it
+is read as a pond: full, it stands at its rim and takes nothing; not full, it
+stands at its floor and swallows whatever reaches it.
 
 Rule 2 is a **display quantum only**. Water is carried as a real number and
 nothing in the sim routes on the quantum — it decides how tall to draw a box
@@ -149,8 +166,8 @@ A hollow fills to **exactly its own rim**. The lip it spills over always has
 the hollow beneath it, so the lip can never hold a film, and the pond has
 nothing to climb over. A one-deep pit therefore fills in exactly six ticks.
 
-**Everywhere else** a column holds its film only if it has nowhere lower to
-put it, and hands on everything else.
+**Everywhere else** a column holds its film only if no neighbour's water
+surface lies below its own ground, and hands on everything else.
 
 `escapes()` is a priority flood inward from the board edge: `esc[i]` is the
 lowest level at which column `i` can still reach open air. A column is in a
@@ -205,6 +222,12 @@ and sent not one drop down the step.
 spills at one saddle; wrong for a sheet on a plateau, which leaves everywhere
 its rim is lower. A plateau touching both the board edge and a step down sent
 every drop over the side, because the void is lower than anything.
+
+**Retention judged by the neighbour's bare ground.** Dig a hex, brim it, and
+the six hexes around it never got wet while the ring beyond them filled — a
+target drawn on the board. They had the basin below them by ground, but it
+was full and level with their floor. Retention is a sill against the
+neighbour's *surface*, not its ground.
 
 **Steepest-descent routing deleted water on flat ground.** On a plain nothing
 is downhill, so the routing found no outlet and the water was quietly
@@ -301,19 +324,19 @@ control.
 
 ```
 a one-hex basin gains one layer a tick    1 2 3 4 5 6 6 6 - it caps at its rim
-a basin with one elev-0 lip               fills in 6, then the whole 12 a tick
-                                          goes through the lip and onward
+a basin with one elev-0 lip               fills in 6, then the lip takes its own
+                                          12 and passes the rest on outward
 raising a wet column                      12 units -> 0, it sheds and dries
 raising a brim-full pit                   72 units -> 12, the rest to its six
                                           neighbours, conserved exactly
-digging beside a full lake                both surfaces -0.3333, lost 0.000000000
+digging beside a full lake                both surfaces -0.2500, lost 0.000000000
 digging five hexes away                   the lake keeps its water, the pit stays dry
 flat board, one cloud                     the front reaches 91 of 127; the 36-hex
                                           rim is dry by rule and sheds the rest
 water down a one-step drop                by tick 20, plateau still mostly dry
 300 boards x 85 ticks                     0 ticks created water
                                           0/300 boards move once the rain stops
-                                          0 of 11,164 wet hexes reachable only by climbing
+                                          0 of 20,253 wet hexes reachable only by climbing
 flat board after 40 ticks                 every ring holds exactly one depth
 ```
 

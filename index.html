@@ -300,10 +300,27 @@ function levelFor(cells, vol, cap){
 function settle(){
   const n=T.length, esc=escapes();
 
-  /* somewhere lower to put it? then it holds nothing. The void off the
-     rim counts as lower, so the outermost ring never holds either. */
+  /* SOMEWHERE LOWER TO PUT IT? Then it holds nothing.
+
+     The test is a SILL: is there a neighbour whose WATER SURFACE lies below
+     my own GROUND? That is the only way water can actually run off me.
+
+     Comparing bare ground instead drew a target: dig a hex, rain into it
+     until it brims, and the six hexes around it stayed permanently dry
+     while the ring beyond them filled -- basin, dry ring, wet ring. Those
+     six have the basin below them, so by ground they could never hold
+     anything; but the basin was FULL, its surface level with their own
+     floor, and there was nowhere for their water to go.
+
+     It has to be the neighbour's surface against MY GROUND, and not
+     against my surface. Against my surface, a hex holding a film beside a
+     dry one at the same height would shed to it, and so would the next,
+     all the way to the rim where the void is lower than everything -- a
+     tick solves, so the whole board would empty while it was still
+     raining. */
   const runs=new Array(n);
-  for(let i=0;i<n;i++) runs[i]=T[i].nb.some(j=>j<0||T[j].h<T[i].h);
+  for(let i=0;i<n;i++)
+    runs[i]=T[i].nb.some(j=>j<0||T[j].h+T[j].pool<T[i].h-1e-9);
 
   const hid=new Array(n).fill(-1), hol=[];
   for(let i=0;i<n;i++){
