@@ -80,6 +80,9 @@
         <button class="pw" id="stepBtn"><svg viewBox="0 0 18 18">
           <circle cx="9" cy="9" r="7"/><path d="M9 4.3V9l3.2 2.1"/></svg>
           <span>Pass time</span></button>
+        <button class="pw" id="playBtn"><svg viewBox="0 0 18 18">
+          <path d="M6 4l8 5-8 5z"/></svg>
+          <span>Play</span></button>
         <div class="rates" id="rates"></div>
       </div>
     </div>
@@ -603,10 +606,23 @@ function drawRates(){
   document.querySelectorAll('#rates .rt').forEach(b=>b.onclick=()=>{
     STEP=+b.dataset.r; drawRates(); });
 }
-document.getElementById('stepBtn').onclick=()=>{
-  for(let k=0;k<STEP;k++) tick();
-  rebuild(); hover(HOVER);
-};
+const advance=()=>{ for(let k=0;k<STEP;k++) tick(); rebuild(); hover(HOVER); };
+document.getElementById('stepBtn').onclick=advance;
+
+/* RUNNING. A tick every 10ms, STEP of them at a time, so the rate buttons
+   drive Play as well as Pass time. Sculpting while it runs is fine — a
+   power click is a tick like any other. */
+let RUN=null;
+const playBtn=document.getElementById('playBtn');
+function setPlay(on){
+  if(RUN){ clearInterval(RUN); RUN=null; }
+  if(on) RUN=setInterval(advance,10);
+  playBtn.classList.toggle('on',!!RUN);
+  playBtn.querySelector('span').textContent = RUN?'Stop':'Play';
+  playBtn.querySelector('path').setAttribute('d',
+    RUN ? 'M5 4h3v10H5zM10 4h3v10h-3z' : 'M6 4l8 5-8 5z');
+}
+playBtn.onclick=()=>setPlay(!RUN);
 
 const ovProj=document.getElementById('ovProj');
 ovProj.onclick=()=>{ ortho=!ortho;

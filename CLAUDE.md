@@ -267,9 +267,11 @@ Water draws in **whole layers only**: `floor(pool/LAYER) * LAYER`. The
 readout, not the geometry, carries the exact number.
 
 `OrbitControls` for the camera, with an orthographic/perspective toggle.
-`RATES = [1,2,5,10,100]` drives *Pass time*, which ticks without acting —
-every power click is already a tick, so watching a basin fill needed something
-to do that was not also changing the ground.
+`RATES = [1,2,5,10,100]` drives both *Pass time*, which ticks without acting,
+and *Play*, which does the same on a 10ms interval until you stop it — every
+power click is already a tick, so watching a basin fill needed something to do
+that was not also changing the ground. Play is one toggle rather than two
+buttons; it relabels itself Stop. Sculpting while it runs is fine.
 
 The draw loop is `frame()`, deliberately **not** `tick()`. A tick is a step of
 the world. The two were once the same name and it cost an afternoon.
