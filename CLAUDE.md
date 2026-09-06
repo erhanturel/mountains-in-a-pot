@@ -53,8 +53,8 @@ it is a new rule and wants deciding rather than drifting into.
 1  a rain tile drops 70 units on the column below it, every tick
 2  one elevation step is 420 units; one water tile is 70 of them
 3  a tile's HEIGHT is its stone plus the water standing on it
-4  a tile with water hands its contents to whichever neighbours stand
-   lower, split equally between them
+4  a tile with water pours into whichever neighbours stand lower, until
+   it and all of them are at ONE HEIGHT
 5  off the board is lower than anything, and that share is gone
 ```
 
@@ -78,28 +78,45 @@ readings you actually look at legible: where 72 units read 1.714, 420 reads
 
 ### The two things rule 4 does not say, and has to
 
-**How much it sheds.** Read literally — *hand over the whole contents* — a
-brimming basin empties in a single tick: at the rim all six neighbours become
-lower at once, all 490 units leave, 82 to each, and the lake vanishes and
-begins again forever. So a tile sheds only until it is **level** with the
-highest of the neighbours it is shedding to.
+**How much it sheds.** Read as *hand over the whole contents*, a brimming
+basin empties in a single tick: at the rim all six neighbours become lower at
+once, all 490 units leave, 82 to each, and the lake vanishes and begins again
+forever. Read as *hand over the whole difference* it overshoots by exactly
+double, so a pair of tiles swap heights and swap them back — boards were
+still sloshing 44 units a hex two thousand ticks after the rain stopped.
 
-**That level has to count the receivers coming up.** Handing over the whole
-*difference* is nearly right and still wrong: it overshoots by exactly
-double, so a pair of tiles swap heights and swap them back. Measured, boards
-were still sloshing 44 units a hex two thousand ticks after the rain
-stopped. Hand over `g` and the tile falls by `g` while each of the `N`
-receivers rises by `g/N`, so level means
+**The level is found, not computed from a formula.** Walk the lower
+neighbours from the lowest upward, each joining the pour as the surface drops
+past it:
 
 ```
-me - g = high + g/N        ->        g = N x (me - high) / (N + 1)
+what the tile gives up  =  what the neighbours below L take in
+
+      H - L             =   sum over aj < L of (L - aj)
 ```
 
-The split is still one Nth to each, exactly as the rule says. Only the total
-changes.
+With the first `m+1` neighbours taking part that is `L = (H + Sm) / (m + 2)`,
+and the walk stops at the first `m` where `L` actually lands between that
+neighbour and the next. Everyone finishes at the same height, so nothing can
+overshoot anything.
 
-A void neighbour is bottomless, so there is no levelling with it and the tile
-empties into it. That is rule 5.
+**It cannot give more than it has.** If the level would take it below its own
+stone it empties instead, and the receivers level among themselves with what
+there was.
+
+**A void neighbour is bottomless**, so under levelling it takes the lot and
+none comes back. That is rule 5.
+
+An earlier version levelled with only the HIGHEST lower neighbour and then
+split that amount equally between all of them. That is the same answer
+whenever the lower neighbours are all at one height, and wrong whenever they
+are not — a tile with three neighbours at its own stone height and two a full
+two elevations down stopped shedding the moment it matched the near ones, so
+a block of water sat on it handing out equal dribbles instead of pouring over
+the drop. Measured on that board: 430 of its 490 units stayed put and every
+neighbour got 10. Levelling with all of them sends all 490 into the two deep
+ones, 245 each, and the near three correctly get nothing — there is not
+enough water to fill the holes up to their level.
 
 ### The whole board is read from one snapshot
 
@@ -163,9 +180,11 @@ The whole of it:
 
 ```js
 for each tile with water:
-    lower  = neighbours whose stone+water is below mine  (void counts)
+    if any neighbour is the void: it all goes over the side
+    lower = neighbours whose stone+water is below mine
     if none: it keeps what it has
-    else:    hand N x (mine - highest of them) / (N+1), split N ways
+    else:   find the one height L that it and all of them come to rest at,
+            capped at its own stone, and give each of them (L - theirs)
 ```
 
 There is nothing else. No escape levels, no basins found in advance, no
@@ -176,8 +195,10 @@ with its neighbours until none is lower.
 **Motion decays, it does not stop dead.** Levelling is asymptotic, so after
 the rain stops the board keeps making smaller and smaller adjustments rather
 than freezing. Measured over 200 boards, the biggest change any hex makes in
-one tick falls from 100 units after 10 ticks to **0.019 units after 2000** —
-a four-thousandth of what it takes to change a single drawn layer. The old
+one tick falls from 124 units after 10 ticks to **0.000000004 units after
+2000**. Levelling with every lower neighbour at once settles far faster than
+levelling with the highest of them did: that was still moving 0.019 units a
+tick at the same point. The old
 solving build stopped exactly; this one settles.
 
 ---
@@ -196,6 +217,11 @@ drawn on flat ground because no tile could hold 70 units for a whole tick.
 **Handing over the whole difference.** The obvious correction, and it
 overshoots by double: a pair of tiles swap heights and swap back, forever.
 Levelling has to count the receivers rising.
+
+**Levelling with only the highest lower neighbour.** Right whenever the lower
+neighbours are all at one height, wrong whenever they are not: a tile stopped
+shedding the moment it matched its nearest neighbour, so water sat on a ledge
+handing out equal dribbles instead of pouring over the drop beside it.
 
 **Standing water grouped by escape level** *(solving build)*. On a flat board
 every column escapes at the same height, so the whole board was one body with
@@ -308,14 +334,19 @@ one-hex basin at -1, rain on it   70 units a tick for six ticks, 420 at the
 the 7th tick, exactly             70 units of rain shared seven ways: 10 to
                                   the basin and 10 to each of its six rims,
                                   all seven then at the same height
-that basin left raining           settles at 504 units, 84 above the rim --
+that basin left raining           settles at 469 units, 49 above the rim --
                                   the head it needs to push 70 a tick out
                                   through six neighbours
                                   rain off: back to exactly 420, dead level
 seven-hex bowl, uneven floor      -2 in the middle, -1 around: settles to one
                                   surface, exactly, every tile
+490 units on a tile, three         all 490 goes into the two deep ones, 245
+neighbours level and two two       each; the level three get nothing, there
+elevations down                    being too little to fill the holes to them
+a six-step cliff on one side,      438 units down the cliff, 5.8 along each
+five level neighbours              of the five flat sides
 200 boards, rain off              biggest change any hex makes in a tick
-                                  falls 100 -> 6.4 -> 0.019 units by tick 2000
+                                  falls 124 -> 5.8 -> 0.000000004 by tick 2000
 300 boards x 85 ticks             0 ticks created water
 flat board, 40 ticks              distinct depths per ring 1 1 2 2 3 3 4,
                                   exactly the symmetry orbits of each ring
@@ -334,6 +365,13 @@ flat board, 40 ticks              distinct depths per ring 1 1 2 2 3 3 4,
   tile empties into it.
 - **The board never freezes exactly.** Levelling is asymptotic. It goes quiet
   a very long way below anything the display can show.
+- **Several tiles pouring into one overshoot it, for one tick.** They each
+  level against it from the same snapshot, so none of them sees the other
+  five doing it. Measured worst case: six tiles holding 210 units each,
+  around a pit one step down, put it 840 units — two whole elevations —
+  above them for a single frame before it pours back out. It is the price of
+  the snapshot, and the snapshot is what keeps the board symmetric. Capping
+  what a tile may RECEIVE would fix it and costs a second pass.
 
 ### Open questions
 
