@@ -298,6 +298,20 @@ every shadowed flank the same muddy value; a hemisphere hands the six side
 faces six different ones by which way they point, which is most of what makes
 a hex prism read as a solid.
 
+**The sun casts shadows, and it is the only cue that carries height across
+distance.** Banding and occlusion both read a hex against its own six
+neighbours; neither can say that a peak on one side of the board is taller
+than a plateau on the other. Water *receives* shadows but does not cast — a
+shadow map has no idea it is see-through, so a lake would lay a solid black
+slab on its own bed.
+
+**The sun is fixed, and moved only by hand.** Four presets in View, NW to SW.
+Tying it to ticks was considered and rejected: the same stored board would
+render differently depending on how long you had been running, so two
+screenshots of one state could no longer be compared, and Play at a hundred
+ticks a second would strobe. It is a viewing control — turn the light when a
+piece of ground reads badly.
+
 `OrbitControls` for the camera, with an orthographic/perspective toggle.
 `RATES = [1,2,5,10,100]` drives both *Pass time*, which ticks without acting,
 and *Play*, which does the same on a 10ms interval until you stop it — every

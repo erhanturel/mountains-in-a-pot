@@ -78,6 +78,7 @@
         <button class="pw on" id="ovBand"><svg viewBox="0 0 18 18">
           <path d="M2 5.5h14M2 9h14M2 12.5h14"/></svg>
           <span>Contours</span></button>
+        <div class="rates" id="sun"></div>
       </div>
       <div class="menu" style="margin-top:14px">
         <h2>Time</h2>
@@ -370,6 +371,10 @@ function use(i,p,rad){
    and orbit, zoom and true isometric come free.
    ====================================================================== */
 const RISE=0.34;                 /* one height step, in hex radii */
+/* the board's half-width in world units is sqrt(3)*R, plus a margin. Declared
+   up here because the shadow camera is sized from it, and that is set up with
+   the lights, well before the camera itself. */
+const SPAN=Math.sqrt(3)*R+4;
 const BASE=-H_MAX-1;             /* every column is solid rock down to here */
 
 /* the powers menu — the five things a click can be */
@@ -392,6 +397,8 @@ function drawBrush(){
 
 const board=document.getElementById('board');
 const renderer=new THREE.WebGLRenderer({antialias:true});
+renderer.shadowMap.enabled=true;
+renderer.shadowMap.type=THREE.PCFSoftShadowMap;
 renderer.setPixelRatio(Math.min(2,window.devicePixelRatio||1));
 board.appendChild(renderer.domElement);
 
@@ -403,16 +410,50 @@ scene.background=new THREE.Color(0x05070a);
    read as a solid. Sky above, bounced ground below. */
 scene.add(new THREE.HemisphereLight(0xdfe9f5,0x585d64,0.85));
 const sun=new THREE.DirectionalLight(0xffffff,0.75);
-sun.position.set(-8,16,10);
-scene.add(sun);
+scene.add(sun); scene.add(sun.target);
+
+/* SHADOWS, because they are the only cue that carries height ACROSS
+   DISTANCE. Contour banding and the occlusion both read a hex against its
+   own six neighbours; neither can tell you that a peak on one side of the
+   board is taller than a plateau on the other. A ridge throwing a shadow
+   over the plain beside it says so at once. */
+sun.castShadow=true;
+sun.shadow.mapSize.set(2048,2048);
+{ const c=sun.shadow.camera, W=SPAN*1.35;   /* the board's footprint seen
+     from an oblique light is wider than the board itself */
+  c.left=-W; c.right=W; c.top=W; c.bottom=-W; c.near=5; c.far=140;
+  c.updateProjectionMatrix(); }
+/* bias against the hex tops shadowing themselves: normalBias pushes the
+   lookup along the surface normal, which is what flat faces need */
+sun.shadow.bias=-0.0004;
+sun.shadow.normalBias=0.08;
+
+/* A FIXED SUN, moved by hand and never by the clock. Tying it to ticks
+   would mean the same stored board renders differently depending on how
+   long you had been running, so two screenshots of the same state could no
+   longer be compared -- and Play at a hundred ticks a second would strobe.
+   This is a VIEWING control: turn the light when a piece of ground reads
+   badly. */
+const SUNDIRS=[[-0.5,1,0.62],[0.5,1,0.62],[0.5,1,-0.62],[-0.5,1,-0.62]];
+const SUNNAMES=['NW','NE','SE','SW'];
+let SUNAT=0;
+function setSun(k){
+  SUNAT=k; const d=SUNDIRS[k];
+  sun.position.set(d[0]*44,d[1]*44,d[2]*44);
+  sun.target.position.set(0,0,0); sun.target.updateMatrixWorld();
+  drawSun();
+}
+function drawSun(){
+  document.getElementById('sun').innerHTML=SUNNAMES.map((n,k)=>
+    '<button class="rt'+(k===SUNAT?' on':'')+'" data-k="'+k+'">'+n+'</button>').join('');
+  document.querySelectorAll('#sun .rt').forEach(b=>b.onclick=()=>setSun(+b.dataset.k));
+}
 const fillLight=new THREE.DirectionalLight(0x9ab6d8,0.35);
 fillLight.position.set(9,6,-8);
 scene.add(fillLight);
 
 /* Orthographic reads as isometric, which is the look this board wants.
    Perspective is there for when you want to feel the depth. */
-/* the board's half-width in world units is sqrt(3)*R, plus a margin */
-const SPAN=Math.sqrt(3)*R+4;
 let ortho=true, cam=null, controls=null;
 function makeCam(){
   const w=board.clientWidth||900, h=board.clientHeight||660, a=w/h;
@@ -441,6 +482,7 @@ const instHex=new Int16Array(MAXRUN).fill(-1);
 const ground=new THREE.InstancedMesh(
   prism, new THREE.MeshLambertMaterial(), MAXRUN);
 ground.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+ground.castShadow=true; ground.receiveShadow=true;
 scene.add(ground);
 
 /* water gets its own mesh, and sees through */
@@ -453,6 +495,9 @@ const cloudMesh=new THREE.InstancedMesh(prism,
 cloudMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
 scene.add(cloudMesh);
 water.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+/* water RECEIVES but does not CAST: a shadow map has no idea it is
+   see-through, so a lake would lay a solid black slab on its own bed */
+water.receiveShadow=true;
 scene.add(water);
 
 /* Hex boundaries. Level ground is one smooth plane without them and the grid
@@ -715,7 +760,7 @@ window.POT={T,at,use,tick,settle,rebuild,POWERS,scene,
    now, and the two must never be confused. */
 function frame(){ controls.update(); renderer.render(scene,cam);
   requestAnimationFrame(frame); }
-drawMenu(); drawBrush(); drawRates(); settle(); rebuild(); resize(); drawInfo(); frame();
+drawMenu(); drawBrush(); drawRates(); setSun(0); settle(); rebuild(); resize(); drawInfo(); frame();
 </script>
 </body>
 </html>
