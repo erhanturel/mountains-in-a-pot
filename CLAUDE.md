@@ -52,14 +52,33 @@ it is a new rule and wants deciding rather than drifting into.
 ```
 1  a cloud drops 12 units of water on the column below it, every tick
 2  one elevation step is 72 units; one drawn water layer is 12 of them
-3  a column holds 12 units before it sheds any
-4  it sheds only to ground at its own height or lower
+3  a column holds 12 units - but ONLY if it has nowhere lower to put them
+4  it sheds to whatever is lower by net elevation, ground plus water
 5  what reaches the edge of the board falls off
 ```
 
 Rule 3 is **the film**, and it is what makes moving water visible at all.
 Without it an impermeable board with open edges holds nothing: every drop
 runs straight off the side and the ground it crossed shows no sign of it.
+
+**Rule 3 is a condition on rule 4, not a rule of its own.** A column keeps
+its film because the water has no way off it; a hillside, a summit, or a
+column you just raised has a way off in every direction and keeps nothing.
+That one clause is what dries the board, and it is why no evaporation rule
+is needed on any terrain with relief.
+
+**The two comparisons are deliberately different, and differ by direction.**
+Leaving a column, water stands at its surface - ground plus whatever film it
+holds. Arriving at one, it reads the **bare ground**, because the film is not
+an obstruction: it is water the rock is holding and more water runs over it
+freely. A hollow is the one place the two really diverge and it is read as a
+pond - full, it stands at its rim and takes nothing; not full, it stands at
+its floor and swallows whatever reaches it.
+
+Deciding *retention* by net elevation instead empties the board. A hex with
+12 beside a hex with 0 would shed, and so would the next, all the way to the
+rim where the void is lower than everything. A tick solves, so that happens
+at once: a cloud on a flat board would show nothing even while raining.
 
 Rule 2 is a **display quantum only**. Water is carried as a real number and
 nothing in the sim routes on the quantum — it decides how tall to draw a box
@@ -126,7 +145,12 @@ A **hollow** is a connected run of columns standing below their own escape
 level — a real depression. Its water finds one level, so a hollow reads as one
 body however uneven its floor.
 
-**Everywhere else** a column simply holds its film and hands the rest on.
+A hollow fills to **exactly its own rim**. The lip it spills over always has
+the hollow beneath it, so the lip can never hold a film, and the pond has
+nothing to climb over. A one-deep pit therefore fills in exactly six ticks.
+
+**Everywhere else** a column holds its film only if it has nowhere lower to
+put it, and hands on everything else.
 
 `escapes()` is a priority flood inward from the board edge: `esc[i]` is the
 lowest level at which column `i` can still reach open air. A column is in a
@@ -276,29 +300,36 @@ hollows, spilling off the board edge, the quantized draw, and the time
 control.
 
 ```
-a one-hex basin gains one layer a tick    1 2 3 4 5 6 7 7
-digging beside a full lake                both surfaces -0.2917, lost 0.000000000
+a one-hex basin gains one layer a tick    1 2 3 4 5 6 6 6 - it caps at its rim
+a basin with one elev-0 lip               fills in 6, then the whole 12 a tick
+                                          goes through the lip and onward
+raising a wet column                      12 units -> 0, it sheds and dries
+raising a brim-full pit                   72 units -> 12, the rest to its six
+                                          neighbours, conserved exactly
+digging beside a full lake                both surfaces -0.3333, lost 0.000000000
 digging five hexes away                   the lake keeps its water, the pit stays dry
-flat board, one cloud                     front 1 -> 19 -> 37 -> 91 -> 127 columns
-                                          nothing lost until tick 127, then it
-                                          sheds exactly the rain
+flat board, one cloud                     the front reaches 91 of 127; the 36-hex
+                                          rim is dry by rule and sheds the rest
 water down a one-step drop                by tick 20, plateau still mostly dry
 300 boards x 85 ticks                     0 ticks created water
                                           0/300 boards move once the rain stops
-                                          0 of 32,358 wet hexes reachable only by climbing
+                                          0 of 11,164 wet hexes reachable only by climbing
 flat board after 40 ticks                 every ring holds exactly one depth
 ```
 
 ### Known, and not bugs
 
-- **A pond at its brim stands up to one layer above adjacent ground** that has
-  not got its full film yet. Never more. That is the head it needs to get over
-  the lip.
-- **A cloud on a mountain peak puts a layer on the summit.** The film applies
-  to every column, so a peak holds one layer and sheds the rest. Rule 3
-  applied to a peak.
+- **The outermost ring of the board is permanently dry.** Those hexes border
+  the void, which is lower than anything, so they can never retain. 91 of the
+  127 hexes can hold water; the other 36 are the rim.
+- **A slope never holds water.** Every column on a hillside has a lower
+  neighbour, so water running down one is invisible - you see it leave the top
+  and arrive in the lake with nothing in between.
 - **Flat ground can never show more than one layer.** The film caps at one and
   standing water only exists in a hollow.
+- **A perfectly flat plain never dries.** No column on it has anywhere lower,
+  so the film stays. This is the one case that would want evaporation, and it
+  is the degenerate board rather than the general one.
 - **A region waits until it is entirely filmed before it spills.** Water
   reaching a step ought to start falling as soon as the front arrives, not
   when the whole plateau is wet. Spilling is accounted per region, not at the
@@ -307,7 +338,7 @@ flat board after 40 ticks                 every ring holds exactly one depth
 ### Open questions
 
 - Does the water read right in play, or only in the numbers?
-- Should the film be uniform, or should steep ground hold less than flat?
-  Raised once and deliberately rejected as an extra mechanic; the question is
-  still open if the summit puddle turns out to bother anyone.
+- Does a slope holding nothing at all read as broken? It is correct, but it
+  means water crossing a hillside is invisible.
+- Does the permanently dry rim ring read as broken?
 - What comes back first when the water is settled — soil, or something else?
