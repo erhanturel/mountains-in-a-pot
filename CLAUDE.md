@@ -169,7 +169,8 @@ separation is what makes headless testing possible.
 STORED   h      ground height, whole steps        (in the cell stack)
          pool   how much water stands on it
 
-DERIVED  flow   how much water CROSSED it this tick
+DERIVED  out[6] how much water left through each of the six edges
+         flow   their sum: how much CROSSED it this tick
 ```
 
 **`flow` is throughput, and it is a different number from `pool`.** The tile
@@ -179,6 +180,19 @@ five thousand and passes none. `pool` calls both of them wet. Nothing reads
 is throughput times drop, so moving water cuts and standing water does not),
 because a river is a tile with throughput rather than a wet one or a sloped
 one, and because it is what would let moving water be drawn at all.
+
+It is kept as **six per-edge amounts rather than one scalar**, because
+summarising at capture time is the mistake that would need undoing. The
+throughput is their sum. Their *vector* sum, over the throughput, gives
+**focus** — 1.0 when every drop went the same way, 0.0 when it went out evenly
+and the vectors cancelled. That is the thing throughput alone cannot say: a
+rain tile on a plain carries 73 units a tick and one in a trench carries 70,
+and they read `0.00 spreading` against `1.00 one way`. **A river is ground
+where the water all goes one way** — not wet ground, and not sloped ground.
+
+Keeping the six also preserves a **fork**, which a vector sum destroys: water
+splitting to two opposite sides cancels to focus 0.00 and reads exactly like a
+sheet, but the edges show `35 0 0 35 0 0`.
 
 It is derived, never stored: recomputed from the same state every tick, and
 zero on a board at rest. **A smoothed or running value would be stored state**

@@ -125,13 +125,20 @@ import { OrbitControls } from './vendor/addons/controls/OrbitControls.js';
    ====================================================================== */
 const R=12, H_MAX=12;
 const DIRS=[[1,0],[1,-1],[0,-1],[-1,0],[-1,1],[0,1]];   /* E NE NW W SW SE */
+/* the same six as unit vectors in world units, for reading the per-edge
+   flow as a bearing. Off-board edges have a direction too, which is why
+   this is here and not derived from neighbour positions. */
+const DIRV=DIRS.map(d=>{
+  const x=Math.sqrt(3)*(d[0]+d[1]/2), y=1.5*d[1], L=Math.hypot(x,y);
+  return [x/L,y/L];
+});
 
 const T=[], idx=new Map();
 for(let q=-R;q<=R;q++){
   const lo=Math.max(-R,-q-R), hi=Math.min(R,-q+R);
   for(let r=lo;r<=hi;r++){
     idx.set(q+','+r,T.length);
-    T.push({q,r,x:Math.sqrt(3)*(q+r/2),y:1.5*r,pool:0,flow:0});
+    T.push({q,r,x:Math.sqrt(3)*(q+r/2),y:1.5*r,pool:0,flow:0,out:new Float64Array(6)});
   }
 }
 
@@ -284,11 +291,19 @@ function settle(){
      It is also what a river actually is -- not a wet tile, since a lake is
      wet, and not a sloped tile, since a dry cliff has slope.
 
+     Kept as SIX PER-EDGE AMOUNTS rather than one scalar, because
+     summarising at capture time is the mistake that would need undoing. The
+     throughput is their sum; the bearing and how focused the flow is are
+     their vector sum; and a FORK survives, which a vector sum destroys --
+     water splitting to two opposite sides cancels to nothing and reads
+     exactly like a sheet spreading in all directions. Take what settle
+     knows before the tick ends, in the form it knows it.
+
      DERIVED, never stored: recomputed from the same state every tick, and
      zero on a board at rest. A smoothed or running value would be stored
      state, which is the thing this project has been burnt by more than any
      other -- keep it instantaneous and let the renderer do any smoothing. */
-  for(const t of T) t.flow=0;
+  for(const t of T){ t.flow=0; t.out.fill(0); }
 
   /* the level at which vol, poured onto these heights, comes to rest --
      with base counted in as one more place for it to stand */
@@ -306,18 +321,27 @@ function settle(){
     const w=was[i];
     if(w<=1e-12) continue;
     const H=top(i);
-    const low=[]; let off=false;
-    for(const j of T[i].nb){
-      if(j<0){ off=true; continue; }             /* the void */
-      if(top(j)<H-1e-12) low.push(j);
+    /* low holds EDGE SLOTS, not hex numbers, so what goes where can be
+       written back against the edge it went through */
+    const low=[]; let off=0;
+    for(let k=0;k<6;k++){
+      const j=T[i].nb[k];
+      if(j<0){ off++; continue; }                /* the void */
+      if(top(j)<H-1e-12) low.push(k);
     }
     /* off the board is lower than anything, so under levelling it takes the
-       lot and none of it comes back. That is rule 5. */
-    if(off){ add[i]-=w; T[i].flow=w; continue; }   /* over the side counts */
+       lot and none of it comes back. That is rule 5. Shared equally between
+       however many edges face out. */
+    if(off){
+      add[i]-=w; T[i].flow=w;
+      const each=w/off;
+      for(let k=0;k<6;k++) if(T[i].nb[k]<0) T[i].out[k]=each;
+      continue;
+    }
     if(!low.length) continue;                    /* nothing lower: it stays */
 
-    low.sort((x,y)=>top(x)-top(y));
-    const hs=low.map(top);
+    low.sort((a,b)=>top(T[i].nb[a])-top(T[i].nb[b]));
+    const hs=low.map(k=>top(T[i].nb[k]));
     /* base 1: the tile itself is one of the places the water comes to rest */
     let L=levelOf(hs,H,1);
     if(H-L>w) L=levelOf(hs,w,0);                 /* it empties instead */
@@ -325,7 +349,7 @@ function settle(){
     let sum=0;
     for(let k=0;k<low.length;k++){
       const d=L-hs[k];
-      if(d>0){ add[low[k]]+=d; sum+=d; }
+      if(d>0){ const e=low[k]; add[T[i].nb[e]]+=d; sum+=d; T[i].out[e]=d; }
     }
     add[i]-=sum; T[i].flow=sum;                  /* exactly what left it */
   }
@@ -715,6 +739,18 @@ function drawInfo(){
   h+=row('layers', wet ? Math.floor(t.pool/LAYER+1e-9) : '—', wet?'w':'q');
   const run=t.flow>1e-12;
   h+=row('flow', run ? U(t.flow)+' units/tick' : '—', run?'w':'q');
+  /* FOCUS: the length of the per-edge vector sum over the throughput. One
+     means every drop went the same way — a channel. Zero means it went out
+     evenly and the vectors cancelled — a sheet. It is the thing throughput
+     alone cannot say: a rain tile on a plain carries almost as much as one
+     in a trench, and they are 0.00 against 1.00. */
+  if(run){
+    let fx=0, fz=0;
+    for(let k=0;k<6;k++){ const d=t.out[k];
+      if(d>0){ fx+=d*DIRV[k][0]; fz+=d*DIRV[k][1]; } }
+    const f=Math.hypot(fx,fz)/t.flow;
+    h+=row('focus', f.toFixed(2)+(f>0.9?'  one way':f<0.25?'  spreading':''), 'w');
+  } else h+=row('focus','—','q');
   /* the number that decides everything: stone plus the water on it */
   h+=row('height',  U(t.h+t.pool)+' units', wet?'w':'');
   h+=row('cloud',  cell(HOVER,CLOUD_Z)===CLOUD ? 'raining' : '—',
