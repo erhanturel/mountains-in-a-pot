@@ -287,7 +287,7 @@ inside `tint()`:
 
 - **contour banding** — every other elevation a shade darker, the way a topo
   map does it, so a single step reads wherever it sits in the range instead
-  of only near the extremes;
+  of only near the extremes. Toggled from View, on by default;
 - **occlusion from the shape, not from the lights** — how much higher ground
   stands around a hex, a neighbour three steps up counting full and one step
   up a third. Hollows and basin insides darken, ridges come forward, and it

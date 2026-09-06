@@ -75,6 +75,9 @@
           <path d="M9 1.5 16 5.5v7L9 16.5 2 12.5v-7z"/><path d="M9 8.5 16 5.5"/>
           <path d="M9 8.5 2 5.5"/><path d="M9 8.5v8"/></svg>
           <span>Flat view</span></button>
+        <button class="pw on" id="ovBand"><svg viewBox="0 0 18 18">
+          <path d="M2 5.5h14M2 9h14M2 12.5h14"/></svg>
+          <span>Contours</span></button>
       </div>
       <div class="menu" style="margin-top:14px">
         <h2>Time</h2>
@@ -499,6 +502,8 @@ function hide(mesh,n){
   mesh.setMatrixAt(n,M4.compose(P,Q,S));
 }
 
+let BANDS=true;                  /* contour banding, toggled from View */
+
 /* the same colours the flat renderer used, handed over as a THREE.Color */
 const blend=(a,b,f)=>a.map((v,n)=>v+(b[n]-v)*f);
 /* THE TOPS CARRY THE RELIEF, because the lighting cannot: every top face on
@@ -514,7 +519,7 @@ function tint(t){
   /* CONTOUR BANDING: every other elevation a shade darker, the way a topo
      map does it, so a single step reads wherever it sits in the range
      instead of only near the extremes. */
-  if(((t.h%2)+2)%2) c=blend(c,[16,18,22],0.11);
+  if(BANDS && ((t.h%2)+2)%2) c=blend(c,[16,18,22],0.11);
   /* OCCLUSION FROM THE SHAPE, not from the lights: how much higher ground
      stands around this hex. A neighbour three steps up counts full, one step
      up counts a third. Hollows and the insides of basins darken, ridges come
@@ -685,6 +690,9 @@ function setPlay(on){
     RUN ? 'M5 4h3v10H5zM10 4h3v10h-3z' : 'M6 4l8 5-8 5z');
 }
 playBtn.onclick=()=>setPlay(!RUN);
+
+const ovBand=document.getElementById('ovBand');
+ovBand.onclick=()=>{ BANDS=!BANDS; ovBand.classList.toggle('on',BANDS); rebuild(); };
 
 const ovProj=document.getElementById('ovProj');
 ovProj.onclick=()=>{ ortho=!ortho;
