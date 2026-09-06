@@ -593,6 +593,13 @@ function settle(){
   const n=T.length, esc=escapes();
   const free=T.map(t=>t.pool);
   for(const t of T) t.pool=0;
+  /* WHAT A COLUMN ALREADY HOLDS, IT KEEPS. The film is taken off the top
+     before anything is allowed to move, so it can never be handed back to a
+     neighbour. Without this the film was re-derived from scratch every tick
+     and sloshed backwards: once the first ring became a source in its own
+     right it shared equally with the centre, and the centre — already full —
+     gave film away and got shallower. */
+  const held=free.map(v=>Math.min(v,FILM));
 
   const rid=new Array(n).fill(-1), regs=[];
   for(let i=0;i<n;i++){
@@ -603,9 +610,15 @@ function settle(){
       for(const j of T[c].nb)
         if(j>=0 && rid[j]<0 && esc[j]===esc[c]){ rid[j]=k; cells.push(j); q.push(j); }
     }
-    let brim=0, vol=0;
-    for(const c of cells){ brim+=Math.max(0,esc[i]-T[c].h)+FILM; vol+=free[c]; }
-    regs.push({k,cells,E:esc[i],brim,vol,spill:[]});
+    let hollow=0, vol=0, room=0;
+    for(const c of cells){
+      hollow+=Math.max(0,esc[i]-T[c].h); vol+=free[c]-held[c]; room+=FILM-held[c];
+    }
+    /* ENTRY: the columns water actually arrived at — rain, or last tick's
+       standing water, plus anything spilled in below. The film spreads out
+       from these, so a region is no longer one interchangeable puddle. */
+    regs.push({k,cells,E:esc[i],hollow,brim:hollow+room,vol,
+               spill:[],entry:cells.filter(c=>free[c]>1e-12)});
   }
   /* the way out of each region: the lowest ground just outside it, by escape
      level and then by ground. The saddle a hollow escapes over sits at
@@ -645,15 +658,57 @@ function settle(){
       const share=over/R.spill.length;
       for(const j of R.spill){
         if(j<0) continue;                       /* over the side, and gone */
-        regs[rid[j]].vol+=share; moved=true;
+        const RT=regs[rid[j]];
+        RT.vol+=share; if(!RT.entry.includes(j)) RT.entry.push(j);
+        moved=true;
       }
     }
     if(!moved) break;
   }
+  /* THE FILM FILLS OUTWARD FROM WHERE THE WATER CAME IN, ring by ring,
+     sharing equally within a ring so the front stays symmetric.
+
+     Filling it region-wide instead — which is what the first cut did, by
+     folding FILM into the level — meant a flat board divided one tick of
+     rain between all 127 columns at once, the far rim included. A column
+     shed water at a five-hundredth of a layer deep, which is the exact
+     opposite of the rule. Regions still own the STANDING water, because
+     that is what makes a lake find one level; they no longer own the
+     film. */
+  const films=(R,vf)=>{
+    const out=new Map(R.cells.map(c=>[c,0]));
+    if(vf<=1e-12) return out;
+    let front = R.entry.length ? R.entry.slice() : R.cells.slice();
+    const seen=new Set(front);
+    while(front.length && vf>1e-12){
+      /* a ring takes only the room it has left, so a column that is already
+         full simply passes the water outward instead of hoarding it */
+      let room=0;
+      for(const c of front) room+=Math.max(0,FILM-held[c]);
+      if(room>1e-12){
+        const f=Math.min(1,vf/room);
+        for(const c of front) out.set(c,Math.max(0,FILM-held[c])*f);
+        vf-=room*f;
+      }
+      const next=[];
+      for(const c of front) for(const j of T[c].nb)
+        if(j>=0 && rid[j]===R.k && !seen.has(j)){ seen.add(j); next.push(j); }
+      front=next;
+    }
+    return out;
+  };
+  /* what each column kept is already where it belongs */
+  for(let i=0;i<n;i++) if(held[i]>0) T[i].pool=held[i];
   for(const R of regs){
     if(R.vol<=0) continue;
-    const level=levelFor(R.cells,R.vol,R.E+FILM);
-    for(const c of R.cells){ const d=level-T[c].h; if(d>0) T[c].pool=d; }
+    /* the hollow takes what it can hold; only the surplus is film */
+    const vs=Math.min(R.vol,R.hollow);
+    const level=levelFor(R.cells,vs,R.E);
+    const film=films(R,R.vol-vs);
+    for(const c of R.cells){
+      const d=film.get(c)+Math.max(0,level-T[c].h);
+      if(d>0) T[c].pool+=d;
+    }
   }
 }
 
