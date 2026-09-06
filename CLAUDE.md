@@ -50,65 +50,61 @@ This is the whole simulation. If a change cannot be stated as one of these,
 it is a new rule and wants deciding rather than drifting into.
 
 ```
-1  a cloud drops 12 units of water on the column below it, every tick
-2  one elevation step is 72 units; one drawn water layer is 12 of them
-3  a column holds 12 units - but ONLY if it has nowhere lower to put them
-4  it sheds to whatever is lower by net elevation, ground plus water
-5  what reaches the edge of the board falls off
+1  a rain tile drops 12 units on the column below it, every tick
+2  one elevation step is 72 units; one water tile is 12 of them
+3  a tile's HEIGHT is its stone plus the water standing on it
+4  a tile with water hands its contents to whichever neighbours stand
+   lower, split equally between them
+5  off the board is lower than anything, and that share is gone
 ```
 
-Rule 3 is **the film**, and it is what makes moving water visible at all.
-Without it an impermeable board with open edges holds nothing: every drop
-runs straight off the side and the ground it crossed shows no sign of it.
+**A tick is one STEP, not a solve.** Water moves one hex per tick and no
+further, so a basin far from the rain fills slowly as the water walks to it.
+An earlier build solved instead — escape levels, basins filled to a level in
+a single pass, a film of water held against gravity — and all of that is
+gone.
 
-**Rule 3 is a condition on rule 4, not a rule of its own.** A column keeps
-its film because the water has no way off it; a hillside, a summit, or a
-column you just raised has a way off in every direction and keeps nothing.
-That one clause is what dries the board, and it is why no evaporation rule
-is needed on any terrain with relief.
+Rule 2 is a **display quantum only**. A tile draws `floor(water/12)` water
+tiles stacked on it, so anything under 12 units is held but not drawn, and a
+tile can carry 20 units and show one. Water itself is a real number; nothing
+routes on the quantum.
 
-### The three comparisons, and why none of them is the same
+### The two things rule 4 does not say, and has to
 
-**Retention is a SILL test: is there a neighbour whose WATER SURFACE lies
-below MY OWN GROUND?** That is the only way water can actually run off a
-column. Both halves matter and each was wrong once.
+**How much it sheds.** Read literally — *hand over the whole contents* — a
+brimming basin empties in a single tick: at the rim all six neighbours become
+lower at once, all 84 units leave, 14 to each, and the lake vanishes and
+begins again forever. So a tile sheds only until it is **level** with the
+highest of the neighbours it is shedding to.
 
-*Against the neighbour's bare ground* it drew a target. Dig a hex, rain into
-it until it brims, and the six around it stayed permanently dry while the
-ring beyond them filled: basin, dry ring, wet ring. Those six have the basin
-below them, so by ground they could never hold anything — but the basin was
-FULL, its surface level with their own floor, and their water had nowhere to
-go.
+**That level has to count the receivers coming up.** Handing over the whole
+*difference* is nearly right and still wrong: it overshoots by exactly
+double, so a pair of tiles swap heights and swap them back. Measured, boards
+were still sloshing 7.5 units a hex two thousand ticks after the rain
+stopped. Hand over `g` and the tile falls by `g` while each of the `N`
+receivers rises by `g/N`, so level means
 
-*Against my own surface* it empties the board. A hex holding a film beside a
-dry one at the same height would shed to it, and so would the next, all the
-way to the rim where the void is lower than everything. A tick solves, so a
-cloud on a flat board would show nothing even while it was still raining.
+```
+me - g = high + g/N        ->        g = N x (me - high) / (N + 1)
+```
 
-**Flow reads net elevation, and not the same number in both directions.**
-Leaving a node, water stands at its surface — a pond at its level, a column
-at its ground plus the film it holds. Arriving at a column it reads the
-**bare ground**, because the film is not an obstruction: it is water the rock
-is holding and more water runs over it freely. Reading the film as a wall on
-the way in stopped a full basin spilling onto a plain that had any film at
-all, and destroyed the entire overflow.
+The split is still one Nth to each, exactly as the rule says. Only the total
+changes.
 
-A hollow is the one place net elevation really diverges from ground, and it
-is read as a pond: full, it stands at its rim and takes nothing; not full, it
-stands at its floor and swallows whatever reaches it.
+A void neighbour is bottomless, so there is no levelling with it and the tile
+empties into it. That is rule 5.
 
-Rule 2 is a **display quantum only**. Water is carried as a real number and
-nothing in the sim routes on the quantum — it decides how tall to draw a box
-and nothing else. Integers would have to divide exactly on every split and
-they do not: rim counts are not always six. Rounding is where conservation
-dies, so the rounding lives in the renderer alone.
+### The whole board is read from one snapshot
 
-Below one layer, water is **held but not drawn**. That remainder is the whole
-point: ground blooms into a visible layer several ticks after it first got
-wet, and no sixth of a layer is ever drawn floating with nothing under it.
+Every tile decides from the state at the start of the tick, and the writes
+land afterwards, so no tile can see another tile's move inside the same tick.
+Taken in place, the answer would depend on the order the tiles were visited
+and a symmetric board would shed lopsidedly — the same bias that once made a
+symmetric peak grow its apron always to the east.
 
-`LAYER = FILM = RAINFALL = 1/6`. All three being equal is why a column under a
-cloud shows its layer on tick one and a one-hex basin fills in exactly six.
+Checked: on a flat board the distinct depths per ring come out 1, 1, 2, 2, 3,
+3, 4, which is exactly the number of symmetry orbits in each hex ring. Not
+approximately symmetric — symmetric.
 
 ---
 
@@ -156,83 +152,64 @@ the reason a cloud is a thing in the world you can see rather than a flag.
 
 ## How settle works
 
-Two kinds of place hold water, and **keeping them apart is the whole design.**
+The whole of it:
 
-A **hollow** is a connected run of columns standing below their own escape
-level — a real depression. Its water finds one level, so a hollow reads as one
-body however uneven its floor.
+```js
+for each tile with water:
+    lower  = neighbours whose stone+water is below mine  (void counts)
+    if none: it keeps what it has
+    else:    hand N x (mine - highest of them) / (N+1), split N ways
+```
 
-A hollow fills to **exactly its own rim**. The lip it spills over always has
-the hollow beneath it, so the lip can never hold a film, and the pond has
-nothing to climb over. A one-deep pit therefore fills in exactly six ticks.
+There is nothing else. No escape levels, no basins found in advance, no
+retention rule. A basin holds water because its floor has nothing lower
+beside it; a lake finds one level because every tile in it keeps levelling
+with its neighbours until none is lower.
 
-**Everywhere else** a column holds its film only if no neighbour's water
-surface lies below its own ground, and hands on everything else.
-
-`escapes()` is a priority flood inward from the board edge: `esc[i]` is the
-lowest level at which column `i` can still reach open air. A column is in a
-hollow when `esc[i] > h[i]`.
-
-Water on the move **walks out from where it entered**, takes the lowest ground
-it has reached first, shares equally between ties, and can only step onto
-ground no higher than the surface it is leaving. That is rules 3 and 4.
-Whatever is still moving when everything reachable is full has run to the
-edge, and is gone: rule 5.
-
-A tick **solves, it does not step.** Water never crawls a cell per tick the
-way Minecraft's does — that is order-dependent and can never find a level.
-The gradual spread you watch comes from columns filling up, not from water
-moving slowly.
+**Motion decays, it does not stop dead.** Levelling is asymptotic, so after
+the rain stops the board keeps making smaller and smaller adjustments rather
+than freezing. Measured over 200 boards, the biggest change any hex makes in
+one tick falls from 17 units after 10 ticks to **0.003 units after 2000** —
+a thousandth of what it would take to change a single drawn layer. The old
+solving build stopped exactly; this one settles.
 
 ---
 
 ## Bugs worth remembering
 
-These cost the most, and each one was a rule stated one way and implemented
-another. They are here because the same mistake is easy to make again.
+Each of these was a rule stated one way and implemented another. They are
+here because the same mistake is easy to make again. The first two are from
+the current build; the rest are from the solving build that preceded it and
+are kept because the reasoning still applies.
 
-**Standing water grouped by escape level.** On a flat board every column
-escapes at the same height, so the whole board was one body with one level.
-Dig a basin, hang a cloud, and before it filled dig a hex five away: the lake
-lost half its depth and the new pit came up holding water, across ground that
-had never been wet. Hollows fixed it. *A shared escape level is not a shared
+**Handing over the whole contents.** Rule 4 read literally. A brimming basin
+emptied itself in one tick, nothing could come to rest, and nothing was ever
+drawn on flat ground because no tile could hold 12 units for a whole tick.
+
+**Handing over the whole difference.** The obvious correction, and it
+overshoots by double: a pair of tiles swap heights and swap back, forever.
+Levelling has to count the receivers rising.
+
+**Standing water grouped by escape level** *(solving build)*. On a flat board
+every column escapes at the same height, so the whole board was one body with
+one level. Dig a basin, rain into it, and before it filled dig a hex five
+away: the lake lost half its depth and the new pit came up holding water,
+across ground that had never been wet. *A shared escape level is not a shared
 body.*
 
-**The film added on top of standing water.** Dig a hole, fill it, dig the hex
-next door — the two came out at different surfaces (−0.2500 and −0.3611),
-because the older hole had a full film and the fresh one only a part film, and
-the difference stuck out above the waterline. The film is the **bottom** of a
-column's water, not a lid on it.
+**Retention judged by the neighbour's bare ground** *(solving build)*. Dig a
+hex, brim it, and the six hexes around it never got wet while the ring beyond
+them filled — a target drawn on the board. They had the basin below them by
+ground, but it was full and level with their floor.
 
-**The film owned by the region rather than the column.** One tick of rain was
-divided between all 127 columns at once; the far rim six rings away held
-exactly the same 0.001312 as the hex under the cloud. A column shed water at a
-five-hundredth of a layer deep.
+**Retention judged against my own surface** *(solving build)*. The other way
+round: a hex holding water beside a drier one at the same height sheds to it,
+which cascades to the rim where the void is lower than everything. 300/300
+boards flickered between two states forever.
 
-**The film re-derived each tick.** Once the first ring became a source in its
-own right it shared equally with the centre, and the centre — already full —
-gave film away and got *shallower*. What a column holds, it keeps: the film
-comes off the top before anything is allowed to move.
-
-**The film spread by distance, ignoring height.** A cloud on a plateau one
-step above the west half of the board wet 50 hexes of high ground in 40 ticks
-and sent not one drop down the step.
-
-**A region spilling by its single lowest exit.** Right for a lake, which
-spills at one saddle; wrong for a sheet on a plateau, which leaves everywhere
-its rim is lower. A plateau touching both the board edge and a step down sent
-every drop over the side, because the void is lower than anything.
-
-**Retention judged by the neighbour's bare ground.** Dig a hex, brim it, and
-the six hexes around it never got wet while the ring beyond them filled — a
-target drawn on the board. They had the basin below them by ground, but it
-was full and level with their floor. Retention is a sill against the
-neighbour's *surface*, not its ground.
-
-**Steepest-descent routing deleted water on flat ground.** On a plain nothing
-is downhill, so the routing found no outlet and the water was quietly
-discarded. This is why transport is a walk over reachable ground rather than a
-per-column gradient.
+**Steepest-descent routing deleted water on flat ground** *(solving build)*.
+On a plain nothing is downhill, so the routing found no outlet and the water
+was quietly discarded.
 
 **An `InstancedMesh` measures its bounding sphere once, lazily, and caches
 it.** Measured while every instance was hidden, it came out zero-radius and
@@ -318,50 +295,40 @@ sets or reads it now).
 
 ## Where it stands
 
-Working and measured: clouds, the film, hollows, the walk, cascade between
-hollows, spilling off the board edge, the quantized draw, and the time
-control.
-
 ```
-a one-hex basin gains one layer a tick    1 2 3 4 5 6 6 6 - it caps at its rim
-a basin with one elev-0 lip               fills in 6, then the lip takes its own
-                                          12 and passes the rest on outward
-raising a wet column                      12 units -> 0, it sheds and dries
-raising a brim-full pit                   72 units -> 12, the rest to its six
-                                          neighbours, conserved exactly
-digging beside a full lake                both surfaces -0.2500, lost 0.000000000
-digging five hexes away                   the lake keeps its water, the pit stays dry
-flat board, one cloud                     the front reaches 91 of 127; the 36-hex
-                                          rim is dry by rule and sheds the rest
-water down a one-step drop                by tick 20, plateau still mostly dry
-300 boards x 85 ticks                     0 ticks created water
-                                          0/300 boards move once the rain stops
-                                          0 of 20,253 wet hexes reachable only by climbing
-flat board after 40 ticks                 every ring holds exactly one depth
+one-hex basin at -1, rain on it   12 units a tick for six ticks, 72 at the
+                                  rim, then it sheds the surplus outward
+that basin left raining           settles at 86 units, 14 above the rim --
+                                  the head it needs to push 12 a tick out
+                                  through six neighbours
+                                  rain off: back to exactly 72, dead level
+seven-hex bowl, uneven floor      -2 in the middle, -1 around: settles to one
+                                  surface, exactly, every tile
+200 boards, rain off              biggest change any hex makes in a tick
+                                  falls 17 -> 1.1 -> 0.003 units by tick 2000
+300 boards x 85 ticks             0 ticks created water
+flat board, 40 ticks              distinct depths per ring 1 1 2 2 3 3 4,
+                                  exactly the symmetry orbits of each ring
 ```
 
 ### Known, and not bugs
 
-- **The outermost ring of the board is permanently dry.** Those hexes border
-  the void, which is lower than anything, so they can never retain. 91 of the
-  127 hexes can hold water; the other 36 are the rim.
-- **A slope never holds water.** Every column on a hillside has a lower
-  neighbour, so water running down one is invisible - you see it leave the top
-  and arrive in the lake with nothing in between.
-- **Flat ground can never show more than one layer.** The film caps at one and
-  standing water only exists in a hollow.
-- **A perfectly flat plain never dries.** No column on it has anywhere lower,
-  so the film stays. This is the one case that would want evaporation, and it
-  is the degenerate board rather than the general one.
-- **A region waits until it is entirely filmed before it spills.** Water
-  reaching a step ought to start falling as soon as the front arrives, not
-  when the whole plateau is wet. Spilling is accounted per region, not at the
-  front. Known, not fixed, not urgent.
+- **Water on flat ground is mostly invisible.** It spreads and levels, so it
+  is nearly always under the 12 units a water tile needs. A rain tile on a
+  flat board wets all 127 hexes and draws one or two. Water shows where it
+  gathers — in a basin — which is where it should.
+- **A lake stands about a water tile above its rim while it is raining.**
+  That is the head it needs to push the inflow out. Stop the rain and it
+  returns to exactly level.
+- **The outermost ring drains.** The void is lower than anything, so a rim
+  tile empties into it.
+- **The board never freezes exactly.** Levelling is asymptotic. It goes quiet
+  a very long way below anything the display can show.
 
 ### Open questions
 
-- Does the water read right in play, or only in the numbers?
-- Does a slope holding nothing at all read as broken? It is correct, but it
-  means water crossing a hillside is invisible.
-- Does the permanently dry rim ring read as broken?
-- What comes back first when the water is settled — soil, or something else?
+- Is one hex per tick the right speed, or does a distant basin take too long
+  to fill?
+- Does water being invisible on flat ground read as broken?
+- Does the lake standing a tile proud of its rim while raining read as wrong?
+- What comes back first when the water is settled?

@@ -60,8 +60,8 @@
     <div>
       <div id="board"><div id="info"></div></div>
       <div class="hint"><b>click a hex</b> — drag to orbit, scroll to zoom.
-        A cloud drops one layer of water a tick. A column holds one layer,
-        but only if it has nowhere lower to put it.</div>
+        A rain tile drops 12 units a tick. Water hands itself to whichever
+        neighbours stand lower, until it is level with them.</div>
     </div>
     <div>
       <div class="menu">
@@ -189,228 +189,86 @@ for(const t of T) t.nb2=RING2.map(d=>{
 for(const t of T) t.coast=t.nb.filter(j=>j<0).length;
 const at=(q,r)=>{const i=idx.get(q+','+r);return i===undefined?-1:i};
 /* ---------------------------------------------------------------------
-   WATER, AND NOTHING ELSE.
+   WATER, AND NOTHING ELSE. Five rules, and no sixth.
 
-   Soil, life, moisture, heat, relief and lava have all been taken out while
-   this is built. What is left is five rules:
+     1  a rain tile drops 12 units on the column below it, every tick
+     2  one elevation step is 72 units; one water tile is 12 of them
+     3  a tile's HEIGHT is stone plus the water standing on it
+     4  a tile with water hands its WHOLE contents to whichever neighbours
+        stand lower, split equally between them
+     5  off the board is lower than anything, and that share is gone
 
-     1  a cloud drops 12 units on the column below it, every tick
-     2  one elevation step is 72 units; one drawn water layer is 12
-     3  a column holds 12 units - but ONLY if it has nowhere lower to put
-        them. Ground with a lower neighbour keeps nothing.
-     4  it sheds to whatever is lower by NET elevation, ground plus water
-     5  what reaches the edge of the board falls off
-
-   Rule 3 is a condition on rule 4, not a rule of its own: a column keeps
-   its film because the water has no way off it, and a raised column or a
-   summit has a way off it in every direction.
-
-   The two comparisons are deliberately different. FLOW reads net elevation,
-   because that is the only way a pond can have one surface. RETENTION reads
-   BARE GROUND, because the film is water caught in the ground's own
-   roughness -- whether it drains out depends on the rock beside it, not on
-   whether that rock happens to have a puddle on it. Deciding retention by
-   net elevation instead empties the board: a hex with 12 beside a hex with
-   0 would shed, and so would the next, and the next, all the way to the rim
-   where the void is lower than everything. A tick solves, so that happens
-   at once -- a cloud on a flat board would show nothing even while it was
-   still raining.
-
-   Water is an AMOUNT and it is conserved. A tick SOLVES rather than steps:
-   it never crawls a cell per tick the way Minecraft's does, because that is
-   order-dependent and can never find a level. The gradual spread you watch
-   comes from columns filling up, not from water moving slowly.
+   Water is an AMOUNT and it is conserved except over the edge. Layers are
+   a DISPLAY quantum only: a tile shows floor(water/12) water tiles stacked
+   on it, so anything under 12 is held but not drawn, and a tile can carry
+   20 units and show one.
    --------------------------------------------------------------------- */
 const LAYER=1/6;                 /* 12 units of the 72 in an elevation step */
-const FILM=LAYER;                /* what a column holds before it sheds */
-const RAINFALL=LAYER;            /* what one cloud drops each tick */
-const CLOUD_Z=ZN-5;              /* clouds ride up here, clear of any ground */
-
-/* How high water can stand on a column before it finds a way off the board:
-   a priority flood inward from the edge, so esc[i] is the lowest level at
-   which i can still reach open air. Nothing can stand above that. */
-function escapes(){
-  const n=T.length, esc=new Array(n).fill(Infinity), heap=[];
-  const push=(v,i)=>{ heap.push([v,i]); let k=heap.length-1;
-    while(k>0){ const p=(k-1)>>1; if(heap[p][0]<=heap[k][0]) break;
-      const t=heap[p]; heap[p]=heap[k]; heap[k]=t; k=p; } };
-  const pop=()=>{ const top=heap[0], last=heap.pop();
-    if(heap.length){ heap[0]=last; let k=0;
-      for(;;){ const l=2*k+1, r=l+1; let m=k;
-        if(l<heap.length&&heap[l][0]<heap[m][0]) m=l;
-        if(r<heap.length&&heap[r][0]<heap[m][0]) m=r;
-        if(m===k) break; const t=heap[m]; heap[m]=heap[k]; heap[k]=t; k=m; } }
-    return top; };
-  for(let i=0;i<n;i++) if(T[i].coast){ esc[i]=T[i].h; push(esc[i],i); }
-  while(heap.length){
-    const [v,i]=pop();
-    if(v>esc[i]) continue;
-    for(const j of T[i].nb){
-      if(j<0) continue;
-      const e=Math.max(T[j].h,v);
-      if(e<esc[j]){ esc[j]=e; push(e,j); }
-    }
-  }
-  return esc;
-}
-
-/* Where does a hollow's surface sit, given how much is in it? Walk up
-   through the column heights: with k columns already under water, lifting
-   the surface by one costs k. */
-function levelFor(cells, vol, cap){
-  const hs=cells.map(i=>T[i].h).sort((a,b)=>a-b);
-  let level=hs[0], used=0;
-  for(let k=1;k<=hs.length;k++){
-    const next = k<hs.length ? hs[k] : Infinity;
-    const need = (next-level)*k;
-    if(used+need>=vol){ level += (vol-used)/k; used=vol; break; }
-    used+=need; level=next;
-  }
-  return Math.min(level,cap);
-}
+const RAINFALL=LAYER;            /* what one rain tile drops each tick */
+const CLOUD_Z=ZN-5;              /* rain tiles ride up here, clear of the ground */
 
 /* ---------------------------------------------------------------------
-   SETTLE - put every drop where it belongs, in one pass.
+   SETTLE - one step, and exactly those rules.
 
-   Two kinds of place hold water, and keeping them apart is the whole
-   design.
+   Every tile holding water reads its six neighbours by NET ELEVATION,
+   stone plus whatever water stands on it, and hands its whole contents to
+   the ones standing lower, split equally. A tile with nothing lower beside
+   it keeps what it has.
 
-   A HOLLOW is a connected run of columns standing BELOW their own escape
-   level: a real depression. Its water finds one level, so a hollow reads as
-   one body however uneven its floor, and it fills to exactly its own rim --
-   the lip it spills over always has the hollow beneath it, so the lip can
-   never hold a film, and the pond has nothing to climb over.
+   THE WHOLE BOARD IS READ FROM ONE SNAPSHOT AND WRITTEN AFTERWARDS, so no
+   tile can see another tile's move inside the same tick. Taken in place
+   instead, the answer would depend on the order the tiles were visited,
+   and a symmetric board would shed lopsidedly -- the same bias that once
+   made a symmetric peak grow its apron always to the east.
 
-   Everywhere else a column holds its film ONLY IF IT HAS NOWHERE LOWER TO
-   PUT IT, and hands on everything else. Ground with a lower neighbour --
-   a hillside, a summit, a column you just raised -- keeps nothing at all.
-
-   Grouping instead by escape level - which is what this did before - made a
-   flat board ONE body, because every column on a flat board escapes at the
-   same height. Digging a pit anywhere then drained a lake five hexes away
-   into it on the very same click, across ground that never got wet. Two
-   pits in one plain are two hollows and share nothing.
-
-   Water on the move walks outward from wherever it entered, taking the
-   LOWEST ground it has reached first and sharing equally between ties, and
-   it can only step onto ground no higher than the surface it is leaving.
-   That is rules 3 and 4. Whatever is still moving when everything reachable
-   is full has run to the edge, and is gone: rule 5.
+   A TICK IS ONE STEP, not a solve. Water moves one hex per tick and no
+   further, so a basin far from the rain fills slowly as the water walks to
+   it. Everything that came before this -- escape levels, hollows filled to
+   a level in a single pass, a film held against gravity -- is gone.
    --------------------------------------------------------------------- */
 function settle(){
-  const n=T.length, esc=escapes();
-
-  /* SOMEWHERE LOWER TO PUT IT? Then it holds nothing.
-
-     The test is a SILL: is there a neighbour whose WATER SURFACE lies below
-     my own GROUND? That is the only way water can actually run off me.
-
-     Comparing bare ground instead drew a target: dig a hex, rain into it
-     until it brims, and the six hexes around it stayed permanently dry
-     while the ring beyond them filled -- basin, dry ring, wet ring. Those
-     six have the basin below them, so by ground they could never hold
-     anything; but the basin was FULL, its surface level with their own
-     floor, and there was nowhere for their water to go.
-
-     It has to be the neighbour's surface against MY GROUND, and not
-     against my surface. Against my surface, a hex holding a film beside a
-     dry one at the same height would shed to it, and so would the next,
-     all the way to the rim where the void is lower than everything -- a
-     tick solves, so the whole board would empty while it was still
-     raining. */
-  const runs=new Array(n);
-  for(let i=0;i<n;i++)
-    runs[i]=T[i].nb.some(j=>j<0||T[j].h+T[j].pool<T[i].h-1e-9);
-
-  const hid=new Array(n).fill(-1), hol=[];
+  const n=T.length;
+  const was=T.map(t=>t.pool);
+  const top=i=>T[i].h+was[i];
+  const add=new Array(n).fill(0);
   for(let i=0;i<n;i++){
-    if(hid[i]>=0 || !(esc[i]>T[i].h+1e-9)) continue;
-    const k=hol.length, cells=[i], q=[i]; hid[i]=k;
-    while(q.length){
-      const c=q.pop();
-      for(const j of T[c].nb)
-        if(j>=0 && hid[j]<0 && esc[j]===esc[c] && esc[j]>T[j].h+1e-9){
-          hid[j]=k; cells.push(j); q.push(j); }
+    const w=was[i];
+    if(w<=1e-12) continue;
+    const me=top(i);
+    const outs=[]; let off=0, high=-Infinity;
+    for(const j of T[i].nb){
+      if(j<0){ off++; continue; }              /* the void, lower than all */
+      const tj=top(j);
+      if(tj<me-1e-12){ outs.push(j); if(tj>high) high=tj; }
     }
-    let cap=0, low=Infinity;
-    for(const c of cells){ cap+=esc[i]-T[c].h; low=Math.min(low,T[c].h); }
-    hol.push({cells,E:esc[i],cap,low,have:0});
+    const N=outs.length+off;
+    if(N===0) continue;                        /* nothing lower: it stays */
+    /* IT SHEDS UNTIL IT IS LEVEL WITH THE HIGHEST OF THEM -- counting the
+       fact that THEY COME UP as it goes down. Hand over g and this tile
+       falls by g while each of the N receivers rises by g/N, so level means
+       me - g = high + g/N, which is g = N(me-high)/(N+1).
+
+       Handing over the WHOLE contents instead -- the rule read literally --
+       emptied a brimming basin in a single tick: at the rim all six
+       neighbours became lower, so all 84 units left at once, 14 to each,
+       and the lake vanished and began again, forever.
+
+       Handing over the whole DIFFERENCE is nearly right and still wrong: it
+       overshoots by exactly double, so a pair of tiles simply swap heights
+       and swap them back. Measured, boards were still sloshing 7.5 units a
+       hex two thousand ticks after the rain stopped.
+
+       A void neighbour is bottomless, so there is no levelling with it and
+       the tile empties. That is rule 5. */
+    const give = off>0 ? w : Math.min(w, N*(me-high)/(N+1));
+    const share=give/N;
+    add[i]-=give;
+    for(const j of outs) add[j]+=share;        /* the void's share falls away */
   }
-
-  /* every drop is now in a hollow, held as film on a column, or on the move */
-  let W=0;
-  const held=new Array(n).fill(0), from=[];
-  for(let i=0;i<n;i++){
-    const p=T[i].pool; T[i].pool=0;
-    if(hid[i]>=0){ hol[hid[i]].have+=p; continue; }
-    held[i]=runs[i]?0:Math.min(p,FILM);
-    if(p-held[i]>1e-12){ W+=p-held[i]; from.push('c'+i); }
-  }
-  for(let k=0;k<hol.length;k++){
-    const H=hol[k];
-    if(H.have>H.cap+1e-12){ W+=H.have-H.cap; H.have=H.cap; from.push('h'+k); }
-  }
-
-  const H_=k=>hol[+k.slice(1)], C_=k=>+k.slice(1);
-  const hgt =k=>k[0]==='h'?H_(k).low   :T[C_(k)].h;
-  /* NET ELEVATION, and it is not the same number leaving as arriving.
-
-     LEAVING, a node stands at its surface: a pond at its level, a column at
-     its ground plus whatever film it is holding.
-
-     ARRIVING, a column stands at its BARE GROUND, because the film is not
-     an obstruction -- it is water the rock is holding, and more water runs
-     over it freely. Reading the film as a wall on the way in stopped a full
-     basin spilling onto a plain that already had any film at all, and its
-     whole overflow was destroyed.
-
-     A hollow is the one place the two numbers really diverge, and it is
-     read as a pond: full, it stands at its rim and takes nothing; not full,
-     it stands at its floor and swallows whatever reaches it. */
-  const out=k=>k[0]==='h'
-      ? (H_(k).have>=H_(k).cap-1e-12 ? H_(k).E : H_(k).low)
-      : T[C_(k)].h+held[C_(k)];
-  const into=k=>k[0]==='h'
-      ? (H_(k).have>=H_(k).cap-1e-12 ? H_(k).E : H_(k).low)
-      : T[C_(k)].h;
-  const room=k=>k[0]==='h'?Math.max(0,H_(k).cap-H_(k).have)
-              :runs[C_(k)]?0:Math.max(0,FILM-held[C_(k)]);
-  const give=(k,v)=>{ if(k[0]==='h') H_(k).have+=v; else held[C_(k)]+=v; };
-  const owns=k=>k[0]==='h'?H_(k).cells:[C_(k)];
-  const key =i=>hid[i]>=0?'h'+hid[i]:'c'+i;
-
-  const seen=new Set(), pend=[];
-  const add=(k,d)=>{ if(!seen.has(k)){ seen.add(k); pend.push([hgt(k),d,k]); } };
-  for(const k of from) add(k,0);
-  while(pend.length && W>1e-12){
-    let bh=Infinity, bd=Infinity;
-    for(const e of pend) if(e[0]<bh||(e[0]===bh&&e[1]<bd)){ bh=e[0]; bd=e[1]; }
-    const grp=[];
-    for(let x=pend.length-1;x>=0;x--)
-      if(pend[x][0]===bh&&pend[x][1]===bd) grp.push(pend.splice(x,1)[0]);
-    let rm=0; for(const e of grp) rm+=room(e[2]);
-    if(rm>1e-12){
-      const f=Math.min(1,W/rm);
-      for(const e of grp) give(e[2],room(e[2])*f);
-      W-=rm*f;
-    }
-    if(W<=1e-12) break;
-    for(const e of grp){
-      const s=out(e[2]);
-      for(const c of owns(e[2])) for(const j of T[c].nb)
-        if(j>=0 && into(key(j))<=s+1e-9) add(key(j),e[1]+1);
-    }
-  }
-
-  for(let i=0;i<n;i++) if(hid[i]<0) T[i].pool=held[i];
-  for(const H of hol){
-    if(H.have<=1e-12) continue;
-    const L=levelFor(H.cells,H.have,H.E);
-    for(const c of H.cells) T[c].pool=Math.max(0,L-T[c].h);
-  }
+  for(let i=0;i<n;i++) T[i].pool=Math.max(0,was[i]+add[i]);
 }
 
-/* the clouds rain, and everything settles */
+/* the rain tiles rain, and then everything sheds once */
 function tick(){
   for(let i=0;i<T.length;i++)
     if(CELL[i*ZN+CLOUD_Z]===CLOUD) T[i].pool+=RAINFALL;
@@ -422,8 +280,8 @@ const legal=(i,p)=> p.d===0 ? true
 function use(i,p){
   if(i==null||i<0||!T[i]||!legal(i,p)) return false;
   if(p.k==='cloud'){
-    /* one power places AND removes: click a column to hang a cloud over it,
-       click again to take it away */
+    /* one power places AND removes: click a column to hang a rain tile over
+       it, click again to take it away */
     const z=i*ZN+CLOUD_Z;
     CELL[z] = CELL[z]===CLOUD ? AIR : CLOUD;
   } else T[i].h+=p.d;
@@ -727,7 +585,7 @@ ovProj.onclick=()=>{ ortho=!ortho;
    global — it is how the flat renderer was checked, and it is the only way
    to drive the sim by hand now. */
 window.POT={T,at,use,tick,settle,rebuild,POWERS,scene,
-  CLOUD,CLOUD_Z,escapes,LAYER,FILM,RAINFALL,
+  CLOUD,CLOUD_Z,LAYER,RAINFALL,
   CELL,TOP,cell,retop,ZN,Z0,AIR,ROCK,BASALT,instHex,ground,
   camera:()=>cam, hover:i=>hover(i),
   get power(){ return POWER.k },
