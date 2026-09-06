@@ -4,8 +4,20 @@
 > Hang a cloud, and the water
 > finds its own level.
 
-A single-file hex sandbox. Three powers: raise a column, lower a column, hang
-a cloud over one. Everything else is water working out where to go.
+A single-file hex sandbox. **Radius 12, 469 hexes.** Three powers — raise a
+column, lower a column, hang a rain tile over one — each with a **brush** of
+1, 7, 19 or 37 hexes. Everything else is water working out where to go.
+
+The brush lives in the CORE, not in the UI, because a click has to stay ONE
+TICK however many hexes it moves; calling `use()` per hex would run the
+weather 37 times for one press. The hover preview draws one hexagon per hex
+the brush covers rather than one scaled outline, because the union of hexes
+within a radius is not a scaled hexagon — it is turned thirty degrees and its
+edges are stepped — and a preview that draws a shape the click will not make
+is a preview that lies.
+
+Measurements recorded below were taken on the radius-6 board unless they say
+otherwise; the water rules do not depend on board size, but hex counts do.
 
 **This is a design bench, not a game.** No goal, no score, no failure state.
 It exists to find out which mechanics are worth keeping. Do not add a goal
@@ -167,7 +179,7 @@ world. Two corollaries worth keeping:
   over the edge. Measured: 0 ticks in 300 boards × 85 created any.
 
 `h` is not a plain field — it is an accessor over the **cell stack**, a
-`Uint8Array` of 127 × 32 cells (`AIR`, `ROCK`, `BASALT`, `CLOUD`) with a `TOP`
+`Uint8Array` of 469 × 32 cells (`AIR`, `ROCK`, `BASALT`, `CLOUD`) with a `TOP`
 cache. Setting `h` rewrites the run of solid cells. Clouds live in that same
 stack at `CLOUD_Z = 27`, which is height 14 — well clear of any ground, and
 the reason a cloud is a thing in the world you can see rather than a flag.
@@ -288,14 +300,14 @@ once on tiles. All of it is in the history and none of it is in the file.
 Two removals are worth understanding rather than just knowing:
 
 **The sea and then the wall.** The wall stood *above* the floor, which made
-the whole board one basin: one pour drowned all 127 hexes, any hollow dug near
+the whole board one basin: one pour drowned every hex on it, any hollow dug near
 a hill flooded to the brim, and nothing could ever drain. Now the board is a
 disc in open space and anything reaching an edge goes over it. That gives the
 outlet back and deletes a whole class of problem at once.
 
 **Rivers.** Two representations were built and both were abandoned. The root
 cause was never the drawing: it was rain everywhere plus accumulation, which
-on 127 cells gives a dendritic web no amount of threshold-tuning fixes. Water
+on a board this size gives a dendritic web no threshold-tuning fixes. Water
 now comes only from clouds you place, and that is the fix.
 
 Vestigial and safe to delete when convenient: `RING2` / `nb2` (the radius-2
@@ -358,7 +370,8 @@ flat board, 40 ticks              distinct depths per ring 1 1 2 2 3 3 4,
 
 - **Water on flat ground is mostly invisible.** It spreads and levels, so it
   is nearly always under the 70 units a water tile needs. A rain tile on a
-  flat board wets all 127 hexes and draws one or two. Water shows where it
+  flat board wets the whole board and draws one or two hexes of it. Water
+  shows where it
   gathers — in a basin — which is where it should.
 - **A lake stands about a water tile above its rim while it is raining.**
   That is the head it needs to push the inflow out. Stop the rain and it

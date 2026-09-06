@@ -67,6 +67,7 @@
       <div class="menu">
         <h2>Powers</h2>
         <div id="powers"></div>
+        <div class="rates" id="brush"></div>
       </div>
       <div class="menu" style="margin-top:14px">
         <h2>View</h2>
@@ -114,7 +115,7 @@ import { OrbitControls } from './vendor/addons/controls/OrbitControls.js';
    drain. Now anything that reaches an edge goes over it, which gives the
    outlet back and deletes that whole class of problem at once.
    ====================================================================== */
-const R=6, H_MAX=12;
+const R=12, H_MAX=12;
 const DIRS=[[1,0],[1,-1],[0,-1],[-1,0],[-1,1],[0,1]];   /* E NE NW W SW SE */
 
 const T=[], idx=new Map();
@@ -313,14 +314,34 @@ function tick(){
 
 const legal=(i,p)=> p.d===0 ? true
                   : p.d>0 ? T[i].h<H_MAX : T[i].h>-H_MAX;
-function use(i,p){
-  if(i==null||i<0||!T[i]||!legal(i,p)) return false;
+
+/* every hex within rad of i, rad 0 being the hex itself */
+function within(i,rad){
+  const out=[], t=T[i];
+  for(let dq=-rad;dq<=rad;dq++) for(let dr=-rad;dr<=rad;dr++){
+    if((Math.abs(dq)+Math.abs(dr)+Math.abs(dq+dr))/2>rad) continue;
+    const j=at(t.q+dq,t.r+dr);
+    if(j>=0) out.push(j);
+  }
+  return out;
+}
+
+/* THE BRUSH IS IN THE CORE, not in the UI, because a click has to stay ONE
+   TICK however many hexes it moves. Applying use() per hex would run the
+   weather 37 times for one press of a radius-3 brush. */
+function use(i,p,rad){
+  if(i==null||i<0||!T[i]) return false;
+  const cells=within(i,rad||0);
   if(p.k==='cloud'){
-    /* one power places AND removes: click a column to hang a rain tile over
-       it, click again to take it away */
-    const z=i*ZN+CLOUD_Z;
-    CELL[z] = CELL[z]===CLOUD ? AIR : CLOUD;
-  } else T[i].h+=p.d;
+    /* the centre decides for the whole brush, so a stroke is all-on or
+       all-off rather than a checkerboard of toggles */
+    const on = cell(i,CLOUD_Z)!==CLOUD;
+    for(const j of cells) CELL[j*ZN+CLOUD_Z] = on?CLOUD:AIR;
+  } else {
+    const move=cells.filter(j=>legal(j,p));
+    if(!move.length) return false;         /* every hex already at the limit */
+    for(const j of move) T[j].h+=p.d;
+  }
   tick();                       /* every action is a tick: the weather runs */
   return true;
 }
@@ -356,6 +377,16 @@ const POWERS=[
 ];
 let POWER=POWERS[0];
 
+/* BRUSH n covers radius n-1: 1, 7, 19 and 37 hexes. Size 2 is the one-hex
+   radius; size 4 is the three-hex radius. */
+let BRUSH=1;
+function drawBrush(){
+  document.getElementById('brush').innerHTML=[1,2,3,4].map(b=>
+    '<button class="rt'+(b===BRUSH?' on':'')+'" data-b="'+b+'">'+b+'</button>').join('');
+  document.querySelectorAll('#brush .rt').forEach(el=>el.onclick=()=>{
+    BRUSH=+el.dataset.b; drawBrush(); hover(HOVER); });
+}
+
 const board=document.getElementById('board');
 const renderer=new THREE.WebGLRenderer({antialias:true});
 renderer.setPixelRatio(Math.min(2,window.devicePixelRatio||1));
@@ -373,14 +404,15 @@ scene.add(fillLight);
 
 /* Orthographic reads as isometric, which is the look this board wants.
    Perspective is there for when you want to feel the depth. */
-const SPAN=15;                   /* board radius plus margin, in hex radii */
+/* the board's half-width in world units is sqrt(3)*R, plus a margin */
+const SPAN=Math.sqrt(3)*R+4;
 let ortho=true, cam=null, controls=null;
 function makeCam(){
   const w=board.clientWidth||900, h=board.clientHeight||660, a=w/h;
   const was=cam;
   cam = ortho ? new THREE.OrthographicCamera(-SPAN*a,SPAN*a,SPAN,-SPAN,0.1,300)
               : new THREE.PerspectiveCamera(38,a,0.1,300);
-  cam.position.copy(was?was.position:new THREE.Vector3(0,24,28));
+  cam.position.copy(was?was.position:new THREE.Vector3(0,SPAN*1.6,SPAN*1.9));
   if(controls){ controls.object=cam; controls.update(); }
   return cam;
 }
@@ -436,14 +468,20 @@ function rim(n,x,z,y){
   }
 }
 
-/* the hover ring: a hexagon lying just over whatever is under the cursor */
+/* The hover preview: a hexagon lying just over each hex the brush covers.
+   One ring per hex rather than one scaled outline, because the union of
+   hexes within a radius is NOT a scaled hexagon — it is turned thirty
+   degrees and its edges are stepped — and a preview that draws a shape the
+   click will not make is a preview that lies. */
 const ringPts=[];
 for(let k=0;k<=6;k++){ const a=Math.PI/180*(60*k);
   ringPts.push(new THREE.Vector3(Math.sin(a)*1.04,0,Math.cos(a)*1.04)); }
-const ring=new THREE.Line(
-  new THREE.BufferGeometry().setFromPoints(ringPts),
-  new THREE.LineBasicMaterial({color:0xffffff}));
-ring.visible=false; scene.add(ring);
+const ringGeo=new THREE.BufferGeometry().setFromPoints(ringPts);
+const ringMat=new THREE.LineBasicMaterial({color:0xffffff});
+const RINGS=[];
+for(let k=0;k<37;k++){                 /* 37 is the widest brush, radius 3 */
+  const l=new THREE.Line(ringGeo,ringMat); l.visible=false; scene.add(l); RINGS.push(l);
+}
 
 const M4=new THREE.Matrix4(), Q=new THREE.Quaternion(),
       P=new THREE.Vector3(), S=new THREE.Vector3(), C=new THREE.Color();
@@ -530,13 +568,15 @@ function pick(ev){
 }
 function hover(i){
   HOVER=i;
-  if(i<0) ring.visible=false;
-  else{
-    const t=T[i];
-    ring.position.set(t.x, (t.h+t.pool)*RISE+0.03, t.y);
-    ring.material.color.set(
-      POWER.k==='cloud'?0x5aafe1 : POWER.d>0?0xffffff : 0xc9a86a);
-    ring.visible=true;
+  for(const l of RINGS) l.visible=false;
+  if(i>=0){
+    ringMat.color.set(POWER.k==='cloud'?0x5aafe1 : POWER.d>0?0xffffff : 0xc9a86a);
+    within(i,BRUSH-1).forEach((j,k)=>{
+      if(k>=RINGS.length) return;
+      const t=T[j];
+      RINGS[k].position.set(t.x,(t.h+t.pool)*RISE+0.03,t.y);
+      RINGS[k].visible=true;
+    });
   }
   drawInfo();
 }
@@ -553,7 +593,7 @@ renderer.domElement.addEventListener('click',e=>{
   downAt=null;
   if(moved>4) return;
   const i=pick(e);
-  if(use(i,POWER)){ rebuild(); hover(i); }
+  if(use(i,POWER,BRUSH-1)){ rebuild(); hover(i); }
 });
 
 function resize(){
@@ -645,7 +685,7 @@ window.POT={T,at,use,tick,settle,rebuild,POWERS,scene,
    now, and the two must never be confused. */
 function frame(){ controls.update(); renderer.render(scene,cam);
   requestAnimationFrame(frame); }
-drawMenu(); drawRates(); settle(); rebuild(); resize(); drawInfo(); frame();
+drawMenu(); drawBrush(); drawRates(); settle(); rebuild(); resize(); drawInfo(); frame();
 </script>
 </body>
 </html>
