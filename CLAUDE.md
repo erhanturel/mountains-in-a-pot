@@ -223,9 +223,42 @@ world. Two corollaries worth keeping:
 ```
 BEDROCK  the floor. Nothing in the simulation may weather or move it; only
          the player can. Every board starts as a slab of it.
-ROCK     ordinary stone. Weathers, and what it weathers into moves.
+ROCK     ordinary stone. Weathers into slag.
 CLOUD    a rain tile, which lives in the same stack
 ```
+
+**SLAG is not a cell.** It is loose material and it will move, so it is an
+*amount* per column like water — `t.sed` — drawn in the same 70-unit courses.
+Cells are for structure, amounts are for what flows. `gnd(i)` is `h + sed`,
+and everything that used to compare `h` compares that.
+
+## Weathering
+
+Rock breaks down into slag where it is exposed. **It moves nothing** — the
+column is exactly as tall afterwards, the top of it has simply stopped being
+hard and started being loose. Only transport changes the shape of the land.
+That keeps two rates from being conflated and means weathering alone can never
+quietly eat your terrain.
+
+**Bedrock never weathers.** That is the whole of what makes it bedrock, and
+why a board floored with it cannot wear away to nothing.
+
+**Self-limiting in slag depth** — `rate = WEATHER / (1 + sed/SHIELD)`. A
+blanket of rubble shields the rock beneath it, so a peak with nothing to carry
+its debris away acquires a coat and then stops. *Weathering alone cannot lower
+a mountain; you have to route water over it.* That is real, and it is what
+makes the two rates interact rather than run independently.
+
+A slab cannot half-convert and there is no randomness here, so `wear`
+accumulates against the top one and the cell flips when it fills.
+
+Measured on six slabs of rock over bedrock at 0.7 units/tick: the first slab
+converts at tick 100, and the shielding stretches the next three to roughly
+250, 450 and 700. After 200,000 ticks all six are slag, the ground height has
+not moved by a unit, and it has stopped because the top is bedrock.
+
+`WEATHER` is a slider, not a constant, because there is no calibration for it
+yet and the only way to find one is to watch a board at several settings.
 
 `BASALT` went with the lava that made it, several rewrites ago. A **run** is
 an unbroken stretch of *one* material, so a rock slab lying on bedrock draws

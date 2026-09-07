@@ -53,6 +53,8 @@
     color:#6f7681;font-family:inherit;font-size:11px;letter-spacing:.5px;cursor:pointer}
   .rt:last-child{border-right:none}
   .rt:hover{background:#12151b}
+  input[type=range]{width:calc(100% - 22px);margin:4px 11px 11px;
+    accent-color:#c9a86a;background:none;cursor:pointer}
   .rt.off{color:#333a44;cursor:default}
   .rt.off:hover{background:none}
   .rt.on{color:#c9a86a;background:#171510}
@@ -99,6 +101,11 @@
           <path d="M3 3v4l6 4v4"/><path d="M15 3v4l-6 4"/></svg>
           <span>Drainage</span></button>
         <div class="rates" id="sun"></div>
+      </div>
+      <div class="menu" style="margin-top:14px">
+        <h2>Erosion</h2>
+        <div class="cap" id="wcap">weathering</div>
+        <input id="wear" type="range" min="0" max="70" step="1" value="7">
       </div>
       <div class="menu" style="margin-top:14px">
         <h2>Time</h2>
@@ -158,7 +165,8 @@ for(let q=-R;q<=R;q++){
   const lo=Math.max(-R,-q-R), hi=Math.min(R,-q+R);
   for(let r=lo;r<=hi;r++){
     idx.set(q+','+r,T.length);
-    T.push({q,r,x:Math.sqrt(3)*(q+r/2),y:1.5*r,pool:0,flow:0,out:new Float64Array(6)});
+    T.push({q,r,x:Math.sqrt(3)*(q+r/2),y:1.5*r,pool:0,flow:0,out:new Float64Array(6),
+            sed:0,wear:0});
   }
 }
 
@@ -208,8 +216,8 @@ const zTop=z=>(Z0+z+1)/SLAB;
 
    BASALT went with the lava it was made by, several rewrites ago; nothing
    had set or read it since. */
-const AIR=0, BEDROCK=1, ROCK=2, CLOUD=3;
-const MATS={[BEDROCK]:'bedrock',[ROCK]:'rock',[CLOUD]:'cloud'};
+const AIR=0, BEDROCK=1, ROCK=2, CLOUD=3, SLAG=4;
+const MATS={[BEDROCK]:'bedrock',[ROCK]:'rock',[SLAG]:'slag',[CLOUD]:'cloud'};
 const CELL=new Uint8Array(T.length*ZN);
 const TOP=new Int16Array(T.length).fill(-1);
 const cell=(i,z)=>(z<0||z>=ZN)?AIR:CELL[i*ZN+z];
@@ -282,6 +290,12 @@ const at=(q,r)=>{const i=idx.get(q+','+r);return i===undefined?-1:i};
    makes the readings you actually look at legible. 72 units read 1.714
    where 420 reads 10. */
 const LAYER=1/6;
+
+/* GROUND IS ROCK PLUS WHAT IS LYING ON IT. Slag is loose material -- an
+   AMOUNT, like water, not a cell -- so it can move by fractions later
+   without the stack lurching a whole slab at a time. Everything that used to
+   compare h compares this instead. */
+const gnd=i=>T[i].h+T[i].sed;
 const RAINFALL=LAYER;            /* what one rain tile drops each tick */
 /* RAIN TILES STACK. The band starts well clear of the highest ground a
    player can build -- elevation 17 against a limit of 12 -- and runs to the
@@ -347,7 +361,7 @@ function delCloud(i,n){
 function settle(){
   const n=T.length;
   const was=T.map(t=>t.pool);
-  const top=i=>T[i].h+was[i];
+  const top=i=>gnd(i)+was[i];
   const add=new Array(n).fill(0);
   /* THROUGHPUT: what CROSSES a tile, as against what stands on it. The two
      are different numbers and nothing else here can tell them apart -- the
@@ -426,6 +440,41 @@ function settle(){
   }
   for(let i=0;i<n;i++) T[i].pool=Math.max(0,was[i]+add[i]);
 }
+/* ---------------------------------------------------------------------
+   WEATHERING. Rock breaks down into slag where it is exposed. It does not
+   MOVE anything -- the column is exactly as tall afterwards, the top of it
+   has simply stopped being hard and started being loose. Only transport
+   changes the shape of the land, and that is the next step.
+
+   BEDROCK NEVER WEATHERS. That is the whole of what makes it bedrock, and
+   why a board floored with it cannot wear away to nothing.
+
+   SELF-LIMITING IN SLAG DEPTH: a blanket of rubble shields the rock beneath
+   it, so a peak with nothing to carry its debris away acquires a coat and
+   then stops. Weathering alone cannot lower a mountain -- you have to route
+   water over it. That is real, and it is what makes the two rates interact
+   rather than run independently.
+
+   A slab cannot half-convert and there is no randomness here, so `wear`
+   accumulates against the top one and the cell flips when it fills.
+   --------------------------------------------------------------------- */
+let WEATHER=0.7/420;             /* units of rock loosened per tick */
+const SHIELD=140/420;            /* slag depth at which weathering halves */
+function weather(){
+  if(WEATHER<=0) return;
+  for(let i=0;i<T.length;i++){
+    const t=TOP[i];
+    if(t<0 || CELL[i*ZN+t]!==ROCK) continue;      /* bedrock, or nothing */
+    T[i].wear += WEATHER/(1+T[i].sed/SHIELD);
+    while(T[i].wear>=LAYER && TOP[i]>=0 && CELL[i*ZN+TOP[i]]===ROCK){
+      T[i].wear-=LAYER;
+      CELL[i*ZN+TOP[i]]=AIR; retop(i);            /* the slab is gone */
+      T[i].sed+=LAYER;                            /* and is lying there loose */
+    }
+    if(TOP[i]<0 || CELL[i*ZN+TOP[i]]!==ROCK) T[i].wear=0;
+  }
+}
+
 /* the rain tiles rain, and then everything sheds once */
 function tick(){
   for(let i=0;i<T.length;i++){
@@ -433,6 +482,7 @@ function tick(){
     if(n) T[i].pool+=n*RAINFALL;      /* a stack of n drops n times the rain */
   }
   settle();
+  weather();
 }
 
 /* ERASE is the mirror of PLACE, and like Place it is driven by the palette:
@@ -506,10 +556,13 @@ function use(i,p,rad,n,m){
     /* Subduct means one thing: lower the ground. It never touches the sky. */
     for(const j of cells) did+=lower(j,n);
   } else if(p.k==='erase'){
-    for(const j of cells) did+=erase(j,n,m||ROCK);
+    if(m===SLAG) for(const j of cells){
+      const g=Math.min(T[j].sed,n*LAYER); T[j].sed-=g; if(g>1e-12) did++; }
+    else for(const j of cells) did+=erase(j,n,m||ROCK);
   } else if(p.k==='place'){
-    if(m===CLOUD) for(const j of cells) did+=addCloud(j,n);
-    else          for(const j of cells) did+=raise(j,n,m||ROCK);
+    if(m===CLOUD)     for(const j of cells) did+=addCloud(j,n);
+    else if(m===SLAG) for(const j of cells){ T[j].sed+=n*LAYER; did++; }
+    else              for(const j of cells) did+=raise(j,n,m||ROCK);
   } else {
     /* uplift extends whatever the column already has on top of it, which is
        what makes it a different power from place rather than a duplicate */
@@ -571,7 +624,7 @@ function drawDepth(){
     DEPTH=+el.dataset.d; drawDepth(); });
 }
 function drawPalette(){
-  document.getElementById('palette').innerHTML=[BEDROCK,ROCK,CLOUD].map(m=>
+  document.getElementById('palette').innerHTML=[BEDROCK,ROCK,SLAG,CLOUD].map(m=>
     '<button class="rt'+(m===MAT?' on':'')+'" data-m="'+m+'">'+MATS[m]+'</button>').join('');
   document.querySelectorAll('#palette .rt').forEach(el=>el.onclick=()=>{
     MAT=+el.dataset.m; drawPalette(); hover(HOVER); });
@@ -678,6 +731,15 @@ ground.castShadow=true; ground.receiveShadow=true;
 scene.add(ground);
 
 /* water gets its own mesh, and sees through */
+/* SLAG lies on the rock and is drawn in the same seventy-unit courses the
+   water is, so a thin scatter of it is held but not shown -- the same
+   arrangement, for the same reason, as everything else loose on this board. */
+const slag=new THREE.InstancedMesh(prism,
+  new THREE.MeshLambertMaterial({color:0x8a7a63}), T.length);
+slag.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+slag.castShadow=true; slag.receiveShadow=true;
+scene.add(slag);
+
 const water=new THREE.InstancedMesh(prism,
   new THREE.MeshLambertMaterial({color:0x3c86b4,transparent:true,opacity:0.72}),
   T.length);
@@ -832,13 +894,13 @@ function accum(){
   let seeded=0;
   for(let i=0;i<n;i++){ const c=clouds(i); if(c){ a[i]=c; seeded++; } }
   if(!seeded) a.fill(1);
-  const order=T.map((t,i)=>i).sort((x,y)=>T[y].h-T[x].h);
+  const order=T.map((t,i)=>i).sort((x,y)=>gnd(y)-gnd(x));
   for(const i of order){
     let tot=0; const outs=[];
     for(let k=0;k<6;k++){
       const j=T[i].nb[k];
       if(j<0){ tot=-1; break; }                 /* the void takes the lot */
-      const drop=T[i].h-T[j].h;
+      const drop=gnd(i)-gnd(j);
       if(drop>0){ outs.push(j); outs.push(drop); tot+=drop; }
     }
     if(tot<=0) continue;                        /* the void, a pit, or flat */
@@ -909,13 +971,18 @@ function rebuild(){
        held but not shown — that remainder is what makes ground bloom into a
        visible layer several ticks after it first got wet, and it is what
        stops a sixth of a layer being drawn floating with nothing under it. */
+    /* slag first: it is ground, so the water and the rivers stand on it */
+    const sd = Math.floor(t.sed/LAYER+1e-9)*LAYER;
+    if(sd>0) place(slag,i,t.x,t.y,t.h*RISE,(t.h+sd)*RISE);
+    else     hide(slag,i);
+    const g = t.h+sd;
     const wd = Math.floor(t.pool/LAYER+1e-9)*LAYER;
-    if(wd>0) place(water,i,t.x,t.y,t.h*RISE,(t.h+wd)*RISE);
+    if(wd>0) place(water,i,t.x,t.y,g*RISE,(g+wd)*RISE);
     else     hide(water,i);
     /* rivers ride on whatever surface is already showing, so they never
        hang in the air over a tile that draws no water */
     if(RIVERS){
-      const y=(t.h+wd)*RISE+0.012;
+      const y=(g+wd)*RISE+0.012;
       for(let k=0;k<6;k++){
         const d=t.out[k];
         if(d>=RIVER_MIN && ns<MAXSTUB) stub(ns++,t,k,d,y);
@@ -938,6 +1005,8 @@ function rebuild(){
   ground.instanceColor.needsUpdate=true;
   edgeGeo.attributes.position.needsUpdate=true;
   edgeGeo.computeBoundingSphere();
+  slag.instanceMatrix.needsUpdate=true;
+  slag.computeBoundingSphere();
   water.instanceMatrix.needsUpdate=true;
   /* An InstancedMesh measures itself ONCE, lazily, and caches it. Both liquid
      meshes were first measured while every instance was still parked out of
@@ -959,7 +1028,7 @@ function pick(ev){
   ndc.y=-((ev.clientY-r.top)/r.height)*2+1;
   ray.setFromCamera(ndc,cam);
   let best=null, bestHex=-1;
-  for(const m of [ground,water]){
+  for(const m of [ground,slag,water]){
     const hit=ray.intersectObject(m,false)[0];
     if(!hit) continue;
     /* ground instances are runs now, so the hex comes from a lookup; the
@@ -976,12 +1045,14 @@ function hover(i){
     ringMat.color.set(
       POWER.k==='erase' ? 0xd07a5a :
       POWER.k==='place'
-        ? (MAT===CLOUD?0x5aafe1 : MAT===BEDROCK?0x8d97a6 : 0xd8cfc0)
+        ? (MAT===CLOUD?0x5aafe1 : MAT===BEDROCK?0x8d97a6
+           : MAT===SLAG?0xbda98a : 0xd8cfc0)
         : POWER.d>0 ? 0xffffff : 0xc9a86a);
     within(i,BRUSH-1).forEach((j,k)=>{
       if(k>=RINGS.length) return;
       const t=T[j];
-      RINGS[k].position.set(t.x,(t.h+t.pool)*RISE+0.03,t.y);
+      RINGS[k].position.set(t.x,
+        (t.h+Math.floor(t.sed/LAYER+1e-9)*LAYER+t.pool)*RISE+0.03,t.y);
       RINGS[k].visible=true;
     });
   }
@@ -1027,6 +1098,8 @@ function drawInfo(){
   let h='<h4>'+t.q+', '+t.r+'</h4>';
   h+=row('ground', t.h+'   ('+U(t.h)+' units)');
   h+=row('material', MATS[t.mat]||'—', t.mat?'':'q');
+  const sl=t.sed>1e-12;
+  h+=row('slag', sl ? U(t.sed)+' units' : '—', sl?'s':'q');
   h+=row('water',  wet ? U(t.pool)+' units' : '—', wet?'w':'q');
   h+=row('layers', wet ? Math.floor(t.pool/LAYER+1e-9) : '—', wet?'w':'q');
   const run=t.flow>1e-12;
@@ -1088,6 +1161,17 @@ function setPlay(on){
 }
 playBtn.onclick=()=>setPlay(!RUN);
 
+/* the one knob this step has. Rock loosened per tick, in units, and it is a
+   slider rather than a constant because there is no calibration for it yet
+   and the only way to find one is to watch a board at several settings. */
+const wearEl=document.getElementById('wear'), wcap=document.getElementById('wcap');
+function drawWear(){
+  const u=+wearEl.value/10;
+  WEATHER=u/420;
+  wcap.textContent='weathering — '+u.toFixed(1)+' units/tick';
+}
+wearEl.oninput=drawWear;
+
 const ovDrain=document.getElementById('ovDrain');
 ovDrain.onclick=()=>{ DRAIN=!DRAIN; ovDrain.classList.toggle('on',DRAIN); rebuild(); };
 
@@ -1125,13 +1209,16 @@ function snap(){
   for(let i=0;i<n;i++) out.set(T[i].out,i*6);
   return { cells:CELL.slice(),
            pool:Float64Array.from(T,t=>t.pool),
-           flow:Float64Array.from(T,t=>t.flow), out };
+           flow:Float64Array.from(T,t=>t.flow),
+           sed:Float64Array.from(T,t=>t.sed),
+           wear:Float64Array.from(T,t=>t.wear), out };
 }
 function restore(s){
   CELL.set(s.cells);
   for(let i=0;i<T.length;i++){
     retop(i);
     T[i].pool=s.pool[i]; T[i].flow=s.flow[i];
+    T[i].sed=s.sed[i];   T[i].wear=s.wear[i];
     T[i].out.set(s.out.subarray(i*6,i*6+6));
   }
   rebuild(); hover(HOVER);
@@ -1167,7 +1254,8 @@ addEventListener('keydown',e=>{
    global — it is how the flat renderer was checked, and it is the only way
    to drive the sim by hand now. */
 window.POT={T,at,use,tick,settle,rebuild,POWERS,scene,
-  CLOUD,CLOUD_Z,CLOUD_MAX,clouds,LAYER,RAINFALL,
+  CLOUD,CLOUD_Z,CLOUD_MAX,clouds,LAYER,RAINFALL,SLAG,gnd,weather,
+  get weathering(){ return WEATHER*420 }, set weathering(v){ WEATHER=v/420 },
   CELL,TOP,cell,solid,retop,ZN,Z0,SLAB,zBot,zTop,AIR,BEDROCK,ROCK,MATS,instHex,ground,
   camera:()=>cam, hover:i=>hover(i),
   get power(){ return POWER.k },
@@ -1177,7 +1265,7 @@ window.POT={T,at,use,tick,settle,rebuild,POWERS,scene,
    now, and the two must never be confused. */
 function frame(){ controls.update(); renderer.render(scene,cam);
   requestAnimationFrame(frame); }
-drawMenu(); drawBrush(); drawDepth(); drawPalette(); drawRates(); drawHist(); setSun(0); settle(); rebuild(); resize(); drawInfo(); frame();
+drawMenu(); drawBrush(); drawDepth(); drawPalette(); drawRates(); drawHist(); drawWear(); setSun(0); settle(); rebuild(); resize(); drawInfo(); frame();
 </script>
 </body>
 </html>
