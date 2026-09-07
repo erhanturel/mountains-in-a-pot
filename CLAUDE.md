@@ -4,8 +4,9 @@
 > Hang a cloud, and the water
 > finds its own level.
 
-A single-file hex sandbox. **Radius 12, 469 hexes.** Three powers — raise a
-column, lower a column, and lay down a chosen material — each with a **brush** of 1, 7, 19 or 37 hexes and a **depth** of 1,
+A single-file hex sandbox. **Radius 12, 469 hexes.** Four powers — **Uplift**
+and **Subduct**, which are blind and act on whatever is on top, and **Place**
+and **Erase**, which the palette aims — each with a **brush** of 1, 7, 19 or 37 hexes and a **depth** of 1,
 2, 3, 6 or 12 slabs. Six slabs is one elevation step. Everything else is water
 working out where to go.
 
@@ -233,13 +234,20 @@ in the world you can see rather than a flag. Their band starts at elevation
 **17**, well clear of the highest ground a player can build (12), and runs to
 the top of the stack — so twelve is the tallest a cloud can get, which is
 exactly the largest intensity. **A rain tile is a material, not a power**: Place lays them down and they
-stack, Subduct takes them away. Subduct removes from the top of the column and
-a rain tile *is* the top when there is one — no special case and no toggle.
+stack, Erase takes them away. **Subduct never touches the sky** — it means one
+thing, lower the ground, and you can dig under a cloud freely.
 
-The cost is that you cannot dig under a cloud without clearing it first, and
-that is deliberate. The old arrangement was a toggle whose meaning depended on
-what was already there, which made stacking impossible: clicking with the same
-intensity cleared instead of adding.
+Erase is the mirror of Place and reads the same palette: it removes up to *n*
+slabs of *that material* from the top and stops the moment the top is
+something else. Erase rock and the bedrock beneath is safe; erase cloud and
+the ground is untouched. That is what separates it from Subduct, which is
+blind.
+
+Two arrangements were tried and discarded before this. A Cloud *power* that
+set the stack to the chosen height and cleared it when already there — a
+toggle whose meaning depended on what was already on the hex, so clicking
+three-then-three gave three, not six. And Subduct removing clouds first, which
+made stacking work but meant you could not dig under a cloud at all.
 
 The drainage overlay seeds from the count, not from the presence, so a triple
 cloud weighs three times as much.

@@ -435,6 +435,14 @@ function tick(){
   settle();
 }
 
+/* ERASE is the mirror of PLACE, and like Place it is driven by the palette:
+   it takes away up to n slabs of THAT MATERIAL from the top of the column,
+   and stops the moment the top is something else. Erase rock and the bedrock
+   under it is safe; erase cloud and the ground below is untouched.
+
+   That is what makes it different from Subduct, which is blind and takes
+   whatever is on top. Two blind powers and two the palette aims. */
+
 /* the highest and lowest slab a column may reach */
 const TOPMAX=H_MAX*SLAB-Z0-1, TOPMIN=-H_MAX*SLAB-Z0-1;
 
@@ -462,6 +470,16 @@ function lower(i,n){
   }
   return did;
 }
+function erase(i,n,m){
+  if(m===CLOUD) return delCloud(i,n);
+  const b=i*ZN; let did=0;
+  for(let k=0;k<n;k++){
+    const t=TOP[i];
+    if(t<0 || t<=TOPMIN || CELL[b+t]!==m) break;   /* the top is not that */
+    CELL[b+t]=AIR; retop(i); did++;
+  }
+  return did;
+}
 
 /* every hex within rad of i, rad 0 being the hex itself */
 function within(i,rad){
@@ -485,15 +503,10 @@ function use(i,p,rad,n,m){
   n=Math.max(1,n||1);
   let did=0;
   if(p.k==='subduct'){
-    /* SUBDUCT TAKES FROM THE TOP OF THE COLUMN, and a rain tile is the top
-       of the column when there is one. No special case and no toggle: Place
-       adds, Subduct removes, for clouds exactly as for stone.
-
-       The price is that you cannot dig under a cloud without clearing it
-       first. That is the cost of never having a click whose meaning depends
-       on what is already there, which is what the old toggle was and why
-       stacking was impossible. */
-    for(const j of cells) did += clouds(j) ? delCloud(j,n) : lower(j,n);
+    /* Subduct means one thing: lower the ground. It never touches the sky. */
+    for(const j of cells) did+=lower(j,n);
+  } else if(p.k==='erase'){
+    for(const j of cells) did+=erase(j,n,m||ROCK);
   } else if(p.k==='place'){
     if(m===CLOUD) for(const j of cells) did+=addCloud(j,n);
     else          for(const j of cells) did+=raise(j,n,m||ROCK);
@@ -539,6 +552,7 @@ const POWERS=[
   {k:'uplift',  nm:'Uplift',  d: 1, ic:'<svg viewBox="0 0 18 18"><path d="M9 3l5 6H4z"/></svg>'},
   {k:'subduct', nm:'Subduct', d:-1, ic:'<svg viewBox="0 0 18 18"><path d="M9 15L4 9h10z"/></svg>'},
   {k:'place',   nm:'Place',   d: 1, ic:'<svg viewBox="0 0 18 18"><rect x="4" y="7" width="10" height="6"/><path d="M4 7l5-3 5 3"/></svg>'},
+  {k:'erase',   nm:'Erase',   d:-1, ic:'<svg viewBox="0 0 18 18"><path d="M3 14h12"/><path d="M5.5 11.5l5-5 3.5 3.5-5 5z"/></svg>'},
 ];
 let POWER=POWERS[0];
 
@@ -960,6 +974,7 @@ function hover(i){
   for(const l of RINGS) l.visible=false;
   if(i>=0){
     ringMat.color.set(
+      POWER.k==='erase' ? 0xd07a5a :
       POWER.k==='place'
         ? (MAT===CLOUD?0x5aafe1 : MAT===BEDROCK?0x8d97a6 : 0xd8cfc0)
         : POWER.d>0 ? 0xffffff : 0xc9a86a);
