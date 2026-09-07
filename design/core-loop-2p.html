@@ -1,0 +1,108 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Mountains in a Pot — the core loop on two pages</title>
+<style>
+@page{size:A4;margin:16mm 16mm 16mm 16mm}
+:root{--ink:#191e25;--soft:#3a424c;--muted:#5d666f;--line:#d2d8de;--line2:#e6eaee;--accent:#a9762f;--accent-bg:#f4ecdc;--water:#2f6f9e;--life:#4f8b3d;--stone:#6b6470}
+*{box-sizing:border-box} body{margin:0;font-family:"IBM Plex Sans",system-ui,Helvetica,Arial,sans-serif;font-size:10pt;line-height:1.5;color:var(--ink)}
+h1,h2,h3{font-family:"Zilla Slab",Georgia,serif;margin:0} h1{font-size:22pt;line-height:1.1;margin-bottom:2mm} h2{font-size:13pt;margin:5mm 0 1.5mm;page-break-after:avoid} h3{font-size:11pt;margin:3mm 0 1mm}
+p{margin:0 0 2mm;color:var(--soft)} strong{color:var(--ink)} em{font-style:normal;color:var(--accent);font-weight:500}
+.eyebrow{font-family:"IBM Plex Mono",monospace;font-size:7.5pt;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin:0 0 1mm}
+.hook{background:var(--accent-bg);border:1px solid var(--accent);border-radius:5px;padding:3mm 4mm;margin:2mm 0 3mm;font-family:"Zilla Slab",Georgia,serif;font-size:13pt;color:var(--ink)}
+.loop{display:grid;grid-template-columns:repeat(4,1fr);gap:2.5mm;margin:2mm 0 3mm}
+.lp{border:1px solid var(--line);border-radius:5px;padding:2.5mm 3mm;font-size:9pt} .lp b{display:block;font-family:"Zilla Slab",serif;font-size:11pt;margin-bottom:1mm}
+.lp.a{border-top:3px solid var(--accent)} .lp.b{border-top:3px solid var(--life)} .lp.c{border-top:3px solid var(--stone)} .lp.d{border-top:3px solid var(--water)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:5mm}
+table{border-collapse:collapse;width:100%;font-size:9pt;margin:1mm 0 2mm} th,td{text-align:left;padding:1.2mm 2mm;border-bottom:1px solid var(--line2);vertical-align:top}
+thead th{font-family:"IBM Plex Mono",monospace;font-size:7pt;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:500;background:#f4f6f8}
+td.k{font-family:"Zilla Slab",serif;font-weight:600;white-space:nowrap} td.m{font-family:"IBM Plex Mono",monospace;color:var(--accent);white-space:nowrap}
+ul{margin:0 0 2mm;padding-left:4.5mm;color:var(--soft)} li{margin-bottom:.8mm}
+.rule{border-left:3px solid var(--accent);padding:1mm 0 1mm 4mm;margin:2mm 0;font-family:"Zilla Slab",serif;font-size:11.5pt;color:var(--ink)}
+.pb{page-break-before:always}
+.foot{font-family:"IBM Plex Mono",monospace;font-size:7.5pt;color:var(--muted);margin-top:4mm;border-top:1px solid var(--line);padding-top:1.5mm}
+</style></head><body>
+<p class="eyebrow">Mountains in a Pot · the core on two pages · v0.1</p>
+<h1>Shape the ground. The world grows. Count what bloomed.</h1>
+<div class="hook">The only builder where you place nothing — you shape the ground, and a living world grows itself.</div>
+
+<h2>The core loop (one Year)</h2>
+<div class="loop">
+  <div class="lp a"><b>1 · Shape</b>12 Moons. Each Moon: <strong>act</strong> (Uplift, Subduct, rain, seed — costs mana) or <strong>rest</strong> (free). Either way the world runs 12 ticks: water walks, soil moves, life spreads.</div>
+  <div class="lp b"><b>2 · Harvest</b>Count what stands. <strong>Bloom = living hexes × (1 + Wonders)</strong>. Wonders are shapes the water made: a Lake, a River, a Waterfall, an Island, a Ring of Life.</div>
+  <div class="lp c"><b>3 · The bar</b>Bloom ≥ this Year's target → continue. Below it → <strong>the pot rests</strong>: the run ends on the Behold screen. That is the only fail.</div>
+  <div class="lp d"><b>4 · Spring</b>Surplus Bloom becomes <strong>Dew</strong>. Shop: 3 Boons (permanent rule changes) + 2 Seed cards (kinds of life). Same pot, next Year, higher bar.</div>
+</div>
+<p class="rule">Eight Years in one pot. Year 1 is a puddle and a patch of moss; Year 8 is a world — or the pot rests earlier, and you behold what you grew.</p>
+
+<div class="two">
+<div>
+<h2>Moment to moment</h2>
+<ul>
+  <li><strong>Read</strong> the pot: where would water go, where is soil gathering, where can life reach.</li>
+  <li><strong>Spend a Moon</strong>: dig a basin (1 mana), raise a ridge (2), hang a cloud (3), sow a seed (1), or rest (0).</li>
+  <li><strong>Watch</strong> 12 ticks: the basin fills, the shore greens one hex a tick, the slag fan grows.</li>
+  <li><strong>Plan</strong> the next Moon from what you saw. Nothing moves while you think; nothing is random.</li>
+</ul>
+<h2>What you win by</h2>
+<ul>
+  <li><strong>Count</strong>: living hexes. Life needs a course of soil, not drowned, and visible water beside it (a lake tile or a river).</li>
+  <li><strong>Shape</strong>: Wonders multiply the count. They are about water and terrain, so "cover everything in moss" never wins.</li>
+  <li><strong>Build</strong>: Boons + seeds + the shape you carved agreeing — Lake, River, Highland, Sprawl.</li>
+</ul>
+</div>
+<div>
+<h2>The numbers (first guesses, tune by play)</h2>
+<table><thead><tr><th>Thing</th><th>Value</th></tr></thead><tbody>
+<tr><td class="k">Moon</td><td class="m">12 ticks</td></tr>
+<tr><td class="k">Year</td><td class="m">12 Moons</td></tr>
+<tr><td class="k">Run</td><td class="m">8 Years, ~40 min</td></tr>
+<tr><td class="k">Mana / Year</td><td class="m">10, no carry-over</td></tr>
+<tr><td class="k">Action cost</td><td class="m">brush ×1..×4 · depth ×1..×3</td></tr>
+<tr><td class="k">Cloud</td><td class="m">3 per rain tile</td></tr>
+<tr><td class="k">Seed</td><td class="m">1 + a card</td></tr>
+<tr><td class="k">Target Bloom</td><td class="m">8 · 15 · 25 · 40 · 60 · 90 · 130 · 180</td></tr>
+<tr><td class="k">Dew at Harvest</td><td class="m">2 + surplus÷5, cap 10, +interest</td></tr>
+<tr><td class="k">Boons held</td><td class="m">max 5 · 4–8 Dew each</td></tr>
+</tbody></table>
+<h2>Cozy mode</h2>
+<p>Same game, no bar, no clock, 20 mana that carries, the shop as a menu, the Codex as a notebook. A mode — not the spine.</p>
+</div>
+</div>
+
+<div class="pb"></div>
+<p class="eyebrow">page two · what is decided, what is next</p>
+<h2>What your brief asked for, and where it landed</h2>
+<table><thead><tr><th>You asked</th><th>Answer</th></tr></thead><tbody>
+<tr><td class="k">Sim-board roguelike</td><td>One pot, 8 Years, a rising bar, a gentle fail. Decided.</td></tr>
+<tr><td class="k">Free-shape + end-of-round score</td><td>Shaping stays free-form on any hex; Harvest counts the world as it stands. Decided.</td></tr>
+<tr><td class="k">Bloom = Σ living hex × synergy multipliers</td><td>Bloom = living hexes × (1 + sum of Wonder bonuses). Twelve Wonders listed with detectors. Decided; bonuses to tune.</td></tr>
+<tr><td class="k">Mana budget + rising threshold</td><td>10 mana a Year, cost = brush × depth; targets ×1.5 a Year. Numbers flagged.</td></tr>
+<tr><td class="k">Spring shop / Boons / builds</td><td>3 Boons + 2 Seed cards per Spring, bought with Dew; 12 Boons listed; four builds fall out of them.</td></tr>
+<tr><td class="k">Cards</td><td><strong>Cards are Seeds</strong> (Moss, Grass, Reed, Willow, Pine, Lotus), not shaping actions. This is the one interpretation I chose — veto it if you meant otherwise.</td></tr>
+<tr><td class="k">Cozy is a mode</td><td>Yes: pressure off, same world, ships in the demo.</td></tr>
+<tr><td class="k">Steam-first ~$13, own art</td><td>Kept. Phase 0 beauty pass = palette + light + diorama camera + one post shader, no bought assets on hexes or water.</td></tr>
+<tr><td class="k">Life back on the water branch</td><td><strong>Done and pushed</strong>: three rules, seed on the palette, measured.</td></tr>
+</tbody></table>
+
+<h2>Build order (stop and play after each)</h2>
+<table><thead><tr><th>#</th><th>Step</th><th>Proves</th><th>Size</th></tr></thead><tbody>
+<tr><td class="m">1</td><td class="k">Life</td><td>life reads from water and soil, no aura</td><td class="m">done</td></tr>
+<tr><td class="m">2</td><td class="k">Phase 0 beauty pass</td><td>the look is ours</td><td class="m">1 day</td></tr>
+<tr><td class="m">3</td><td class="k">Harvest: Bloom + Wonders on the bench</td><td>is beating your own Bloom fun? — go / no-go</td><td class="m">2 days</td></tr>
+<tr><td class="m">4</td><td class="k">Moons, Years, mana, the bar</td><td>the loop has tension</td><td class="m">2 days</td></tr>
+<tr><td class="m">5</td><td class="k">Seed cards: Moss, Grass, Reed</td><td>"what to sow" is a decision</td><td class="m">1 day</td></tr>
+<tr><td class="m">6</td><td class="k">Spring shop + 6 Boons</td><td>builds emerge</td><td class="m">2 days</td></tr>
+<tr><td class="m">7</td><td class="k">Seeded starting pots</td><td>variety without randomness in play</td><td class="m">1 day</td></tr>
+<tr><td class="m">8</td><td class="k">Behold + cozy mode + Codex</td><td>the felt moment</td><td class="m">2 days</td></tr>
+<tr><td class="m">9</td><td class="k">Rest of the roster</td><td>—</td><td class="m">3 days</td></tr>
+<tr><td class="m">10</td><td class="k">Vertical slice → demo → Next Fest</td><td>—</td><td class="m">1 week</td></tr>
+</tbody></table>
+
+<h2>Five things only you can answer</h2>
+<ul>
+<li><strong>Cards = seeds?</strong> Or did you mean a hand of shaping cards? (Changes step 5.)</li>
+<li><strong>One pot for eight Years</strong>, or a new pot each Year like Islanders?</li>
+<li><strong>Count Bloom as it stands</strong> at the last Moon, or after a free settle? (Recommendation: as it stands.)</li>
+<li><strong>12 ticks a Moon</strong> — decide by playing step 4.</li>
+<li><strong>Radius 12 or 14</strong> for a run.</li>
+</ul>
+<p class="foot">Full document: design/game-design-v0.1.pdf (29 pages, one chapter per page — the same content, with every rule, every Wonder, every Boon and the reasoning). This sheet is the part to argue about.</p>
+</body></html>
