@@ -257,6 +257,39 @@ converts at tick 100, and the shielding stretches the next three to roughly
 250, 450 and 700. After 200,000 ticks all six are slag, the ground height has
 not moved by a unit, and it has stopped because the top is bedrock.
 
+## Transport
+
+**Slag rides the water's own routing.** `out[6]` already says how much water
+left through each edge, so slag goes the same way in the same proportions — no
+second routing, no suspended load to store, and slag can only move where water
+actually moved.
+
+The force on an edge is **stream power**: how much went through it times how
+far it dropped, both in slabs, so one slab of water down a one-slab step is
+exactly 1. Below `THRESH` nothing shifts.
+
+**That threshold is why deposition needs no rule of its own.** Where the water
+slows or the ground flattens the power falls under the bar and the slag stays.
+The drop is capped at one elevation — a waterfall does not carry sediment in
+proportion to the whole height of its cliff, and without the cap the void off
+the board is infinitely far down and would take an infinite amount.
+
+Measured, and three of these were predictions made before the code ran:
+
+- **Conservation is exact.** 4000 ticks on a rough board: 40,740 units of rock
+  lost, 38,389 still lying on it, 2,351 gone over the edge. Never negative.
+- **Basins silt up.** A two-elevation pit at the foot of a cone: slag goes
+  0 → 842 units while the water in it falls 951 → 118. Flow inside a lake is
+  nil, so anything carried in is trapped the moment it arrives. It plugs.
+- **Fans, not floodplains.** A ramp down to a plain: nothing on the steep
+  upper slope, a peak of 232 units two hexes past the break of slope, tailing
+  to nothing before the plain proper. Water levels rather than channelises, so
+  the per-edge force collapses as it spreads.
+- **Transport unlocks weathering.** Same board, 8000 ticks: 40,880 units of
+  rock lost with transport on against 25,480 with it off — **1.60×**. The
+  shield is lifted as fast as it forms, so bare rock keeps being re-exposed.
+  The two rates genuinely interact rather than running side by side.
+
 `WEATHER` is a slider, not a constant, because there is no calibration for it
 yet and the only way to find one is to watch a board at several settings. It
 runs 0 to 0.7 units/tick, default 0.07 — one slab per thousand ticks, which

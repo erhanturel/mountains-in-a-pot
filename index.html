@@ -115,6 +115,10 @@
         <h2>Erosion</h2>
         <div class="cap" id="wcap">weathering</div>
         <input id="wear" type="range" min="0" max="70" step="1" value="7">
+        <div class="cap" id="tcap">threshold</div>
+        <input id="thresh" type="range" min="0" max="100" step="1" value="20">
+        <div class="cap" id="ccap">carrying</div>
+        <input id="carry" type="range" min="0" max="100" step="1" value="50">
       </div>
     </div>
   </div>
@@ -474,6 +478,64 @@ function weather(){
   }
 }
 
+/* ---------------------------------------------------------------------
+   TRANSPORT. Slag rides THE WATER'S OWN ROUTING: out[6] already says how
+   much water left through each edge this tick, so slag goes the same way in
+   the same proportions. No second routing, no suspended load to store, and
+   slag can only move where water actually moved.
+
+   THE FORCE ON AN EDGE IS STREAM POWER: how much went through it times how
+   far it dropped, both counted in slabs so that one slab of water down a
+   one-slab step is exactly 1. Below THRESH nothing shifts at all.
+
+   That threshold is what makes DEPOSITION NEED NO RULE OF ITS OWN. Where
+   the water slows or the ground flattens the power falls under the bar and
+   the slag simply stays -- fans at the foot of a slope, and deltas where a
+   river meets a lake, because the flow inside a lake is nil and anything
+   carried in is trapped the moment it arrives.
+
+   The drop is capped at one elevation. A waterfall does not carry sediment
+   in proportion to the whole height of its cliff, and without the cap the
+   void off the board -- which is infinitely far down -- would take an
+   infinite amount.
+
+   Read from a snapshot and written afterwards, like everything else here,
+   so no tile sees another tile's move inside the same tick.
+   --------------------------------------------------------------------- */
+let CAP=0.05, THRESH=0.2;        /* slabs moved per unit of excess power */
+const DROPCAP=1;                 /* one elevation */
+function carry(){
+  const n=T.length, was=T.map(t=>t.sed), add=new Array(n).fill(0);
+  const want=new Float64Array(6);
+  for(let i=0;i<n;i++){
+    const s=was[i];
+    if(s<=1e-12) continue;
+    const gi=T[i].h+s;
+    want.fill(0); let tot=0;
+    for(let k=0;k<6;k++){
+      const w=T[i].out[k];
+      if(w<=0) continue;                       /* no water went that way */
+      const j=T[i].nb[k];
+      const drop = j<0 ? DROPCAP : gi-(T[j].h+was[j]);
+      if(!(drop>0)) continue;                  /* slag does not climb */
+      const p=(w/LAYER)*(Math.min(drop,DROPCAP)/LAYER);
+      if(p<=THRESH) continue;
+      const v=CAP*(p-THRESH)*LAYER;
+      want[k]=v; tot+=v;
+    }
+    if(tot<=0) continue;
+    const f=Math.min(1,s/tot);                 /* it cannot send what it has not got */
+    for(let k=0;k<6;k++){
+      if(want[k]<=0) continue;
+      const v=want[k]*f;
+      add[i]-=v;
+      const j=T[i].nb[k];
+      if(j>=0) add[j]+=v;                      /* j<0: over the side, and gone */
+    }
+  }
+  for(let i=0;i<n;i++) T[i].sed=Math.max(0,was[i]+add[i]);
+}
+
 /* the rain tiles rain, and then everything sheds once */
 function tick(){
   for(let i=0;i<T.length;i++){
@@ -482,6 +544,7 @@ function tick(){
   }
   settle();
   weather();
+  carry();                      /* slag last, so what just broke loose can move */
 }
 
 /* ERASE is the mirror of PLACE, and like Place it is driven by the palette:
@@ -1180,6 +1243,18 @@ function drawWear(){
 }
 wearEl.oninput=drawWear;
 
+/* the two knobs transport has. Threshold is the force an edge needs before
+   anything shifts at all; carrying is how much shifts per unit above it. */
+const thEl=document.getElementById('thresh'), tcap=document.getElementById('tcap');
+const caEl=document.getElementById('carry'),  ccap=document.getElementById('ccap');
+function drawCarry(){
+  THRESH=+thEl.value/100;
+  CAP=+caEl.value/1000;
+  tcap.textContent='threshold — '+THRESH.toFixed(2);
+  ccap.textContent='carrying — '+CAP.toFixed(3);
+}
+thEl.oninput=drawCarry; caEl.oninput=drawCarry;
+
 const ovDrain=document.getElementById('ovDrain');
 ovDrain.onclick=()=>{ DRAIN=!DRAIN; ovDrain.classList.toggle('on',DRAIN); rebuild(); };
 
@@ -1264,6 +1339,8 @@ addEventListener('keydown',e=>{
 window.POT={T,at,use,tick,settle,rebuild,POWERS,scene,
   CLOUD,CLOUD_Z,CLOUD_MAX,clouds,LAYER,RAINFALL,SLAG,gnd,weather,
   get weathering(){ return WEATHER*420 }, set weathering(v){ WEATHER=v/420 },
+  get thresh(){ return THRESH }, set thresh(v){ THRESH=v },
+  get cap(){ return CAP }, set cap(v){ CAP=v }, carry,
   CELL,TOP,cell,solid,retop,ZN,Z0,SLAB,zBot,zTop,AIR,BEDROCK,ROCK,MATS,instHex,ground,
   camera:()=>cam, hover:i=>hover(i),
   get power(){ return POWER.k },
@@ -1273,7 +1350,7 @@ window.POT={T,at,use,tick,settle,rebuild,POWERS,scene,
    now, and the two must never be confused. */
 function frame(){ controls.update(); renderer.render(scene,cam);
   requestAnimationFrame(frame); }
-drawMenu(); drawBrush(); drawDepth(); drawPalette(); drawRates(); drawHist(); drawWear(); setSun(0); settle(); rebuild(); resize(); drawInfo(); frame();
+drawMenu(); drawBrush(); drawDepth(); drawPalette(); drawRates(); drawHist(); drawWear(); drawCarry(); setSun(0); settle(); rebuild(); resize(); drawInfo(); frame();
 </script>
 </body>
 </html>
