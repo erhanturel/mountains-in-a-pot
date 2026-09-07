@@ -17,9 +17,10 @@ plus twelve numbers a hex: 0.13 MB at radius 12, **3.4 MB at radius 64**,
 where sixty of them would be 206 MB. Sixty small boards or fourteen enormous
 ones — about 45 MB either way.
 
-Costs at radius 64, measured: 12,481 hexes, **77 fps**, 15.6 ms a tick, 32 ms
-a rebuild. Fine at 1×; 100× is a second and a half a frame, which runs but is
-not worth watching.
+Costs at radius 64, measured: 12,481 hexes, **77 fps**, **4.4 ms a tick**,
+32 ms a rebuild. A step at 100× is 100 ticks plus one rebuild, so it was a
+second and a half a frame before the tick was optimised and is now about a
+third of that. See *Where the time goes*.
 
 **A save is a file, not a browser slot** — the whole cell stack, every
 per-column number, the radius, the name and the knob settings. A board you can
@@ -201,6 +202,65 @@ symmetric peak grow its apron always to the east.
 Checked: on a flat board the distinct depths per ring come out 1, 1, 2, 2, 3,
 3, 4, which is exactly the number of symmetry orbits in each hex ring. Not
 approximately symmetric — symmetric.
+
+---
+
+## Where the time goes
+
+Profiled at radius 64 on a busy board, `settle()` was **84% of the tick** —
+and not for the reason anyone would guess. It read the same hex's surface
+height about **twenty times**: six in the neighbour scan, a dozen more inside
+the `low.sort()` comparator, six again building `hs`. And `h` is not a field
+but an `Object.defineProperty` accessor over the cell stack, defined per
+object, so none of those calls inline.
+
+```
+  20 x gnd() per hex               11.89 ms      <- 80% of settle
+   1 x gnd() per hex                0.62 ms
+  20 x t.h  (accessor)              8.88 ms
+  20 x t.sed (plain property)       3.92 ms
+  n x ([] push + sort6)             2.41 ms
+  T.map(t=>t.pool)                  0.23 ms
+  new Array(n).fill(0)              0.01 ms
+```
+
+Two changes, both exactly behaviour-preserving:
+
+- **every surface height read once** into a `Float64Array` at the top of
+  settle. The ground cannot change inside settle, so this is the same numbers
+  by construction;
+- **the neighbour scan and the sort are one pass** over fixed six-slot
+  scratch arrays. Six slots at most, so each lower neighbour is dropped into
+  place as it is found. Insertion sort is stable, as V8's sort was on an array
+  that small, so ties still keep ring order. This also removes the `[]` and
+  the `.map()` per WET hex — about nine thousand small allocations a tick at
+  radius 64.
+
+```
+              settle     carry   weather      tick
+  radius 64
+  before       20.28      0.86      0.36     21.06
+  after         3.02      0.67      0.31      4.36     4.8x
+  radius 24
+  before        1.68      0.07      0.07      1.83
+  after         0.35      0.06      0.06      0.50     3.7x
+```
+
+Verified rather than assumed: 40 boards × 200 clicks × 120 ticks at radii 8,
+12 and 24, diffing `h`, `pool`, `flow`, `sed`, `sand`, `wear`, `grit` and
+`out[6]` to twelve decimals against the previous commit. Identical on every
+board, every field.
+
+**The whole-board allocations are not worth touching** — `T.map(t=>t.pool)`
+and `new Array(n).fill(0)` together cost 0.24 ms of a 14.8 ms settle, which
+is the opposite of what the obvious guess says. Noted here so nobody spends
+an afternoon on them.
+
+Still on the table, unmeasured: `rebuild()` at 32 ms calls
+`computeBoundingSphere()` on four instanced meshes, each walking every
+instance, although the board's extent is known analytically and fixed. It
+only fires once a step, so it is a tenth of what a 100× step now costs — real
+but no longer the thing in the way.
 
 ---
 
