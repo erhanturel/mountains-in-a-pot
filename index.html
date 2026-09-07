@@ -20,6 +20,15 @@
   #info{position:absolute;left:10px;top:10px;width:184px;pointer-events:none;
     background:rgba(10,12,16,.92);border:1px solid #1d222a;font-size:11px;
     line-height:1.55;padding:8px 10px;z-index:2}
+  #time{position:absolute;right:10px;top:10px;z-index:2;display:flex;
+    background:rgba(10,12,16,.92);border:1px solid #1d222a}
+  #time button{background:none;border:0;border-right:1px solid #1d222a;
+    color:#6f7681;font-family:inherit;font-size:11px;letter-spacing:.5px;
+    padding:7px 10px;cursor:pointer}
+  #time button:last-child{border-right:none}
+  #time button:hover{background:#12151b;color:#c3c9d2}
+  #time button.on{color:#e5dcc8;background:#171510}
+  #time .go{color:#c9a86a}
   #info h4{margin:0 0 5px;font-size:8.5px;font-weight:400;letter-spacing:1.8px;
     text-transform:uppercase;color:#464e58}
   #info .r{display:flex;justify-content:space-between;gap:8px}
@@ -65,7 +74,7 @@
   <h1>Uplift</h1>
   <div class="main">
     <div>
-      <div id="board"><div id="info"></div></div>
+      <div id="board"><div id="info"></div><div id="time"></div></div>
       <div class="hint"><b>click a hex</b> — drag to orbit, scroll to zoom.
         A rain tile drops 70 units a tick — one water tile — and 420 units
         make one step of stone. Water levels itself with whatever is lower.</div>
@@ -106,16 +115,6 @@
         <h2>Erosion</h2>
         <div class="cap" id="wcap">weathering</div>
         <input id="wear" type="range" min="0" max="70" step="1" value="7">
-      </div>
-      <div class="menu" style="margin-top:14px">
-        <h2>Time</h2>
-        <button class="pw" id="stepBtn"><svg viewBox="0 0 18 18">
-          <circle cx="9" cy="9" r="7"/><path d="M9 4.3V9l3.2 2.1"/></svg>
-          <span>Pass time</span></button>
-        <button class="pw" id="playBtn"><svg viewBox="0 0 18 18">
-          <path d="M6 4l8 5-8 5z"/></svg>
-          <span>Play</span></button>
-        <div class="rates" id="rates"></div>
       </div>
     </div>
   </div>
@@ -458,7 +457,7 @@ function settle(){
    A slab cannot half-convert and there is no randomness here, so `wear`
    accumulates against the top one and the cell flips when it fills.
    --------------------------------------------------------------------- */
-let WEATHER=0.7/420;             /* units of rock loosened per tick */
+let WEATHER=0.07/420;            /* units of rock loosened per tick */
 const SHIELD=140/420;            /* slag depth at which weathering halves */
 function weather(){
   if(WEATHER<=0) return;
@@ -1132,43 +1131,52 @@ function drawMenu(){
     POWER=POWERS.find(p=>p.k===b.dataset.k); drawMenu(); hover(HOVER);
   });
 }
-/* Passing time WITHOUT acting. Every power click is already a tick — the
-   weather runs while you sculpt — but watching a basin fill needed something
-   to do that was not also changing the ground. */
-let STEP=1;
-const RATES=[1,2,5,10,100];
-function drawRates(){
-  document.getElementById('rates').innerHTML=RATES.map(r=>
-    '<button class="rt'+(r===STEP?' on':'')+'" data-r="'+r+'">'+r+'×</button>').join('');
-  document.querySelectorAll('#rates .rt').forEach(b=>b.onclick=()=>{
-    STEP=+b.dataset.r; drawRates(); });
-}
-const advance=()=>{ for(let k=0;k<STEP;k++) tick(); rebuild(); hover(HOVER); };
-document.getElementById('stepBtn').onclick=()=>{ push(snap()); advance(); };
+/* ---------------------------------------------------------------------
+   TIME. Three things that used to be tangled, now separated:
 
-/* RUNNING. A tick every 10ms, STEP of them at a time, so the rate buttons
-   drive Play as well as Pass time. Sculpting while it runs is fine — a
-   power click is a tick like any other. */
-let RUN=null;
-const playBtn=document.getElementById('playBtn');
+     SPEED   how many ticks one step is worth
+     TICK    take one step
+     PLAY    take a step every 100ms until told to stop
+
+   One number, two uses -- the speed means the same thing whether you press
+   Tick or leave it running, which the old arrangement did not manage. And
+   the interval is 100ms rather than 10, so 1x is ten ticks a second rather
+   than a hundred; the old floor was already fast enough to weather a
+   mountain to rubble in a few seconds at the lowest setting.
+
+   No Pause among the speeds: Play is the pause, and two controls that stop
+   the world is one too many.
+
+   Every power click is already a tick -- the weather runs while you sculpt
+   -- so this is only for watching without touching. */
+let STEP=1, RUN=null;
+const RATES=[1,2,5,10,100];
+const advance=()=>{ for(let k=0;k<STEP;k++) tick(); rebuild(); hover(HOVER); };
 function setPlay(on){
   if(RUN){ clearInterval(RUN); RUN=null; }
-  if(on){ push(snap()); RUN=setInterval(advance,10); }
-  playBtn.classList.toggle('on',!!RUN);
-  playBtn.querySelector('span').textContent = RUN?'Stop':'Play';
-  playBtn.querySelector('path').setAttribute('d',
-    RUN ? 'M5 4h3v10H5zM10 4h3v10h-3z' : 'M6 4l8 5-8 5z');
+  if(on){ push(snap()); RUN=setInterval(advance,100); }
+  drawRates();
 }
-playBtn.onclick=()=>setPlay(!RUN);
+function drawRates(){
+  document.getElementById('time').innerHTML=
+    '<button data-a="t">tick</button>'+
+    '<button class="go'+(RUN?' on':'')+'" data-a="p">'+(RUN?'pause':'play')+'</button>'+
+    RATES.map(r=>'<button class="'+(r===STEP?'on':'')+'" data-r="'+r+'">'+r+'×</button>').join('');
+  document.querySelectorAll('#time button').forEach(b=>b.onclick=()=>{
+    if(b.dataset.a==='t'){ push(snap()); advance(); }
+    else if(b.dataset.a==='p') setPlay(!RUN);
+    else { STEP=+b.dataset.r; drawRates(); }
+  });
+}
 
 /* the one knob this step has. Rock loosened per tick, in units, and it is a
    slider rather than a constant because there is no calibration for it yet
    and the only way to find one is to watch a board at several settings. */
 const wearEl=document.getElementById('wear'), wcap=document.getElementById('wcap');
 function drawWear(){
-  const u=+wearEl.value/10;
+  const u=+wearEl.value/100;
   WEATHER=u/420;
-  wcap.textContent='weathering — '+u.toFixed(1)+' units/tick';
+  wcap.textContent='weathering — '+u.toFixed(2)+' units/tick';
 }
 wearEl.oninput=drawWear;
 

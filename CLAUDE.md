@@ -258,7 +258,9 @@ converts at tick 100, and the shielding stretches the next three to roughly
 not moved by a unit, and it has stopped because the top is bedrock.
 
 `WEATHER` is a slider, not a constant, because there is no calibration for it
-yet and the only way to find one is to watch a board at several settings.
+yet and the only way to find one is to watch a board at several settings. It
+runs 0 to 0.7 units/tick, default 0.07 — one slab per thousand ticks, which
+at 1× is a minute and a half and at 100× is about a second.
 
 `BASALT` went with the lava that made it, several rewrites ago. A **run** is
 an unbroken stretch of *one* material, so a rock slab lying on bedrock draws
@@ -485,11 +487,16 @@ that has burnt this project before — the UI keeps copies of past states, the
 simulation derives nothing from history, and the board is still a pure
 function of whichever snapshot is current.
 
-`RATES = [1,2,5,10,100]` drives both *Pass time*, which ticks without acting,
-and *Play*, which does the same on a 10ms interval until you stop it — every
-power click is already a tick, so watching a basin fill needed something to do
-that was not also changing the ground. Play is one toggle rather than two
-buttons; it relabels itself Stop. Sculpting while it runs is fine.
+**Time is three separate things**, in a bar floating over the top right of the
+board: a **speed**, a **tick** button, and **play/pause**. The speed means the
+same thing either way — how many ticks one step is worth — and Play takes a
+step every **100 ms**. There is no Pause among the speeds: Play *is* the
+pause, and two controls that stop the world is one too many.
+
+The interval used to be 10 ms, so 1× was a hundred ticks a second and the
+lowest weathering setting turned a mountain to rubble in a few seconds. Every
+power click is already a tick, so this is only for watching without touching;
+sculpting while it runs is fine.
 
 The draw loop is `frame()`, deliberately **not** `tick()`. A tick is a step of
 the world. The two were once the same name and it cost an afternoon.
