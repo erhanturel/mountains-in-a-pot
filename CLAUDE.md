@@ -4,7 +4,26 @@
 > Hang a cloud, and the water
 > finds its own level.
 
-A single-file hex sandbox. **Radius 12, 469 hexes.** Four powers — **Uplift**
+A single-file hex sandbox. **Radius 8, 10, 12 or 14** — 217, 331, 469 or 631
+hexes — chosen from the URL (`?r=14`) and fixed for the life of the page.
+`T`, the cell stack and every instanced mesh are sized from it, so a size
+change starts a *new* world with a reload. That is why save came first.
+
+**A save is a file, not a browser slot** — the whole cell stack, every
+per-column number, the radius, the name and the knob settings. A board you can
+hand to someone else is worth more than one only you can reopen. Loading a
+board of a different radius parks it in `sessionStorage` and reloads, picking
+it up on the way back in.
+
+`flow` and `out[]` are saved although they are derived and the next tick would
+rebuild them — without them a board opens with no rivers drawn, which looks
+like the load failed.
+
+Numbers are rounded to six decimals on the way out, so **the first round trip
+loses up to 0.0004 units** — six millionths of a water tile — and every
+round trip after that is exact. It is the one place conservation is not
+perfect.
+ Four powers — **Uplift**
 and **Subduct**, which are blind and act on whatever is on top, and **Place**
 and **Erase**, which the palette aims — each with a **brush** of 1, 7, 19 or 37 hexes and a **depth** of 1,
 2, 3, 6 or 12 slabs. Six slabs is one elevation step. Everything else is water

@@ -62,6 +62,10 @@
     color:#6f7681;font-family:inherit;font-size:11px;letter-spacing:.5px;cursor:pointer}
   .rt:last-child{border-right:none}
   .rt:hover{background:#12151b}
+  #wname{width:calc(100% - 22px);margin:8px 11px;background:#0d1015;
+    border:1px solid #1d222a;color:#c3c9d2;font-family:inherit;font-size:12px;
+    padding:5px 7px;outline:none}
+  #wname:focus{border-color:#c9a86a}
   input[type=range]{width:calc(100% - 22px);margin:4px 11px 11px;
     accent-color:#c9a86a;background:none;cursor:pointer}
   .rt.off{color:#333a44;cursor:default}
@@ -81,6 +85,13 @@
     </div>
     <div>
       <div class="menu">
+        <h2>World</h2>
+        <input id="wname" type="text" spellcheck="false" placeholder="name this pot">
+        <div class="cap">size — starts a new world</div>
+        <div class="rates" id="size"></div>
+        <div class="rates" id="io"></div>
+      </div>
+      <div class="menu" style="margin-top:14px">
         <h2>Edit</h2>
         <div class="rates" id="hist"></div>
       </div>
@@ -135,6 +146,13 @@
 import * as THREE from 'three';
 import { OrbitControls } from './vendor/addons/controls/OrbitControls.js';
 
+/* THE WORLD SIZE IS FIXED WHEN THE PAGE LOADS. T, the cell stack and every
+   instanced mesh are sized from it, so it cannot change in place -- picking
+   a new size starts a new world, and that is why saving came first. Read
+   from the URL so a size is a link you can keep. */
+globalThis.POT_R = Math.min(14, Math.max(8,
+  parseInt(new URLSearchParams(location.search).get('r'),10) || 12));
+
 /*==CORE-START==*/
 /* ======================================================================
    A disc of hexes floating in space. Three powers: raise a column, lower a
@@ -157,7 +175,8 @@ import { OrbitControls } from './vendor/addons/controls/OrbitControls.js';
    drain. Now anything that reaches an edge goes over it, which gives the
    outlet back and deletes that whole class of problem at once.
    ====================================================================== */
-const R=12, H_MAX=12;
+/* radius 12 unless something set it first; headless tests get the default */
+const R=(globalThis.POT_R|0)||12, H_MAX=12;
 const DIRS=[[1,0],[1,-1],[0,-1],[-1,0],[-1,1],[0,1]];   /* E NE NW W SW SE */
 /* the same six as unit vectors in world units, for reading the per-edge
    flow as a bearing. Off-board edges have a direction too, which is why
@@ -1390,6 +1409,107 @@ addEventListener('keydown',e=>{
   else if(k==='y'||(k==='z'&&e.shiftKey)){ e.preventDefault(); redo(); }
 });
 
+/* ---------------------------------------------------------------------
+   THE WORLD: its name, its size, and getting it in and out of a file.
+
+   A save is the whole board -- the cell stack and every per-column number --
+   plus the radius it was built at and the knobs it was running with. It is
+   a file rather than a slot in the browser, because a board you can hand to
+   someone else is worth more than one you can only reopen yourself.
+
+   flow and out[] are saved too, though they are derived and the next tick
+   would rebuild them. Without them a board opens with no rivers drawn until
+   you tick it, which looks like the load failed.
+
+   LOADING A BOARD OF A DIFFERENT SIZE has to reload the page, because the
+   radius is fixed when the core is built. The file is parked in
+   sessionStorage and picked up on the way back in. */
+const NAME=document.getElementById('wname');
+NAME.value=localStorage.getItem('potName')||'';
+NAME.oninput=()=>localStorage.setItem('potName',NAME.value);
+
+const SIZES=[8,10,12,14];
+function drawSize(){
+  document.getElementById('size').innerHTML=SIZES.map(r=>
+    '<button class="rt'+(r===R?' on':'')+'" data-r="'+r+'">'+r+'</button>').join('');
+  document.querySelectorAll('#size .rt').forEach(b=>b.onclick=()=>{
+    const r=+b.dataset.r;
+    if(r===R) return;
+    if(!confirm('Start a new world at radius '+r+'? This one is not saved.')) return;
+    location.search='?r='+r;
+  });
+}
+
+const round=v=>Math.round(v*1e6)/1e6;
+function serialise(){
+  const n=T.length, out=new Array(n*6);
+  for(let i=0;i<n;i++) for(let k=0;k<6;k++) out[i*6+k]=round(T[i].out[k]);
+  let bin=''; const step=8192;
+  for(let i=0;i<CELL.length;i+=step)
+    bin+=String.fromCharCode.apply(null,CELL.subarray(i,i+step));
+  return JSON.stringify({
+    pot:1, name:NAME.value||'unnamed', r:R,
+    cells:btoa(bin),
+    pool:T.map(t=>round(t.pool)), flow:T.map(t=>round(t.flow)),
+    sed:T.map(t=>round(t.sed)),   sand:T.map(t=>round(t.sand)),
+    wear:T.map(t=>round(t.wear)), out,
+    knobs:{weather:WEATHER, shield:SHIELD, thresh:THRESH, cap:CAP,
+           attr:ATTR, mob:MOB}
+  });
+}
+function apply(d){
+  if(d.pot!==1) throw new Error('not a pot file');
+  const bin=atob(d.cells);
+  if(bin.length!==CELL.length) throw new Error('wrong board size');
+  for(let i=0;i<bin.length;i++) CELL[i]=bin.charCodeAt(i);
+  for(let i=0;i<T.length;i++){
+    retop(i);
+    T[i].pool=d.pool[i]||0; T[i].flow=d.flow[i]||0;
+    T[i].sed =d.sed[i]||0;  T[i].sand=d.sand[i]||0;
+    T[i].wear=d.wear[i]||0;
+    for(let k=0;k<6;k++) T[i].out[k]=(d.out&&d.out[i*6+k])||0;
+  }
+  if(d.knobs){ WEATHER=d.knobs.weather; THRESH=d.knobs.thresh; CAP=d.knobs.cap;
+               ATTR=d.knobs.attr; MOB=d.knobs.mob;
+               wearEl.value=Math.round(WEATHER*420*100);
+               thEl.value=Math.round(THRESH*100); caEl.value=Math.round(CAP*1000);
+               atEl.value=Math.round(ATTR*100);  mbEl.value=Math.round(MOB*10);
+               drawWear(); drawCarry(); drawSand(); }
+  NAME.value=d.name||''; localStorage.setItem('potName',NAME.value);
+  HIST.length=0; FUT.length=0; drawHist();
+  rebuild(); hover(HOVER); drawInfo();
+}
+function save(){
+  const blob=new Blob([serialise()],{type:'application/json'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=(NAME.value||'unnamed').replace(/[^\w -]+/g,'')+'.pot.json';
+  a.click(); URL.revokeObjectURL(a.href);
+}
+function load(){
+  const inp=document.createElement('input');
+  inp.type='file'; inp.accept='.json,application/json';
+  inp.onchange=()=>{
+    const f=inp.files[0]; if(!f) return;
+    const rd=new FileReader();
+    rd.onload=()=>{
+      let d; try{ d=JSON.parse(rd.result); }catch(e){ alert('not a pot file'); return; }
+      if(d.r!==R){                       /* the radius is baked in: go round again */
+        sessionStorage.setItem('potLoad',rd.result);
+        location.search='?r='+d.r; return;
+      }
+      try{ apply(d); }catch(e){ alert(e.message); }
+    };
+    rd.readAsText(f);
+  };
+  inp.click();
+}
+document.getElementById('io').innerHTML=
+  '<button class="rt" data-a="s">save</button><button class="rt" data-a="l">load</button>';
+document.querySelectorAll('#io .rt').forEach(b=>b.onclick=()=>
+  b.dataset.a==='s'?save():load());
+drawSize();
+
 /* A module's scope is private, so nothing here is reachable from devtools.
    Being able to poke the board from the console is worth one deliberate
    global — it is how the flat renderer was checked, and it is the only way
@@ -1401,6 +1521,7 @@ window.POT={T,at,use,tick,settle,rebuild,POWERS,scene,
   get cap(){ return CAP }, set cap(v){ CAP=v }, carry, SAND,
   get attr(){ return ATTR }, set attr(v){ ATTR=v },
   get mob(){ return MOB }, set mob(v){ MOB=v },
+  serialise, apply, R,
   CELL,TOP,cell,solid,retop,ZN,Z0,SLAB,zBot,zTop,AIR,BEDROCK,ROCK,MATS,instHex,ground,
   camera:()=>cam, hover:i=>hover(i),
   get power(){ return POWER.k },
@@ -1410,7 +1531,12 @@ window.POT={T,at,use,tick,settle,rebuild,POWERS,scene,
    now, and the two must never be confused. */
 function frame(){ controls.update(); renderer.render(scene,cam);
   requestAnimationFrame(frame); }
-drawMenu(); drawBrush(); drawDepth(); drawPalette(); drawRates(); drawHist(); drawWear(); drawCarry(); drawSand(); setSun(0); settle(); rebuild(); resize(); drawInfo(); frame();
+drawMenu(); drawBrush(); drawDepth(); drawPalette(); drawRates(); drawHist();
+drawWear(); drawCarry(); drawSand(); setSun(0); settle(); rebuild(); resize(); drawInfo(); frame();
+/* a board parked on the way through a resize is picked up here */
+{ const parked=sessionStorage.getItem('potLoad');
+  if(parked){ sessionStorage.removeItem('potLoad');
+    try{ apply(JSON.parse(parked)); }catch(e){ console.warn(e); } } }
 </script>
 </body>
 </html>
