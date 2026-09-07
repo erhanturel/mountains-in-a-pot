@@ -53,6 +53,8 @@
     color:#6f7681;font-family:inherit;font-size:11px;letter-spacing:.5px;cursor:pointer}
   .rt:last-child{border-right:none}
   .rt:hover{background:#12151b}
+  .rt.off{color:#333a44;cursor:default}
+  .rt.off:hover{background:none}
   .rt.on{color:#c9a86a;background:#171510}
 </style>
 </head>
@@ -68,6 +70,10 @@
     </div>
     <div>
       <div class="menu">
+        <h2>Edit</h2>
+        <div class="rates" id="hist"></div>
+      </div>
+      <div class="menu" style="margin-top:14px">
         <h2>Powers</h2>
         <div id="powers"></div>
         <div class="cap">brush</div>
@@ -955,7 +961,9 @@ renderer.domElement.addEventListener('click',e=>{
   downAt=null;
   if(moved>4) return;
   const i=pick(e);
-  if(use(i,POWER,BRUSH-1,DEPTH,MAT)){ rebuild(); hover(i); }
+  /* snapshot first, keep it only if the click actually did something */
+  const before=snap();
+  if(use(i,POWER,BRUSH-1,DEPTH,MAT)){ push(before); rebuild(); hover(i); }
 });
 
 function resize(){
@@ -1024,7 +1032,7 @@ function drawRates(){
     STEP=+b.dataset.r; drawRates(); });
 }
 const advance=()=>{ for(let k=0;k<STEP;k++) tick(); rebuild(); hover(HOVER); };
-document.getElementById('stepBtn').onclick=advance;
+document.getElementById('stepBtn').onclick=()=>{ push(snap()); advance(); };
 
 /* RUNNING. A tick every 10ms, STEP of them at a time, so the rate buttons
    drive Play as well as Pass time. Sculpting while it runs is fine — a
@@ -1033,7 +1041,7 @@ let RUN=null;
 const playBtn=document.getElementById('playBtn');
 function setPlay(on){
   if(RUN){ clearInterval(RUN); RUN=null; }
-  if(on) RUN=setInterval(advance,10);
+  if(on){ push(snap()); RUN=setInterval(advance,10); }
   playBtn.classList.toggle('on',!!RUN);
   playBtn.querySelector('span').textContent = RUN?'Stop':'Play';
   playBtn.querySelector('path').setAttribute('d',
@@ -1056,6 +1064,65 @@ ovProj.onclick=()=>{ ortho=!ortho;
   ovProj.querySelector('span').textContent = ortho?'Flat view':'Deep view';
   cam=makeCam(); resize(); };
 
+/* ---------------------------------------------------------------------
+   UNDO. Snapshots, not replayed actions -- the whole board is about 120KB
+   and sixty of them is 7MB, which buys exactness with no bookkeeping.
+
+   Taken on DISCRETE ACTIONS only: a power click, a press of Pass time, and
+   the start of a Play run, which counts as one step however long it runs.
+   Not per tick: Play at 10ms would be a hundred snapshots a second.
+
+   Undo restores the WATER as well, so undoing a dig also un-drains the lake
+   it made. That is the only coherent version -- a partial undo would leave
+   the board in a state the simulation never actually produced.
+
+   And this is not the stored state that has burnt this project before. It
+   is the UI keeping copies of past states, not the simulation deriving
+   anything from history; the board is still a pure function of whichever
+   snapshot is current. */
+const HIST=[], FUT=[], HIST_MAX=60;
+function snap(){
+  const n=T.length, out=new Float64Array(n*6);
+  for(let i=0;i<n;i++) out.set(T[i].out,i*6);
+  return { cells:CELL.slice(),
+           pool:Float64Array.from(T,t=>t.pool),
+           flow:Float64Array.from(T,t=>t.flow), out };
+}
+function restore(s){
+  CELL.set(s.cells);
+  for(let i=0;i<T.length;i++){
+    retop(i);
+    T[i].pool=s.pool[i]; T[i].flow=s.flow[i];
+    T[i].out.set(s.out.subarray(i*6,i*6+6));
+  }
+  rebuild(); hover(HOVER);
+}
+function push(s){
+  HIST.push(s);
+  if(HIST.length>HIST_MAX) HIST.shift();
+  FUT.length=0;                 /* a new action forgets the redo branch */
+  drawHist();
+}
+function undo(){ if(!HIST.length) return;
+  FUT.push(snap()); restore(HIST.pop()); drawHist(); }
+function redo(){ if(!FUT.length) return;
+  HIST.push(snap()); restore(FUT.pop()); drawHist(); }
+function drawHist(){
+  document.getElementById('hist').innerHTML=
+    '<button class="rt'+(HIST.length?'':' off')+'" data-a="u">undo'
+      +(HIST.length?' '+HIST.length:'')+'</button>'+
+    '<button class="rt'+(FUT.length?'':' off')+'" data-a="r">redo'
+      +(FUT.length?' '+FUT.length:'')+'</button>';
+  document.querySelectorAll('#hist .rt').forEach(b=>b.onclick=()=>
+    b.dataset.a==='u'?undo():redo());
+}
+addEventListener('keydown',e=>{
+  if(!(e.ctrlKey||e.metaKey)) return;
+  const k=e.key.toLowerCase();
+  if(k==='z'&&!e.shiftKey){ e.preventDefault(); undo(); }
+  else if(k==='y'||(k==='z'&&e.shiftKey)){ e.preventDefault(); redo(); }
+});
+
 /* A module's scope is private, so nothing here is reachable from devtools.
    Being able to poke the board from the console is worth one deliberate
    global — it is how the flat renderer was checked, and it is the only way
@@ -1071,7 +1138,7 @@ window.POT={T,at,use,tick,settle,rebuild,POWERS,scene,
    now, and the two must never be confused. */
 function frame(){ controls.update(); renderer.render(scene,cam);
   requestAnimationFrame(frame); }
-drawMenu(); drawBrush(); drawDepth(); drawPalette(); drawRates(); setSun(0); settle(); rebuild(); resize(); drawInfo(); frame();
+drawMenu(); drawBrush(); drawDepth(); drawPalette(); drawRates(); drawHist(); setSun(0); settle(); rebuild(); resize(); drawInfo(); frame();
 </script>
 </body>
 </html>

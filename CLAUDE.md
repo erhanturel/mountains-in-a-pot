@@ -416,6 +416,21 @@ ticks a second would strobe. It is a viewing control — turn the light when a
 piece of ground reads badly.
 
 `OrbitControls` for the camera, with an orthographic/perspective toggle.
+**Undo is snapshots, not replayed actions.** The whole board is ~117 KB and
+sixty of them is 6.9 MB, which buys exactness with no bookkeeping. Taken on
+discrete actions only — a power click, a press of Pass time, the *start* of a
+Play run, which counts as one step however long it runs. Not per tick: Play at
+10 ms would be a hundred snapshots a second. The snapshot is taken *before*
+the click and kept only if the click did something, so a press that could
+change nothing does not record a step.
+
+It restores the **water** too, so undoing a dig also un-drains the lake it
+made. That is the only coherent version; a partial undo would leave the board
+in a state the simulation never produced. And it is **not** the stored state
+that has burnt this project before — the UI keeps copies of past states, the
+simulation derives nothing from history, and the board is still a pure
+function of whichever snapshot is current.
+
 `RATES = [1,2,5,10,100]` drives both *Pass time*, which ticks without acting,
 and *Play*, which does the same on a 10ms interval until you stop it — every
 power click is already a tick, so watching a basin fill needed something to do
