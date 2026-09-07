@@ -5,7 +5,10 @@
 > finds its own level.
 
 A single-file hex sandbox. **Radius 8, 10, 12 or 14** — 217, 331, 469 or 631
-hexes — chosen from the URL (`?r=14`) and fixed for the life of the page.
+hexes — chosen from the URL (`?r=14`) and fixed for the life of the page. The
+size buttons **ask with a second click, not a dialog**: `window.confirm` is
+suppressed in some embedded browsers, returning false without ever showing
+anything, so the button simply looked dead.
 `T`, the cell stack and every instanced mesh are sized from it, so a size
 change starts a *new* world with a reload. That is why save came first.
 

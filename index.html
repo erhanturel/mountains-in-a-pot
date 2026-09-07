@@ -68,6 +68,7 @@
   #wname:focus{border-color:#c9a86a}
   input[type=range]{width:calc(100% - 22px);margin:4px 11px 11px;
     accent-color:#c9a86a;background:none;cursor:pointer}
+  .rt.arm{color:#e0b070;background:#20190f}
   .rt.off{color:#333a44;cursor:default}
   .rt.off:hover{background:none}
   .rt.on{color:#c9a86a;background:#171510}
@@ -1428,15 +1429,23 @@ const NAME=document.getElementById('wname');
 NAME.value=localStorage.getItem('potName')||'';
 NAME.oninput=()=>localStorage.setItem('potName',NAME.value);
 
+/* A SECOND CLICK CONFIRMS, rather than a dialog. window.confirm is
+   suppressed in some embedded browsers -- it returns false without ever
+   showing anything -- so the button simply looked dead. Asking in the page
+   costs nothing and works everywhere. */
 const SIZES=[8,10,12,14];
+let ARM=0, armTimer=null;
 function drawSize(){
   document.getElementById('size').innerHTML=SIZES.map(r=>
-    '<button class="rt'+(r===R?' on':'')+'" data-r="'+r+'">'+r+'</button>').join('');
+    '<button class="rt'+(r===R?' on':'')+(r===ARM?' arm':'')+'" data-r="'+r+'">'
+    +(r===ARM?'new?':r)+'</button>').join('');
   document.querySelectorAll('#size .rt').forEach(b=>b.onclick=()=>{
     const r=+b.dataset.r;
-    if(r===R) return;
-    if(!confirm('Start a new world at radius '+r+'? This one is not saved.')) return;
-    location.search='?r='+r;
+    if(r===R){ ARM=0; drawSize(); return; }
+    if(ARM===r){ location.search='?r='+r; return; }
+    ARM=r; drawSize();
+    clearTimeout(armTimer);
+    armTimer=setTimeout(()=>{ ARM=0; drawSize(); },4000);
   });
 }
 
