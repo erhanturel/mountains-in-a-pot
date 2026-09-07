@@ -751,6 +751,14 @@ function grow(){
     T[i].life = !DRN[i] && wet===1 && soil(i)>=SOIL_MIN-1e-9;
   }
 }
+/* LIFE HAS ITS OWN CLOCK. Water and soil move every tick; life takes a
+   step every LIFE_EVERY ticks. Once the world runs on its own a seed that
+   walked one hex a tick covered a whole shore in a breath and the pot in a
+   Season; at one step in ten a shore greens over a Season and a Year covers
+   about fifty hexes from one seed. Three clocks -- water fast, soil slow,
+   life slower -- are what make the world read as a world. TICKS is stored
+   with the board so a saved game keeps its phase. */
+let LIFE_EVERY=10, TICKS=0;
 /* how many hexes are alive: the seed of the score */
 const alive=()=>{ let n=0; for(const t of T) if(t.life) n++; return n; };
 
@@ -763,7 +771,8 @@ function tick(){
   settle();
   weather();
   carry();                      /* slag last, so what just broke loose can move */
-  grow();                       /* and life reads the ground it left */
+  TICKS++;
+  if(TICKS%LIFE_EVERY===0) grow();   /* life, on its own slower clock */
 }
 
 /* ERASE is the mirror of PLACE, and like Place it is driven by the palette:
@@ -1646,10 +1655,10 @@ function snap(){
            sand:Float64Array.from(T,t=>t.sand),
            wear:Float64Array.from(T,t=>t.wear),
            grit:Float64Array.from(T,t=>t.grit),
-           life:Uint8Array.from(T,t=>t.life?1:0), out };
+           life:Uint8Array.from(T,t=>t.life?1:0), ticks:TICKS, out };
 }
 function restore(s){
-  CELL.set(s.cells);
+  CELL.set(s.cells); TICKS=s.ticks||0;
   for(let i=0;i<T.length;i++){
     retop(i);
     T[i].pool=s.pool[i]; T[i].flow=s.flow[i];
@@ -1737,7 +1746,7 @@ function serialise(){
     pool:T.map(t=>round(t.pool)), flow:T.map(t=>round(t.flow)),
     sed:T.map(t=>round(t.sed)),   sand:T.map(t=>round(t.sand)),
     wear:T.map(t=>round(t.wear)), grit:T.map(t=>round(t.grit)), out,
-    life:T.map(t=>t.life?1:0),
+    life:T.map(t=>t.life?1:0), ticks:TICKS,
     knobs:{weather:WEATHER, shield:SHIELD, thresh:THRESH, cap:CAP,
            attr:ATTR, mob:MOB, abrade:ABRADE}
   });
@@ -1747,6 +1756,7 @@ function apply(d){
   const bin=atob(d.cells);
   if(bin.length!==CELL.length) throw new Error('wrong board size');
   for(let i=0;i<bin.length;i++) CELL[i]=bin.charCodeAt(i);
+  TICKS=d.ticks||0;
   for(let i=0;i<T.length;i++){
     retop(i);
     T[i].pool=d.pool[i]||0; T[i].flow=d.flow[i]||0;
@@ -1811,6 +1821,7 @@ window.POT={T,at,use,tick,settle,rebuild,POWERS,scene,
   get mob(){ return MOB }, set mob(v){ MOB=v },
   get abrade(){ return ABRADE }, set abrade(v){ ABRADE=v },
   serialise, apply, R, SEED, habit, habitable, grow, alive, RIVER_MIN,
+  get ticks(){ return TICKS }, get lifeEvery(){ return LIFE_EVERY }, set lifeEvery(v){ LIFE_EVERY=v },
   CELL,TOP,cell,solid,retop,ZN,Z0,SLAB,zBot,zTop,AIR,BEDROCK,ROCK,MATS,instHex,ground,
   camera:()=>cam, hover:i=>hover(i),
   get power(){ return POWER.k },
