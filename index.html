@@ -209,7 +209,7 @@ const zTop=z=>(Z0+z+1)/SLAB;
    BASALT went with the lava it was made by, several rewrites ago; nothing
    had set or read it since. */
 const AIR=0, BEDROCK=1, ROCK=2, CLOUD=3;
-const MATS={[BEDROCK]:'bedrock',[ROCK]:'rock'};
+const MATS={[BEDROCK]:'bedrock',[ROCK]:'rock',[CLOUD]:'cloud'};
 const CELL=new Uint8Array(T.length*ZN);
 const TOP=new Int16Array(T.length).fill(-1);
 const cell=(i,z)=>(z<0||z>=ZN)?AIR:CELL[i*ZN+z];
@@ -290,6 +290,19 @@ const RAINFALL=LAYER;            /* what one rain tile drops each tick */
 const CLOUD_Z=180;               /* elevation 17 */
 const CLOUD_MAX=ZN-CLOUD_Z;      /* twelve slabs of headroom */
 const clouds=i=>{ let n=0; while(n<CLOUD_MAX && cell(i,CLOUD_Z+n)===CLOUD) n++; return n; };
+/* add n rain tiles to the band, and take n away again, returning how many
+   it managed -- the same shape as raise and lower, because a rain tile is a
+   material now and not a power of its own */
+function addCloud(i,n){
+  const b=i*ZN+CLOUD_Z; let c=clouds(i), did=0;
+  while(did<n && c<CLOUD_MAX){ CELL[b+c]=CLOUD; c++; did++; }
+  return did;
+}
+function delCloud(i,n){
+  const b=i*ZN+CLOUD_Z; let c=clouds(i), did=0;
+  while(did<n && c>0){ c--; CELL[b+c]=AIR; did++; }
+  return did;
+}
 
 /* ---------------------------------------------------------------------
    SETTLE - one step, and exactly those rules.
@@ -471,21 +484,19 @@ function use(i,p,rad,n,m){
   const cells=within(i,rad||0);
   n=Math.max(1,n||1);
   let did=0;
-  if(p.k==='cloud'){
-    /* the centre decides for the whole brush, so a stroke is all-on or
-       all-off rather than a checkerboard of toggles. Clicking SETS the stack
-       to n; clicking again when it is already n clears it, which is the old
-       on/off toggle generalised to a height. */
-    const want = clouds(i)===Math.min(n,CLOUD_MAX) ? 0 : Math.min(n,CLOUD_MAX);
-    for(const j of cells){
-      const b=j*ZN+CLOUD_Z;
-      for(let k=0;k<CLOUD_MAX;k++) CELL[b+k] = k<want ? CLOUD : AIR;
-    }
-    did=cells.length;
-  } else if(p.k==='subduct'){
-    for(const j of cells) did+=lower(j,n);
+  if(p.k==='subduct'){
+    /* SUBDUCT TAKES FROM THE TOP OF THE COLUMN, and a rain tile is the top
+       of the column when there is one. No special case and no toggle: Place
+       adds, Subduct removes, for clouds exactly as for stone.
+
+       The price is that you cannot dig under a cloud without clearing it
+       first. That is the cost of never having a click whose meaning depends
+       on what is already there, which is what the old toggle was and why
+       stacking was impossible. */
+    for(const j of cells) did += clouds(j) ? delCloud(j,n) : lower(j,n);
   } else if(p.k==='place'){
-    for(const j of cells) did+=raise(j,n,m||ROCK);
+    if(m===CLOUD) for(const j of cells) did+=addCloud(j,n);
+    else          for(const j of cells) did+=raise(j,n,m||ROCK);
   } else {
     /* uplift extends whatever the column already has on top of it, which is
        what makes it a different power from place rather than a duplicate */
@@ -528,7 +539,6 @@ const POWERS=[
   {k:'uplift',  nm:'Uplift',  d: 1, ic:'<svg viewBox="0 0 18 18"><path d="M9 3l5 6H4z"/></svg>'},
   {k:'subduct', nm:'Subduct', d:-1, ic:'<svg viewBox="0 0 18 18"><path d="M9 15L4 9h10z"/></svg>'},
   {k:'place',   nm:'Place',   d: 1, ic:'<svg viewBox="0 0 18 18"><rect x="4" y="7" width="10" height="6"/><path d="M4 7l5-3 5 3"/></svg>'},
-  {k:'cloud',   nm:'Cloud',   d: 0, ic:'<svg viewBox="0 0 18 18"><ellipse cx="9" cy="8" rx="6" ry="3.4"/></svg>'},
 ];
 let POWER=POWERS[0];
 
@@ -547,7 +557,7 @@ function drawDepth(){
     DEPTH=+el.dataset.d; drawDepth(); });
 }
 function drawPalette(){
-  document.getElementById('palette').innerHTML=[BEDROCK,ROCK].map(m=>
+  document.getElementById('palette').innerHTML=[BEDROCK,ROCK,CLOUD].map(m=>
     '<button class="rt'+(m===MAT?' on':'')+'" data-m="'+m+'">'+MATS[m]+'</button>').join('');
   document.querySelectorAll('#palette .rt').forEach(el=>el.onclick=()=>{
     MAT=+el.dataset.m; drawPalette(); hover(HOVER); });
@@ -950,9 +960,9 @@ function hover(i){
   for(const l of RINGS) l.visible=false;
   if(i>=0){
     ringMat.color.set(
-      POWER.k==='cloud' ? 0x5aafe1 :
-      POWER.k==='place' ? (MAT===BEDROCK?0x8d97a6:0xd8cfc0) :
-      POWER.d>0 ? 0xffffff : 0xc9a86a);
+      POWER.k==='place'
+        ? (MAT===CLOUD?0x5aafe1 : MAT===BEDROCK?0x8d97a6 : 0xd8cfc0)
+        : POWER.d>0 ? 0xffffff : 0xc9a86a);
     within(i,BRUSH-1).forEach((j,k)=>{
       if(k>=RINGS.length) return;
       const t=T[j];
