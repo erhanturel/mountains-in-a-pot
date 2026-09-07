@@ -46,6 +46,10 @@
   #time button:hover{background:#12151b;color:#c3c9d2}
   #time button.on{color:#e5dcc8;background:#171510}
   #time .go{color:#c9a86a}
+  #bloom{position:absolute;right:10px;bottom:10px;z-index:2;pointer-events:none;
+    color:#8ed46a;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;
+    background:rgba(10,12,16,.92);border:1px solid #1d222a;padding:6px 10px}
+  #bloom:empty{display:none}
   #info h4{margin:0 0 5px;font-size:8.5px;font-weight:400;letter-spacing:1.8px;
     text-transform:uppercase;color:#464e58}
   #info .r{display:flex;justify-content:space-between;gap:8px}
@@ -85,8 +89,9 @@
   #wname:focus{border-color:#c9a86a}
   input[type=range]{width:calc(100% - 22px);margin:4px 11px 11px;
     accent-color:#c9a86a;background:none;cursor:pointer}
-  #size{flex-wrap:wrap}
+  #size,#palette{flex-wrap:wrap}
   #size .rt{flex:1 0 25%}
+  #palette .rt{flex:1 0 33%}
   .rt.arm{color:#e0b070;background:#20190f}
   .rt.off{color:#333a44;cursor:default}
   .rt.off:hover{background:none}
@@ -98,7 +103,7 @@
   <h1>Uplift</h1>
   <div class="main">
     <div class="board-col">
-      <div id="board"><div id="info"></div><div id="time"></div></div>
+      <div id="board"><div id="info"></div><div id="time"></div><div id="bloom"></div></div>
       <div class="hint"><b>click a hex</b> — drag to orbit, scroll to zoom.
         A rain tile drops 70 units a tick — one water tile — and 420 units
         make one step of stone. Water levels itself with whatever is lower.</div>
@@ -214,7 +219,7 @@ for(let q=-R;q<=R;q++){
   for(let r=lo;r<=hi;r++){
     idx.set(q+','+r,T.length);
     T.push({q,r,x:Math.sqrt(3)*(q+r/2),y:1.5*r,pool:0,flow:0,out:new Float64Array(6),
-            sed:0,sand:0,wear:0,grit:0});
+            sed:0,sand:0,wear:0,grit:0,life:false});
   }
 }
 
@@ -264,8 +269,10 @@ const zTop=z=>(Z0+z+1)/SLAB;
 
    BASALT went with the lava it was made by, several rewrites ago; nothing
    had set or read it since. */
-const AIR=0, BEDROCK=1, ROCK=2, CLOUD=3, SLAG=4, SAND=5;
-const MATS={[BEDROCK]:'bedrock',[ROCK]:'rock',[SLAG]:'slag',[SAND]:'sand',[CLOUD]:'cloud'};
+const AIR=0, BEDROCK=1, ROCK=2, CLOUD=3, SLAG=4, SAND=5, SEED=6;
+/* SEED is on the palette but is not a cell and not an amount: it is the one
+   thing the player does that the world then takes over. See LIFE below. */
+const MATS={[BEDROCK]:'bedrock',[ROCK]:'rock',[SLAG]:'slag',[SAND]:'sand',[CLOUD]:'cloud',[SEED]:'seed'};
 const CELL=new Uint8Array(T.length*ZN);
 const TOP=new Int16Array(T.length).fill(-1);
 const cell=(i,z)=>(z<0||z>=ZN)?AIR:CELL[i*ZN+z];
@@ -338,6 +345,10 @@ const at=(q,r)=>{const i=idx.get(q+','+r);return i===undefined?-1:i};
    makes the readings you actually look at legible. 72 units read 1.714
    where 420 reads 10. */
 const LAYER=1/6;
+/* A RIVER EDGE: half a water tile through one edge in one tick. It was the
+   renderer's threshold for drawing a stub; life reads it too now -- a bank
+   is a hex beside a river edge -- so it is a rule, and lives here. */
+const RIVER_MIN=LAYER/2;
 
 /* GROUND IS ROCK PLUS WHAT IS LYING ON IT. Slag is loose material -- an
    AMOUNT, like water, not a cell -- so it can move by fractions later
@@ -542,6 +553,7 @@ function weather(){
   for(let i=0;i<T.length;i++){
     const t=TOP[i];
     if(t<0 || CELL[i*ZN+t]!==ROCK) continue;      /* bedrock, or nothing */
+    if(T[i].life) continue;                        /* roots: see LIFE */
     /* TOOLS AND COVER. Grit dragged across bare rock grinds it -- that is
        how a river actually cuts, and a river carrying nothing barely cuts at
        all. Weathering on its own is water-blind, which is why a cone under
@@ -617,6 +629,7 @@ function carry(){
     for(let i=0;i<n;i++){
       const s=was[i];
       if(s<=1e-12) continue;
+      if(T[i].life) continue;                /* roots hold it: see LIFE */
       const gi=g(i);
       want.fill(0); let tot=0;
       for(let k=0;k<6;k++){
@@ -651,6 +664,96 @@ function carry(){
   }
 }
 
+/* ---------------------------------------------------------------------
+   LIFE. Back on the board, and stated as three rules so it can be argued
+   with like the water was:
+
+     6  a hex is HABITABLE when it has a course of loose ground to root in,
+        is not drowned, and has water in reach -- a shore or a bank
+     7  life spreads one hex a tick, to any habitable hex beside a living
+        one; a hex that stops being habitable dies that tick
+     8  life binds the ground it stands on: a living hex sheds no soil and
+        weathers no rock
+
+   Rule 6, in the numbers the rest of the board already uses:
+
+     soil    sed + sand >= LAYER      one course: the same quantum that
+                                      decides whether it is DRAWN
+     drowned pool >= LAYER            standing under a drawn water tile
+     shore   a neighbour is drowned   a lakeside
+     bank    a river edge (>= RIVER_MIN) on the hex or on a neighbour
+
+   Water on flat ground is a film, everywhere and invisible, so "any water
+   near" would make the whole board damp the moment a cloud was hung. Life
+   asks for water you can SEE -- a lake tile or a river stub -- which is why
+   green appears along shores and banks and nowhere else. That is the
+   picture the fiction wants, and it falls out of the display quantum
+   rather than needing a moisture aura of its own; the aura that used to do
+   this reached two hexes and had to be tuned.
+
+   Life is STORED, like pool, and not derived: it walks one hex a tick the
+   way the water does, so a seed on a long shore greens it over as many
+   ticks as it is long, and cutting a patch in two leaves two patches that
+   each remember themselves. A SEED is the player's only part in it -- Place
+   with the seed on the palette roots one hex if it is habitable, and does
+   nothing (and so is not an action) if it is not. Nothing germinates on
+   its own: where you sow is the decision.
+
+   Rule 8 is the old terracing rule and the one that makes life a lever
+   rather than a paint: a living bank holds the slag a river would carry
+   off, so vegetation fixes a channel and starves the fan below it. Roots
+   also stop weathering outright -- the rock is covered -- which means a
+   green hex is as tall in a thousand ticks as it is now.
+
+   Read from one snapshot and written afterwards, like everything else, so
+   a patch spreads symmetrically and no hex sees its neighbour green inside
+   the same tick.
+   --------------------------------------------------------------------- */
+const SOIL_MIN=LAYER;            /* one course of loose ground to root in */
+const soil=i=>T[i].sed+T[i].sand;
+const drowned=i=>T[i].pool>=LAYER-1e-9;
+const riverEdge=i=>{ const o=T[i].out; for(let k=0;k<6;k++) if(o[k]>=RIVER_MIN) return true; return false; };
+function damp(i){
+  if(riverEdge(i)) return true;
+  const nb=T[i].nb;
+  for(let k=0;k<6;k++){
+    const j=nb[k];
+    if(j>=0 && (drowned(j) || riverEdge(j))) return true;
+  }
+  return false;
+}
+/* why a hex is or is not habitable, in one word -- the readout shows it,
+   because a seed that does not take needs to say why */
+function habit(i){
+  if(drowned(i)) return 'drowned';
+  if(soil(i)<SOIL_MIN-1e-9) return 'bare';
+  if(!damp(i)) return 'dry';
+  return 'habitable';
+}
+const habitable=i=>habit(i)==='habitable';
+/* grow() is habit() run over the board, and has to give the same answer as
+   habit() on every hex -- the test checks that. It is written out longhand
+   because the obvious version, habitable(i) for every hex, cost 4.5 ms a
+   tick at radius 64 against 4.4 for the whole of the water: it asked each
+   hex's six neighbours for their six edges. Read the two per-hex facts once
+   into scratch, and only look at hexes that are alive or beside something
+   alive, since nothing else can change. */
+const WAS=new Uint8Array(T.length), DRN=new Uint8Array(T.length), EDGE=new Uint8Array(T.length);
+function grow(){
+  const n=T.length;
+  for(let i=0;i<n;i++){ WAS[i]=T[i].life?1:0; DRN[i]=drowned(i)?1:0; EDGE[i]=riverEdge(i)?1:0; }
+  for(let i=0;i<n;i++){
+    const nb=T[i].nb;
+    let near=0, wet=EDGE[i];
+    for(let k=0;k<6;k++){ const j=nb[k]; if(j<0) continue;
+      if(WAS[j]) near=1; if(DRN[j]||EDGE[j]) wet=1; }
+    if(!WAS[i] && !near) continue;               /* nothing here can change */
+    T[i].life = !DRN[i] && wet===1 && soil(i)>=SOIL_MIN-1e-9;
+  }
+}
+/* how many hexes are alive: the seed of the score */
+const alive=()=>{ let n=0; for(const t of T) if(t.life) n++; return n; };
+
 /* the rain tiles rain, and then everything sheds once */
 function tick(){
   for(let i=0;i<T.length;i++){
@@ -660,6 +763,7 @@ function tick(){
   settle();
   weather();
   carry();                      /* slag last, so what just broke loose can move */
+  grow();                       /* and life reads the ground it left */
 }
 
 /* ERASE is the mirror of PLACE, and like Place it is driven by the palette:
@@ -733,13 +837,15 @@ function use(i,p,rad,n,m){
     /* Subduct means one thing: lower the ground. It never touches the sky. */
     for(const j of cells) did+=lower(j,n);
   } else if(p.k==='erase'){
-    if(m===SLAG||m===SAND){
+    if(m===SEED){ for(const j of cells) if(T[j].life){ T[j].life=false; did++; } }
+    else if(m===SLAG||m===SAND){
       const f=m===SLAG?'sed':'sand';
       for(const j of cells){
         const g=Math.min(T[j][f],n*LAYER); T[j][f]-=g; if(g>1e-12) did++; }
     } else for(const j of cells) did+=erase(j,n,m||ROCK);
   } else if(p.k==='place'){
     if(m===CLOUD)     for(const j of cells) did+=addCloud(j,n);
+    else if(m===SEED){ for(const j of cells) if(!T[j].life && habitable(j)){ T[j].life=true; did++; } }
     else if(m===SLAG) for(const j of cells){ T[j].sed +=n*LAYER; did++; }
     else if(m===SAND) for(const j of cells){ T[j].sand+=n*LAYER; did++; }
     else              for(const j of cells) did+=raise(j,n,m||ROCK);
@@ -804,7 +910,7 @@ function drawDepth(){
     DEPTH=+el.dataset.d; drawDepth(); });
 }
 function drawPalette(){
-  document.getElementById('palette').innerHTML=[BEDROCK,ROCK,SLAG,SAND,CLOUD].map(m=>
+  document.getElementById('palette').innerHTML=[BEDROCK,ROCK,SLAG,SAND,CLOUD,SEED].map(m=>
     '<button class="rt'+(m===MAT?' on':'')+'" data-m="'+m+'">'+MATS[m]+'</button>').join('');
   document.querySelectorAll('#palette .rt').forEach(el=>el.onclick=()=>{
     MAT=+el.dataset.m; drawPalette(); hover(HOVER); });
@@ -978,6 +1084,23 @@ sand.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
 sand.castShadow=true; sand.receiveShadow=true;
 scene.add(sand);
 
+/* LIFE is a cap on whatever loose ground it has rooted in: thin, a little
+   inset so the hex edge still reads, and coloured per instance so a meadow
+   is not one flat green. The variation is a hash of the hex's own
+   coordinates -- the same hex is always the same shade, in every session
+   and every save -- so it is a look, not a state. */
+const lifeMesh=new THREE.InstancedMesh(prism,
+  new THREE.MeshLambertMaterial({color:0xffffff}), T.length);
+lifeMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+lifeMesh.castShadow=true; lifeMesh.receiveShadow=true;
+scene.add(lifeMesh);
+const LIFE_CAP=0.12;             /* world units of green on top of the soil */
+const lifeTint=(t)=>{
+  const h=((t.q*73856093)^(t.r*19349663))>>>0, f=(h%1000)/1000;
+  const c=blend([92,150,74],[150,186,84],f);
+  return new THREE.Color(c[0]/255,c[1]/255,c[2]/255).convertSRGBToLinear();
+};
+
 const water=new THREE.InstancedMesh(prism,
   new THREE.MeshLambertMaterial({color:0x3c86b4,transparent:true,opacity:0.72}),
   T.length);
@@ -1011,7 +1134,6 @@ scene.add(water);
    never sloped between heights and never faded out. Sloping them looked
    wrong the first time this was tried, and fading them made the water look
    like it was floating in the air. Width carries the magnitude instead. */
-const RIVER_MIN=LAYER/2;         /* half a water tile through one edge */
 const MAXSTUB=T.length*6;
 const stubGeo=new THREE.PlaneGeometry(1,1); stubGeo.rotateX(-Math.PI/2);
 const rivers=new THREE.InstancedMesh(stubGeo,
@@ -1217,6 +1339,11 @@ function rebuild(){
     if(ad>0) place(sand,i,t.x,t.y,(t.h+sd)*RISE,(t.h+sd+ad)*RISE);
     else     hide(sand,i);
     const g = t.h+sd+ad;
+    if(t.life){
+      P.set(t.x,g*RISE+LIFE_CAP/2,t.y); S.set(0.94,LIFE_CAP,0.94);
+      lifeMesh.setMatrixAt(i,M4.compose(P,Q,S));
+      lifeMesh.setColorAt(i,lifeTint(t));
+    } else hide(lifeMesh,i);
     const wd = Math.floor(t.pool/LAYER+1e-9)*LAYER;
     if(wd>0) place(water,i,t.x,t.y,g*RISE,(g+wd)*RISE);
     else     hide(water,i);
@@ -1250,6 +1377,10 @@ function rebuild(){
   slag.computeBoundingSphere();
   sand.instanceMatrix.needsUpdate=true;
   sand.computeBoundingSphere();
+  lifeMesh.instanceMatrix.needsUpdate=true;
+  if(lifeMesh.instanceColor) lifeMesh.instanceColor.needsUpdate=true;
+  lifeMesh.computeBoundingSphere();
+  drawBloom();
   water.instanceMatrix.needsUpdate=true;
   /* An InstancedMesh measures itself ONCE, lazily, and caches it. Both liquid
      meshes were first measured while every instance was still parked out of
@@ -1288,7 +1419,7 @@ function hover(i){
     ringMat.color.set(
       POWER.k==='erase' ? 0xd07a5a :
       POWER.k==='place'
-        ? (MAT===CLOUD?0x5aafe1 : MAT===BEDROCK?0x8d97a6
+        ? (MAT===CLOUD?0x5aafe1 : MAT===BEDROCK?0x8d97a6 : MAT===SEED?0x8ed46a
            : MAT===SLAG?0xbda98a : MAT===SAND?0xe0d3ae : 0xd8cfc0)
         : POWER.d>0 ? 0xffffff : 0xc9a86a);
     within(i,BRUSH-1).forEach((j,k)=>{
@@ -1366,7 +1497,16 @@ function drawInfo(){
   h+=row('height',  U(t.h+t.pool)+' units', wet?'w':'');
   const nc=clouds(HOVER);
   h+=row('cloud', nc ? nc+' × '+U(RAINFALL)+' units/tick' : '—', nc?'w':'q');
+  /* one word on why a seed would or would not take here */
+  const hb=habit(HOVER);
+  h+=row('life', t.life ? 'rooted' : hb, t.life ? 'g' : hb==='habitable' ? 'g' : 'q');
   el.innerHTML=h;
+}
+/* the board-wide count, which is the seed of the score */
+function drawBloom(){
+  const n=alive();
+  const el=document.getElementById('bloom');
+  el.textContent=n ? 'bloom  '+n : '';
 }
 function drawMenu(){
   document.getElementById('powers').innerHTML=POWERS.map(p=>
@@ -1494,7 +1634,7 @@ ovProj.onclick=()=>{ ortho=!ortho;
    and sixty would be 206MB. Sixty small boards or fourteen enormous ones,
    either way about fifty megabytes. */
 const HIST=[], FUT=[];
-const SNAP_BYTES=CELL.length + T.length*8*12;
+const SNAP_BYTES=CELL.length + T.length*(8*12+1);
 const HIST_MAX=Math.max(5, Math.min(60, Math.floor(48e6/SNAP_BYTES)));
 function snap(){
   const n=T.length, out=new Float64Array(n*6);
@@ -1505,7 +1645,8 @@ function snap(){
            sed:Float64Array.from(T,t=>t.sed),
            sand:Float64Array.from(T,t=>t.sand),
            wear:Float64Array.from(T,t=>t.wear),
-           grit:Float64Array.from(T,t=>t.grit), out };
+           grit:Float64Array.from(T,t=>t.grit),
+           life:Uint8Array.from(T,t=>t.life?1:0), out };
 }
 function restore(s){
   CELL.set(s.cells);
@@ -1513,7 +1654,7 @@ function restore(s){
     retop(i);
     T[i].pool=s.pool[i]; T[i].flow=s.flow[i];
     T[i].sed=s.sed[i];   T[i].sand=s.sand[i]; T[i].wear=s.wear[i];
-    T[i].grit=s.grit[i];
+    T[i].grit=s.grit[i]; T[i].life=!!s.life[i];
     T[i].out.set(s.out.subarray(i*6,i*6+6));
   }
   rebuild(); hover(HOVER);
@@ -1596,6 +1737,7 @@ function serialise(){
     pool:T.map(t=>round(t.pool)), flow:T.map(t=>round(t.flow)),
     sed:T.map(t=>round(t.sed)),   sand:T.map(t=>round(t.sand)),
     wear:T.map(t=>round(t.wear)), grit:T.map(t=>round(t.grit)), out,
+    life:T.map(t=>t.life?1:0),
     knobs:{weather:WEATHER, shield:SHIELD, thresh:THRESH, cap:CAP,
            attr:ATTR, mob:MOB, abrade:ABRADE}
   });
@@ -1610,6 +1752,7 @@ function apply(d){
     T[i].pool=d.pool[i]||0; T[i].flow=d.flow[i]||0;
     T[i].sed =d.sed[i]||0;  T[i].sand=d.sand[i]||0;
     T[i].wear=d.wear[i]||0; T[i].grit=(d.grit&&d.grit[i])||0;
+    T[i].life=!!(d.life&&d.life[i]);
     for(let k=0;k<6;k++) T[i].out[k]=(d.out&&d.out[i*6+k])||0;
   }
   if(d.knobs){ WEATHER=d.knobs.weather; THRESH=d.knobs.thresh; CAP=d.knobs.cap;
@@ -1667,7 +1810,7 @@ window.POT={T,at,use,tick,settle,rebuild,POWERS,scene,
   get attr(){ return ATTR }, set attr(v){ ATTR=v },
   get mob(){ return MOB }, set mob(v){ MOB=v },
   get abrade(){ return ABRADE }, set abrade(v){ ABRADE=v },
-  serialise, apply, R,
+  serialise, apply, R, SEED, habit, habitable, grow, alive, RIVER_MIN,
   CELL,TOP,cell,solid,retop,ZN,Z0,SLAB,zBot,zTop,AIR,BEDROCK,ROCK,MATS,instHex,ground,
   camera:()=>cam, hover:i=>hover(i),
   get power(){ return POWER.k },

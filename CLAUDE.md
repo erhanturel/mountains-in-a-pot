@@ -65,10 +65,11 @@ otherwise; the water rules do not depend on board size, but hex counts do.
 It exists to find out which mechanics are worth keeping. Do not add a goal
 unless asked.
 
-**Right now it is water and nothing else.** Soil, life, moisture, heat,
-relief, basalt, lava and the endless-source liquids have all been taken out
-so the water can be judged on its own. That was a deliberate strip, not an
-oversight — see *What was taken out* below before putting any of it back.
+**It is water, the ground the water moves, and now life on that ground.**
+Moisture, heat, relief, basalt, lava and the endless-source liquids are still
+out; that was a deliberate strip, not an oversight — see *What was taken out*
+below before putting any of it back. Life came back first, on the water's
+own terms — see *Life* below.
 
 ---
 
@@ -112,7 +113,8 @@ So a test always exercises the code that actually ships. **Never copy the sim
 into a test file** — that is how the rules and the tests drift apart.
 
 `window.POT` exposes the same handles in the browser, which is how the
-renderer gets driven by hand.
+renderer gets driven by hand — and how a board is built and screenshotted
+headlessly with Playwright (Chromium with `--use-angle=swiftshader`).
 
 ---
 
@@ -431,6 +433,71 @@ Sand ends up **four and a half hexes further downstream** than slag, and the
 last hex that has anything on it has only sand. Conservation is exact across
 all three: 58,660 units of rock lost = 51,181 slag + 240 sand + 7,239 over the
 edge.
+
+## Life
+
+Back, and stated as three rules so it can be argued with like the water:
+
+```
+6  a hex is HABITABLE when it has a course of loose ground to root in, is
+   not drowned, and has water in reach -- a shore or a bank
+7  life spreads one hex a tick, to any habitable hex beside a living one;
+   a hex that stops being habitable dies that tick
+8  life binds the ground it stands on: a living hex sheds no soil and
+   weathers no rock
+```
+
+In the board's own numbers: `soil = sed + sand >= LAYER` (one course, the
+quantum that decides whether it is drawn), `drowned = pool >= LAYER`, a
+*shore* is a drowned neighbour, a *bank* is a river edge (`out[k] >=
+RIVER_MIN`) on the hex or a neighbour. `RIVER_MIN` moved into the CORE for
+this; it was the renderer's stub threshold and is now a rule.
+
+**Life asks for water you can see.** Water on flat ground is a film,
+everywhere and invisible, so "any water near" would make the whole board damp
+the moment a cloud was hung. Asking for a drawn water tile or a river stub is
+what puts green along shores and banks and nowhere else, and it falls out of
+the display quantum rather than needing the two-hex moisture aura that used to
+do this and had to be tuned.
+
+**Life is stored, like `pool`, not derived.** It walks one hex a tick the way
+water does, and a patch cut in two leaves two patches that each remember
+themselves. **Seed** is on the palette: Place roots one hex if it is habitable
+and is not an action otherwise; Erase clears it. Nothing germinates on its
+own — where you sow is the decision. The readout says why a seed would not
+take: `drowned`, `bare`, `dry`.
+
+`grow()` is `habit()` run over the board and has to agree with it on every
+hex; a test checks that (0 disagreements over 595,800 hex-ticks). It is
+written longhand because the obvious version cost **4.5 ms a tick at radius
+64** against 4.4 for the whole of the water — it asked every hex's six
+neighbours for their six edges. Reading the two per-hex facts once and only
+looking at hexes alive or beside something alive brought it to 2.7 ms with
+nothing alive, and it scales with the frontier, not the board.
+
+Measured:
+
+- **With no seed sown the board is unchanged**: 40 boards × 200 clicks × 120
+  ticks at radii 8 and 12, identical to the previous commit to twelve
+  decimals on every field.
+- **A settled lake, a course of soil on its rim, one seed**: alive per tick
+  3, 5, 7, 9, 11, 12 — the whole 12-hex shore, one hex a tick each way. 600
+  ticks on, 0 state changes. Rain back on, the lake stands proud of its rim
+  and the shore still holds: 0 state changes in 300 ticks, rim pool 0.
+- **Cut the lake an outlet** and the one rim hex that became channel drowns
+  and dies; the other 11 stay, because the bowl is still a lake while it
+  drains.
+- **Roots hold slag**: one slab of ground with three courses of slag under a
+  cloud, pouring 70 units a tick through one edge. Bare: 0 left after 200
+  ticks. Green: 169 of 210 stay.
+- **Roots stop weathering**: six slabs of rock at ten times the default rate,
+  600 ticks. Bare: the rock is gone to bedrock. Green: still 1.000.
+- **Symmetric**: six seeds on the six corners of a rim green 12, 12, 12 —
+  multiples of six every tick.
+- 0 of 300 ticks created water with life on.
+
+**Bloom** is the count of living hexes, shown at the bottom right of the
+board. It is the seed of the score and nothing more yet.
 
 ## Abrasion — tools and cover
 
