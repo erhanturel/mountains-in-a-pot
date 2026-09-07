@@ -207,8 +207,18 @@ world. Two corollaries worth keeping:
   over the edge. Measured: 0 ticks in 300 boards × 85 created any.
 
 `h` is not a plain field — it is an accessor over the **cell stack**, a
-`Uint8Array` of 469 × 192 cells (`AIR`, `ROCK`, `BASALT`, `CLOUD`) with a
-`TOP` cache. Clouds live in that same stack, which is why a cloud is a thing
+`Uint8Array` of 469 × 192 cells with a `TOP` cache. A cell is one of:
+
+```
+BEDROCK  the floor. Nothing in the simulation may weather or move it; only
+         the player can. Every board starts as a slab of it.
+ROCK     ordinary stone. Weathers, and what it weathers into moves.
+CLOUD    a rain tile, which lives in the same stack
+```
+
+`BASALT` went with the lava that made it, several rewrites ago. A **run** is
+an unbroken stretch of *one* material, so a rock slab lying on bedrock draws
+as two prisms and the join is visible. Clouds live in that same stack, which is why a cloud is a thing
 in the world you can see rather than a flag.
 
 **A cell is a slab of 70 units** — a sixth of an elevation step, the same

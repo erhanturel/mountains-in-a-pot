@@ -182,7 +182,20 @@ const SLAB=6;                    /* slabs to an elevation step: 70 units each */
 const ZN=192, Z0=-78;            /* 32 elevations' worth, floor at elevation -13 */
 const zBot=z=>(Z0+z)/SLAB;       /* the elevation of the bottom of slab z */
 const zTop=z=>(Z0+z+1)/SLAB;
-const AIR=0, ROCK=1, BASALT=2, CLOUD=3;
+/* WHAT A CELL CAN BE. Materials, not a single kind of "solid" -- this is
+   what erosion will act on and what the palette will lay down.
+
+     BEDROCK  the floor. Nothing in the simulation may weather or move it;
+              only the player can. Every board starts as a slab of it.
+     ROCK     ordinary stone. Weathers, and what it weathers into moves.
+     CLOUD    a rain tile, which lives in the same stack and is why every
+              loop that walks a column has to say whether it means solid or
+              merely not-air.
+
+   BASALT went with the lava it was made by, several rewrites ago; nothing
+   had set or read it since. */
+const AIR=0, BEDROCK=1, ROCK=2, CLOUD=3;
+const MATS={[BEDROCK]:'bedrock',[ROCK]:'rock'};
 const CELL=new Uint8Array(T.length*ZN);
 const TOP=new Int16Array(T.length).fill(-1);
 const cell=(i,z)=>(z<0||z>=ZN)?AIR:CELL[i*ZN+z];
@@ -200,11 +213,13 @@ function retop(i){
   TOP[i]=z;
   return z;
 }
-/* fill a column solid up to this surface height, keeping the material it
-   already had and clearing everything above */
+/* fill a column solid up to this surface height, keeping the material each
+   cell already had and clearing everything above. New cells take whatever
+   is on top of the column already -- so raising bedrock gives bedrock and
+   raising rock gives rock -- and an empty column starts as bedrock. */
 function setTop(i,h){
   const b=i*ZN, t=Math.max(-1,Math.min(ZN-1,h*SLAB-Z0-1));
-  const m=(TOP[i]>=0 && CELL[b+TOP[i]]) || ROCK;
+  const m=(TOP[i]>=0 && CELL[b+TOP[i]]) || BEDROCK;
   for(let z=0;z<ZN;z++)
     if(CELL[b+z]!==CLOUD) CELL[b+z] = z<=t ? (CELL[b+z]||m) : AIR;
   TOP[i]=t;
@@ -214,12 +229,9 @@ for(let i=0;i<T.length;i++){
     get(){ return (Z0+TOP[i]+1)/SLAB; },
     set(v){ setTop(i,v); },
     enumerable:true});
-  Object.defineProperty(T[i],'vol',{
-    get(){ return TOP[i]>=0 && CELL[i*ZN+TOP[i]]===BASALT; },
-    /* per-hex today, so setting it converts the whole column — the same
-       information the old boolean carried, held one level down */
-    set(v){ const b=i*ZN, m=v?BASALT:ROCK;
-      for(let z=0;z<ZN;z++) if(CELL[b+z] && CELL[b+z]!==CLOUD) CELL[b+z]=m; },
+  /* what is on top, which is what a click and the renderer both ask for */
+  Object.defineProperty(T[i],'mat',{
+    get(){ return TOP[i]>=0 ? CELL[i*ZN+TOP[i]] : AIR; },
     enumerable:true});
   setTop(i,0);
 }
@@ -732,22 +744,29 @@ function accum(){
 }
 let DRAIN=false, ACC=null, ACCMAX=1;
 
-function tint(t,i){
+function tint(t,i,mat){
   if(DRAIN && ACC){
     /* log scale: the interesting range runs from one tile draining itself
        to a trunk valley carrying a third of the board */
     const f=Math.log(1+ACC[i])/Math.log(1+ACCMAX);
     const g=blend([48,56,68],[86,206,255],f);
-    const base=terrain(t);
+    const base=terrain(t,mat);
     const c=blend(base,g,0.78);
     return new THREE.Color(c[0]/255,c[1]/255,c[2]/255).convertSRGBToLinear();
   }
-  const c=terrain(t);
+  const c=terrain(t,mat);
   return new THREE.Color(c[0]/255,c[1]/255,c[2]/255).convertSRGBToLinear();
 }
-function terrain(t){
+/* one ramp per material: bedrock reads darker and cooler than rock, so a
+   board of it is plainly a floor rather than plainly a landscape */
+const RAMP={
+  [BEDROCK]:[[58,62,72],[124,128,138]],
+  [ROCK]   :[[100,98,94],[190,186,180]],
+};
+function terrain(t,mat){
   const f=(t.h+H_MAX)/(2*H_MAX);
-  let c=blend([100,98,94],[190,186,180],f);
+  const r=RAMP[mat]||RAMP[ROCK];
+  let c=blend(r[0],r[1],f);
   /* CONTOUR BANDING: every other elevation a shade darker, the way a topo
      map does it, so a single step reads wherever it sits in the range
      instead of only near the extremes. */
@@ -771,9 +790,12 @@ function rebuild(){
     let z=0;
     while(z<ZN){
       if(!solid(i,z)){ z++; continue; }
-      let e=z; while(e+1<ZN && solid(i,e+1)) e++;
+      /* a run is an unbroken stretch of ONE material, so a rock slab lying
+         on bedrock draws as two prisms and you can see the join */
+      const mat=CELL[i*ZN+z];
+      let e=z; while(e+1<ZN && CELL[i*ZN+e+1]===mat) e++;
       place(ground,n,t.x,t.y,zBot(z)*RISE,zTop(e)*RISE);
-      ground.setColorAt(n,tint(t,i));
+      ground.setColorAt(n,tint(t,i,mat));
       rim(n,t.x,t.y,zTop(e)*RISE+0.004);
       instHex[n]=i; n++;
       z=e+1;
@@ -893,6 +915,7 @@ function drawInfo(){
   const wet=t.pool>1e-9, U=v=>Math.round(v*420*100)/100;
   let h='<h4>'+t.q+', '+t.r+'</h4>';
   h+=row('ground', t.h+'   ('+U(t.h)+' units)');
+  h+=row('material', MATS[t.mat]||'—', t.mat?'':'q');
   h+=row('water',  wet ? U(t.pool)+' units' : '—', wet?'w':'q');
   h+=row('layers', wet ? Math.floor(t.pool/LAYER+1e-9) : '—', wet?'w':'q');
   const run=t.flow>1e-12;
@@ -975,7 +998,7 @@ ovProj.onclick=()=>{ ortho=!ortho;
    to drive the sim by hand now. */
 window.POT={T,at,use,tick,settle,rebuild,POWERS,scene,
   CLOUD,CLOUD_Z,LAYER,RAINFALL,
-  CELL,TOP,cell,solid,retop,ZN,Z0,SLAB,zBot,zTop,AIR,ROCK,BASALT,instHex,ground,
+  CELL,TOP,cell,solid,retop,ZN,Z0,SLAB,zBot,zTop,AIR,BEDROCK,ROCK,MATS,instHex,ground,
   camera:()=>cam, hover:i=>hover(i),
   get power(){ return POWER.k },
   set power(k){ POWER=POWERS.find(p=>p.k===k)||POWER; drawMenu(); }};
