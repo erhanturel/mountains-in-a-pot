@@ -256,11 +256,44 @@ and `new Array(n).fill(0)` together cost 0.24 ms of a 14.8 ms settle, which
 is the opposite of what the obvious guess says. Noted here so nobody spends
 an afternoon on them.
 
-Still on the table, unmeasured: `rebuild()` at 32 ms calls
-`computeBoundingSphere()` on four instanced meshes, each walking every
-instance, although the board's extent is known analytically and fixed. It
-only fires once a step, so it is a tenth of what a 100× step now costs — real
-but no longer the thing in the way.
+### The bounding spheres are not the next win
+
+Worth writing down because the guess was wrong twice. `rebuild()` calls
+`computeBoundingSphere()` seven times — on six instanced meshes, each walking
+every instance — and it looked like the obvious next target. Measured at
+radius 64 on a busy board:
+
+```
+  mesh        instances   sphere
+  ground         18106     1.38 ms
+  water          12481     0.78
+  cloud          12481     0.60
+  slag           12481     2.90
+  sand           12481     1.00
+  rivers          7888     0.64
+                          -----
+                           7.30 ms   of a 61.5 ms rebuild
+```
+
+**Twelve percent.** The other 54 ms is the per-instance matrix and colour
+writing that rebuild exists to do, and that is where to look if rebuild ever
+has to get faster.
+
+The spheres could still go: the board's extent is known analytically and never
+changes — a fixed hex radius in x and z, elevation clamped to ±12, clouds up
+to the top of the stack — so `mesh.boundingSphere` could be set once at startup
+and never recomputed. The only thing given up is frustum culling when the
+camera is zoomed right in, which at six meshes saves six draw calls, which is
+nothing. Cheap and safe, just small.
+
+**Do not simply delete the calls.** They are there because an `InstancedMesh`
+measures itself once, lazily, and caches the result: both liquid meshes were
+first measured while every instance was still parked out of sight, cached a
+zero-radius sphere, and were culled from then on — placed correctly, updated
+correctly, and never drawn. A static sphere is fine; no sphere is not.
+
+(The 32 ms recorded for `rebuild()` above was a quieter board than the 61.5 ms
+one measured here, which carries slag and sand as well.)
 
 ---
 
