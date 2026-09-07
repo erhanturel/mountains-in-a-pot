@@ -1,17 +1,17 @@
 <!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Mountains in a Pot — the core loop on two pages</title>
 <style>
-@page{size:A4;margin:16mm 16mm 16mm 16mm}
+@page{size:A4;margin:13mm 14mm 13mm 14mm}
 :root{--ink:#191e25;--soft:#3a424c;--muted:#5d666f;--line:#d2d8de;--line2:#e6eaee;--accent:#a9762f;--accent-bg:#f4ecdc;--water:#2f6f9e;--life:#4f8b3d;--stone:#6b6470}
-*{box-sizing:border-box} body{margin:0;font-family:"IBM Plex Sans",system-ui,Helvetica,Arial,sans-serif;font-size:10pt;line-height:1.5;color:var(--ink)}
-h1,h2,h3{font-family:"Zilla Slab",Georgia,serif;margin:0} h1{font-size:22pt;line-height:1.1;margin-bottom:2mm} h2{font-size:13pt;margin:5mm 0 1.5mm;page-break-after:avoid} h3{font-size:11pt;margin:3mm 0 1mm}
+*{box-sizing:border-box} body{margin:0;font-family:"IBM Plex Sans",system-ui,Helvetica,Arial,sans-serif;font-size:9.2pt;line-height:1.42;color:var(--ink)}
+h1,h2,h3{font-family:"Zilla Slab",Georgia,serif;margin:0} h1{font-size:19pt;line-height:1.1;margin-bottom:2mm} h2{font-size:13pt;margin:5mm 0 1.5mm;page-break-after:avoid} h3{font-size:11pt;margin:3mm 0 1mm}
 p{margin:0 0 2mm;color:var(--soft)} strong{color:var(--ink)} em{font-style:normal;color:var(--accent);font-weight:500}
 .eyebrow{font-family:"IBM Plex Mono",monospace;font-size:7.5pt;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin:0 0 1mm}
 .hook{background:var(--accent-bg);border:1px solid var(--accent);border-radius:5px;padding:3mm 4mm;margin:2mm 0 3mm;font-family:"Zilla Slab",Georgia,serif;font-size:13pt;color:var(--ink)}
 .loop{display:grid;grid-template-columns:repeat(4,1fr);gap:2.5mm;margin:2mm 0 3mm}
-.lp{border:1px solid var(--line);border-radius:5px;padding:2.5mm 3mm;font-size:9pt} .lp b{display:block;font-family:"Zilla Slab",serif;font-size:11pt;margin-bottom:1mm}
+.lp{border:1px solid var(--line);border-radius:5px;padding:2mm 2.5mm;font-size:8.4pt} .lp b{display:block;font-family:"Zilla Slab",serif;font-size:11pt;margin-bottom:1mm}
 .lp.a{border-top:3px solid var(--accent)} .lp.b{border-top:3px solid var(--life)} .lp.c{border-top:3px solid var(--stone)} .lp.d{border-top:3px solid var(--water)}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:5mm}
-table{border-collapse:collapse;width:100%;font-size:9pt;margin:1mm 0 2mm} th,td{text-align:left;padding:1.2mm 2mm;border-bottom:1px solid var(--line2);vertical-align:top}
+table{border-collapse:collapse;width:100%;font-size:8.4pt;margin:1mm 0 2mm} th,td{text-align:left;padding:.9mm 2mm;border-bottom:1px solid var(--line2);vertical-align:top}
 thead th{font-family:"IBM Plex Mono",monospace;font-size:7pt;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:500;background:#f4f6f8}
 td.k{font-family:"Zilla Slab",serif;font-weight:600;white-space:nowrap} td.m{font-family:"IBM Plex Mono",monospace;color:var(--accent);white-space:nowrap}
 ul{margin:0 0 2mm;padding-left:4.5mm;color:var(--soft)} li{margin-bottom:.8mm}
