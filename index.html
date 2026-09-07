@@ -119,6 +119,10 @@
         <input id="thresh" type="range" min="0" max="100" step="1" value="20">
         <div class="cap" id="ccap">carrying</div>
         <input id="carry" type="range" min="0" max="100" step="1" value="50">
+        <div class="cap" id="acap">attrition</div>
+        <input id="attr" type="range" min="0" max="50" step="1" value="5">
+        <div class="cap" id="mcap">sand mobility</div>
+        <input id="mob" type="range" min="10" max="100" step="1" value="30">
       </div>
     </div>
   </div>
@@ -169,7 +173,7 @@ for(let q=-R;q<=R;q++){
   for(let r=lo;r<=hi;r++){
     idx.set(q+','+r,T.length);
     T.push({q,r,x:Math.sqrt(3)*(q+r/2),y:1.5*r,pool:0,flow:0,out:new Float64Array(6),
-            sed:0,wear:0});
+            sed:0,sand:0,wear:0});
   }
 }
 
@@ -219,8 +223,8 @@ const zTop=z=>(Z0+z+1)/SLAB;
 
    BASALT went with the lava it was made by, several rewrites ago; nothing
    had set or read it since. */
-const AIR=0, BEDROCK=1, ROCK=2, CLOUD=3, SLAG=4;
-const MATS={[BEDROCK]:'bedrock',[ROCK]:'rock',[SLAG]:'slag',[CLOUD]:'cloud'};
+const AIR=0, BEDROCK=1, ROCK=2, CLOUD=3, SLAG=4, SAND=5;
+const MATS={[BEDROCK]:'bedrock',[ROCK]:'rock',[SLAG]:'slag',[SAND]:'sand',[CLOUD]:'cloud'};
 const CELL=new Uint8Array(T.length*ZN);
 const TOP=new Int16Array(T.length).fill(-1);
 const cell=(i,z)=>(z<0||z>=ZN)?AIR:CELL[i*ZN+z];
@@ -298,7 +302,7 @@ const LAYER=1/6;
    AMOUNT, like water, not a cell -- so it can move by fractions later
    without the stack lurching a whole slab at a time. Everything that used to
    compare h compares this instead. */
-const gnd=i=>T[i].h+T[i].sed;
+const gnd=i=>T[i].h+T[i].sed+T[i].sand;
 const RAINFALL=LAYER;            /* what one rain tile drops each tick */
 /* RAIN TILES STACK. The band starts well clear of the highest ground a
    player can build -- elevation 17 against a limit of 12 -- and runs to the
@@ -503,37 +507,63 @@ function weather(){
    so no tile sees another tile's move inside the same tick.
    --------------------------------------------------------------------- */
 let CAP=0.05, THRESH=0.2;        /* slabs moved per unit of excess power */
+let ATTR=0.05, MOB=3;            /* ground down on arrival; how much freer sand is */
 const DROPCAP=1;                 /* one elevation */
+
+/* SAND IS MADE BY TRAVELLING, not by weathering. A share of the slag that
+   MOVES is ground down on arrival, which needs no new driver -- how much
+   moved is already known -- and gives downstream fining for nothing: coarse
+   slag near where it broke off, fine sand further out.
+
+   Sand is terminal. It grinds into nothing, it only goes on moving, and it
+   is freer than slag: the same law with the threshold divided by MOB and the
+   carrying multiplied by it, so one knob says how much livelier it is rather
+   than two saying it all over again.
+
+   Both are read from ONE snapshot of the ground and written afterwards, so
+   moving the slag cannot change what the sand thinks the ground is. */
 function carry(){
-  const n=T.length, was=T.map(t=>t.sed), add=new Array(n).fill(0);
+  const n=T.length;
+  const wS=T.map(t=>t.sed), wA=T.map(t=>t.sand);
+  const g=i=>T[i].h+wS[i]+wA[i];
+  const addS=new Array(n).fill(0), addA=new Array(n).fill(0);
   const want=new Float64Array(6);
+  const pass=(was,add,thresh,cap,grind)=>{
+    for(let i=0;i<n;i++){
+      const s=was[i];
+      if(s<=1e-12) continue;
+      const gi=g(i);
+      want.fill(0); let tot=0;
+      for(let k=0;k<6;k++){
+        const w=T[i].out[k];
+        if(w<=0) continue;                     /* no water went that way */
+        const j=T[i].nb[k];
+        const drop = j<0 ? DROPCAP : gi-g(j);
+        if(!(drop>0)) continue;                /* it does not climb */
+        const p=(w/LAYER)*(Math.min(drop,DROPCAP)/LAYER);
+        if(p<=thresh) continue;
+        const v=cap*(p-thresh)*LAYER;
+        want[k]=v; tot+=v;
+      }
+      if(tot<=0) continue;
+      const f=Math.min(1,s/tot);               /* it cannot send what it has not got */
+      for(let k=0;k<6;k++){
+        if(want[k]<=0) continue;
+        const v=want[k]*f;
+        add[i]-=v;
+        const j=T[i].nb[k];
+        if(j<0) continue;                      /* over the side, and gone */
+        if(grind){ addS[j]+=v*(1-ATTR); addA[j]+=v*ATTR; }
+        else       add[j]+=v;
+      }
+    }
+  };
+  pass(wS,addS,THRESH,CAP,true);
+  pass(wA,addA,THRESH/MOB,CAP*MOB,false);
   for(let i=0;i<n;i++){
-    const s=was[i];
-    if(s<=1e-12) continue;
-    const gi=T[i].h+s;
-    want.fill(0); let tot=0;
-    for(let k=0;k<6;k++){
-      const w=T[i].out[k];
-      if(w<=0) continue;                       /* no water went that way */
-      const j=T[i].nb[k];
-      const drop = j<0 ? DROPCAP : gi-(T[j].h+was[j]);
-      if(!(drop>0)) continue;                  /* slag does not climb */
-      const p=(w/LAYER)*(Math.min(drop,DROPCAP)/LAYER);
-      if(p<=THRESH) continue;
-      const v=CAP*(p-THRESH)*LAYER;
-      want[k]=v; tot+=v;
-    }
-    if(tot<=0) continue;
-    const f=Math.min(1,s/tot);                 /* it cannot send what it has not got */
-    for(let k=0;k<6;k++){
-      if(want[k]<=0) continue;
-      const v=want[k]*f;
-      add[i]-=v;
-      const j=T[i].nb[k];
-      if(j>=0) add[j]+=v;                      /* j<0: over the side, and gone */
-    }
+    T[i].sed =Math.max(0,wS[i]+addS[i]);
+    T[i].sand=Math.max(0,wA[i]+addA[i]);
   }
-  for(let i=0;i<n;i++) T[i].sed=Math.max(0,was[i]+add[i]);
 }
 
 /* the rain tiles rain, and then everything sheds once */
@@ -618,12 +648,15 @@ function use(i,p,rad,n,m){
     /* Subduct means one thing: lower the ground. It never touches the sky. */
     for(const j of cells) did+=lower(j,n);
   } else if(p.k==='erase'){
-    if(m===SLAG) for(const j of cells){
-      const g=Math.min(T[j].sed,n*LAYER); T[j].sed-=g; if(g>1e-12) did++; }
-    else for(const j of cells) did+=erase(j,n,m||ROCK);
+    if(m===SLAG||m===SAND){
+      const f=m===SLAG?'sed':'sand';
+      for(const j of cells){
+        const g=Math.min(T[j][f],n*LAYER); T[j][f]-=g; if(g>1e-12) did++; }
+    } else for(const j of cells) did+=erase(j,n,m||ROCK);
   } else if(p.k==='place'){
     if(m===CLOUD)     for(const j of cells) did+=addCloud(j,n);
-    else if(m===SLAG) for(const j of cells){ T[j].sed+=n*LAYER; did++; }
+    else if(m===SLAG) for(const j of cells){ T[j].sed +=n*LAYER; did++; }
+    else if(m===SAND) for(const j of cells){ T[j].sand+=n*LAYER; did++; }
     else              for(const j of cells) did+=raise(j,n,m||ROCK);
   } else {
     /* uplift extends whatever the column already has on top of it, which is
@@ -686,7 +719,7 @@ function drawDepth(){
     DEPTH=+el.dataset.d; drawDepth(); });
 }
 function drawPalette(){
-  document.getElementById('palette').innerHTML=[BEDROCK,ROCK,SLAG,CLOUD].map(m=>
+  document.getElementById('palette').innerHTML=[BEDROCK,ROCK,SLAG,SAND,CLOUD].map(m=>
     '<button class="rt'+(m===MAT?' on':'')+'" data-m="'+m+'">'+MATS[m]+'</button>').join('');
   document.querySelectorAll('#palette .rt').forEach(el=>el.onclick=()=>{
     MAT=+el.dataset.m; drawPalette(); hover(HOVER); });
@@ -801,6 +834,13 @@ const slag=new THREE.InstancedMesh(prism,
 slag.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
 slag.castShadow=true; slag.receiveShadow=true;
 scene.add(slag);
+
+/* sand lies on the slag, and is paler for being finer */
+const sand=new THREE.InstancedMesh(prism,
+  new THREE.MeshLambertMaterial({color:0xc0ad86}), T.length);
+sand.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+sand.castShadow=true; sand.receiveShadow=true;
+scene.add(sand);
 
 const water=new THREE.InstancedMesh(prism,
   new THREE.MeshLambertMaterial({color:0x3c86b4,transparent:true,opacity:0.72}),
@@ -1037,7 +1077,10 @@ function rebuild(){
     const sd = Math.floor(t.sed/LAYER+1e-9)*LAYER;
     if(sd>0) place(slag,i,t.x,t.y,t.h*RISE,(t.h+sd)*RISE);
     else     hide(slag,i);
-    const g = t.h+sd;
+    const ad = Math.floor(t.sand/LAYER+1e-9)*LAYER;
+    if(ad>0) place(sand,i,t.x,t.y,(t.h+sd)*RISE,(t.h+sd+ad)*RISE);
+    else     hide(sand,i);
+    const g = t.h+sd+ad;
     const wd = Math.floor(t.pool/LAYER+1e-9)*LAYER;
     if(wd>0) place(water,i,t.x,t.y,g*RISE,(g+wd)*RISE);
     else     hide(water,i);
@@ -1069,6 +1112,8 @@ function rebuild(){
   edgeGeo.computeBoundingSphere();
   slag.instanceMatrix.needsUpdate=true;
   slag.computeBoundingSphere();
+  sand.instanceMatrix.needsUpdate=true;
+  sand.computeBoundingSphere();
   water.instanceMatrix.needsUpdate=true;
   /* An InstancedMesh measures itself ONCE, lazily, and caches it. Both liquid
      meshes were first measured while every instance was still parked out of
@@ -1090,7 +1135,7 @@ function pick(ev){
   ndc.y=-((ev.clientY-r.top)/r.height)*2+1;
   ray.setFromCamera(ndc,cam);
   let best=null, bestHex=-1;
-  for(const m of [ground,slag,water]){
+  for(const m of [ground,slag,sand,water]){
     const hit=ray.intersectObject(m,false)[0];
     if(!hit) continue;
     /* ground instances are runs now, so the hex comes from a lookup; the
@@ -1108,13 +1153,14 @@ function hover(i){
       POWER.k==='erase' ? 0xd07a5a :
       POWER.k==='place'
         ? (MAT===CLOUD?0x5aafe1 : MAT===BEDROCK?0x8d97a6
-           : MAT===SLAG?0xbda98a : 0xd8cfc0)
+           : MAT===SLAG?0xbda98a : MAT===SAND?0xe0d3ae : 0xd8cfc0)
         : POWER.d>0 ? 0xffffff : 0xc9a86a);
     within(i,BRUSH-1).forEach((j,k)=>{
       if(k>=RINGS.length) return;
       const t=T[j];
       RINGS[k].position.set(t.x,
-        (t.h+Math.floor(t.sed/LAYER+1e-9)*LAYER+t.pool)*RISE+0.03,t.y);
+        (t.h+Math.floor(t.sed/LAYER+1e-9)*LAYER
+            +Math.floor(t.sand/LAYER+1e-9)*LAYER+t.pool)*RISE+0.03,t.y);
       RINGS[k].visible=true;
     });
   }
@@ -1160,8 +1206,9 @@ function drawInfo(){
   let h='<h4>'+t.q+', '+t.r+'</h4>';
   h+=row('ground', t.h+'   ('+U(t.h)+' units)');
   h+=row('material', MATS[t.mat]||'—', t.mat?'':'q');
-  const sl=t.sed>1e-12;
+  const sl=t.sed>1e-12, sa=t.sand>1e-12;
   h+=row('slag', sl ? U(t.sed)+' units' : '—', sl?'s':'q');
+  h+=row('sand', sa ? U(t.sand)+' units' : '—', sa?'s':'q');
   h+=row('water',  wet ? U(t.pool)+' units' : '—', wet?'w':'q');
   h+=row('layers', wet ? Math.floor(t.pool/LAYER+1e-9) : '—', wet?'w':'q');
   const run=t.flow>1e-12;
@@ -1255,6 +1302,16 @@ function drawCarry(){
 }
 thEl.oninput=drawCarry; caEl.oninput=drawCarry;
 
+/* what makes sand, and how much freer it is than slag */
+const atEl=document.getElementById('attr'), acap=document.getElementById('acap');
+const mbEl=document.getElementById('mob'),  mcap=document.getElementById('mcap');
+function drawSand(){
+  ATTR=+atEl.value/100; MOB=+mbEl.value/10;
+  acap.textContent='attrition — '+(ATTR*100).toFixed(0)+'% of slag that moves';
+  mcap.textContent='sand mobility — '+MOB.toFixed(1)+'×';
+}
+atEl.oninput=drawSand; mbEl.oninput=drawSand;
+
 const ovDrain=document.getElementById('ovDrain');
 ovDrain.onclick=()=>{ DRAIN=!DRAIN; ovDrain.classList.toggle('on',DRAIN); rebuild(); };
 
@@ -1294,6 +1351,7 @@ function snap(){
            pool:Float64Array.from(T,t=>t.pool),
            flow:Float64Array.from(T,t=>t.flow),
            sed:Float64Array.from(T,t=>t.sed),
+           sand:Float64Array.from(T,t=>t.sand),
            wear:Float64Array.from(T,t=>t.wear), out };
 }
 function restore(s){
@@ -1301,7 +1359,7 @@ function restore(s){
   for(let i=0;i<T.length;i++){
     retop(i);
     T[i].pool=s.pool[i]; T[i].flow=s.flow[i];
-    T[i].sed=s.sed[i];   T[i].wear=s.wear[i];
+    T[i].sed=s.sed[i];   T[i].sand=s.sand[i]; T[i].wear=s.wear[i];
     T[i].out.set(s.out.subarray(i*6,i*6+6));
   }
   rebuild(); hover(HOVER);
@@ -1340,7 +1398,9 @@ window.POT={T,at,use,tick,settle,rebuild,POWERS,scene,
   CLOUD,CLOUD_Z,CLOUD_MAX,clouds,LAYER,RAINFALL,SLAG,gnd,weather,
   get weathering(){ return WEATHER*420 }, set weathering(v){ WEATHER=v/420 },
   get thresh(){ return THRESH }, set thresh(v){ THRESH=v },
-  get cap(){ return CAP }, set cap(v){ CAP=v }, carry,
+  get cap(){ return CAP }, set cap(v){ CAP=v }, carry, SAND,
+  get attr(){ return ATTR }, set attr(v){ ATTR=v },
+  get mob(){ return MOB }, set mob(v){ MOB=v },
   CELL,TOP,cell,solid,retop,ZN,Z0,SLAB,zBot,zTop,AIR,BEDROCK,ROCK,MATS,instHex,ground,
   camera:()=>cam, hover:i=>hover(i),
   get power(){ return POWER.k },
@@ -1350,7 +1410,7 @@ window.POT={T,at,use,tick,settle,rebuild,POWERS,scene,
    now, and the two must never be confused. */
 function frame(){ controls.update(); renderer.render(scene,cam);
   requestAnimationFrame(frame); }
-drawMenu(); drawBrush(); drawDepth(); drawPalette(); drawRates(); drawHist(); drawWear(); drawCarry(); setSun(0); settle(); rebuild(); resize(); drawInfo(); frame();
+drawMenu(); drawBrush(); drawDepth(); drawPalette(); drawRates(); drawHist(); drawWear(); drawCarry(); drawSand(); setSun(0); settle(); rebuild(); resize(); drawInfo(); frame();
 </script>
 </body>
 </html>

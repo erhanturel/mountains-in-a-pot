@@ -290,6 +290,39 @@ Measured, and three of these were predictions made before the code ran:
   shield is lifted as fast as it forms, so bare rock keeps being re-exposed.
   The two rates genuinely interact rather than running side by side.
 
+## Sand
+
+**Sand is made by travelling, not by weathering.** A share of the slag that
+*moves* is ground down on arrival — attrition. It needs no new driver, since
+how much moved is already known, and it gives **downstream fining** for
+nothing: coarse slag near where it broke off, fine sand further out.
+
+Sand is terminal. It grinds into nothing and only goes on moving, and it is
+freer than slag: the same law with the threshold divided by `MOB` and the
+carrying multiplied by it, so one knob says how much livelier it is rather
+than two saying it over again.
+
+Both are read from **one** snapshot of the ground and written afterwards, so
+moving the slag cannot change what the sand thinks the ground is.
+
+Measured on a ramp down to a plain, 10,000 ticks:
+
+```
+   q   ground   slag   sand
+  -4    368.3  158.0    0.3
+  -2    283.3  282.8    0.5
+   0    213.9  213.7    0.1
+   2     99.0   77.1   21.9
+   4     27.4    0.0   27.4      sand only, no slag at all
+
+centre of mass:  slag q = -1.37    sand q = +3.01
+```
+
+Sand ends up **four and a half hexes further downstream** than slag, and the
+last hex that has anything on it has only sand. Conservation is exact across
+all three: 58,660 units of rock lost = 51,181 slag + 240 sand + 7,239 over the
+edge.
+
 `WEATHER` is a slider, not a constant, because there is no calibration for it
 yet and the only way to find one is to watch a board at several settings. It
 runs 0 to 0.7 units/tick, default 0.07 — one slab per thousand ticks, which
