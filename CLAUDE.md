@@ -875,6 +875,40 @@ flat board, 40 ticks              distinct depths per ring 1 1 2 2 3 3 4,
   the snapshot, and the snapshot is what keeps the board symmetric. Capping
   what a tile may RECEIVE would fix it and costs a second pass.
 
+### The fever dream
+
+Recorded as a whole, because the pieces only make sense together and none of
+them should be built one at a time on their own merits. Marked a fever dream
+by the person who proposed it, and kept at that status:
+
+- a much taller world — 64 units of height;
+- **evaporation**, at a flat rate over the whole board;
+- **layers of atmosphere**, so what evaporates rises and becomes cloud;
+- **wind**, behaving differently at each tier, always running from bodies of
+  water towards the tallest and nearest feature on the map.
+
+What makes it coherent is that it closes the water cycle: today water is
+created by clouds you place and destroyed over the rim, and it is a one-way
+trip. The fever dream makes the board a loop, with the terrain choosing where
+the rain falls rather than the player.
+
+What makes it dangerous is that every one of the four is a stored,
+accumulating, order-dependent quantity — which is the exact class of thing
+this project has been burnt by more than any other, and the reason the
+solving build was thrown away. Wind "towards the tallest and nearest feature"
+is also a global search per tile per tick, and it is a *rule about the whole
+board* rather than a rule about a hex and its six neighbours, which nothing
+here currently is.
+
+The one piece that is cheap and separable is **evaporation**: a flat rate is a
+single subtraction per column, it needs no new state, and it would give the
+board something it genuinely lacks — a reason for standing water to ever go
+away. If any of this is ever built, that is the end to pull.
+
+The tall sky the height change reserves (elevation 24 to 36 is empty by
+construction) is where the atmosphere tiers would live. That is why the gap is
+a reservation rather than waste.
+
 ### Parked: two viewports side by side
 
 The terrain in one and the **drainage overlay** in the other, sharing a
