@@ -4,9 +4,19 @@
 > Hang a cloud, and the water
 > finds its own level.
 
-A single-file hex sandbox. **Radius 12, 469 hexes.** Three powers — raise a
-column, lower a column, hang a rain tile over one — each with a **brush** of
-1, 7, 19 or 37 hexes. Everything else is water working out where to go.
+A single-file hex sandbox. **Radius 12, 469 hexes.** Four powers — raise a
+column, lower a column, hang a rain tile over one, and lay down a chosen
+material — each with a **brush** of 1, 7, 19 or 37 hexes and a **depth** of 1,
+2, 3, 6 or 12 slabs. Six slabs is one elevation step. Everything else is water
+working out where to go.
+
+**Place and Uplift are not the same power.** Place lays down whatever the
+palette says; Uplift extends whatever the column already has on top, so
+raising bedrock gives bedrock and raising rock gives rock. `raise()` and
+`lower()` both work in slabs and both return how many they managed, so a click
+that could do nothing at all is not counted as an action and does not tick.
+`legal()` is gone: it asked whether a whole elevation would fit and could not
+answer for a partial one.
 
 The brush lives in the CORE, not in the UI, because a click has to stay ONE
 TICK however many hexes it moves; calling `use()` per hex would run the
