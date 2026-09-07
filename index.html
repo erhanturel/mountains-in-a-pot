@@ -135,6 +135,8 @@
         <input id="attr" type="range" min="0" max="50" step="1" value="5">
         <div class="cap" id="mcap">sand mobility</div>
         <input id="mob" type="range" min="10" max="100" step="1" value="30">
+        <div class="cap" id="bcap">abrasion</div>
+        <input id="abr" type="range" min="0" max="50" step="1" value="7">
       </div>
     </div>
   </div>
@@ -193,7 +195,7 @@ for(let q=-R;q<=R;q++){
   for(let r=lo;r<=hi;r++){
     idx.set(q+','+r,T.length);
     T.push({q,r,x:Math.sqrt(3)*(q+r/2),y:1.5*r,pool:0,flow:0,out:new Float64Array(6),
-            sed:0,sand:0,wear:0});
+            sed:0,sand:0,wear:0,grit:0});
   }
 }
 
@@ -486,13 +488,28 @@ function settle(){
    accumulates against the top one and the cell flips when it fills.
    --------------------------------------------------------------------- */
 let WEATHER=0.07/420;            /* units of rock loosened per tick */
+let ABRADE=0.07;                 /* rock ground away per unit of grit crossing */
 const SHIELD=140/420;            /* slag depth at which weathering halves */
 function weather(){
   if(WEATHER<=0) return;
   for(let i=0;i<T.length;i++){
     const t=TOP[i];
     if(t<0 || CELL[i*ZN+t]!==ROCK) continue;      /* bedrock, or nothing */
-    T[i].wear += WEATHER/(1+T[i].sed/SHIELD);
+    /* TOOLS AND COVER. Grit dragged across bare rock grinds it -- that is
+       how a river actually cuts, and a river carrying nothing barely cuts at
+       all. Weathering on its own is water-blind, which is why a cone under
+       rain wore down as a dome with faint grooves rather than carving
+       valleys: the wettest hexes lost only 1.22x what the driest did.
+
+       The same shield divides both terms, and that is not tidiness. A thick
+       bed of rubble means the grains bounce on rubble rather than on stone,
+       so sediment is the TOOL and also the COVER, and incision peaks at
+       middling supply rather than climbing for ever. Both halves of a real
+       model, out of one number we already had.
+
+       grit is last tick's, since carry() runs after this. A tick of lag at
+       these timescales is nothing. */
+    T[i].wear += (WEATHER + ABRADE*T[i].grit)/(1+T[i].sed/SHIELD);
     while(T[i].wear>=LAYER && TOP[i]>=0 && CELL[i*ZN+TOP[i]]===ROCK){
       T[i].wear-=LAYER;
       CELL[i*ZN+TOP[i]]=AIR; retop(i);            /* the slab is gone */
@@ -548,6 +565,7 @@ function carry(){
   const g=i=>T[i].h+wS[i]+wA[i];
   const addS=new Array(n).fill(0), addA=new Array(n).fill(0);
   const want=new Float64Array(6);
+  for(let i=0;i<n;i++) T[i].grit=0;          /* how much crossed each tile */
   const pass=(was,add,thresh,cap,grind)=>{
     for(let i=0;i<n;i++){
       const s=was[i];
@@ -570,7 +588,7 @@ function carry(){
       for(let k=0;k<6;k++){
         if(want[k]<=0) continue;
         const v=want[k]*f;
-        add[i]-=v;
+        add[i]-=v; T[i].grit+=v;
         const j=T[i].nb[k];
         if(j<0) continue;                      /* over the side, and gone */
         if(grind){ addS[j]+=v*(1-ATTR); addA[j]+=v*ATTR; }
@@ -1332,6 +1350,14 @@ function drawSand(){
 }
 atEl.oninput=drawSand; mbEl.oninput=drawSand;
 
+/* what grit does to the rock it is dragged across */
+const abEl=document.getElementById('abr'), bcap=document.getElementById('bcap');
+function drawAbrade(){
+  ABRADE=+abEl.value/100;
+  bcap.textContent='abrasion — '+ABRADE.toFixed(2)+' rock per grit';
+}
+abEl.oninput=drawAbrade;
+
 const ovDrain=document.getElementById('ovDrain');
 ovDrain.onclick=()=>{ DRAIN=!DRAIN; ovDrain.classList.toggle('on',DRAIN); rebuild(); };
 
@@ -1372,7 +1398,8 @@ function snap(){
            flow:Float64Array.from(T,t=>t.flow),
            sed:Float64Array.from(T,t=>t.sed),
            sand:Float64Array.from(T,t=>t.sand),
-           wear:Float64Array.from(T,t=>t.wear), out };
+           wear:Float64Array.from(T,t=>t.wear),
+           grit:Float64Array.from(T,t=>t.grit), out };
 }
 function restore(s){
   CELL.set(s.cells);
@@ -1380,6 +1407,7 @@ function restore(s){
     retop(i);
     T[i].pool=s.pool[i]; T[i].flow=s.flow[i];
     T[i].sed=s.sed[i];   T[i].sand=s.sand[i]; T[i].wear=s.wear[i];
+    T[i].grit=s.grit[i];
     T[i].out.set(s.out.subarray(i*6,i*6+6));
   }
   rebuild(); hover(HOVER);
@@ -1461,9 +1489,9 @@ function serialise(){
     cells:btoa(bin),
     pool:T.map(t=>round(t.pool)), flow:T.map(t=>round(t.flow)),
     sed:T.map(t=>round(t.sed)),   sand:T.map(t=>round(t.sand)),
-    wear:T.map(t=>round(t.wear)), out,
+    wear:T.map(t=>round(t.wear)), grit:T.map(t=>round(t.grit)), out,
     knobs:{weather:WEATHER, shield:SHIELD, thresh:THRESH, cap:CAP,
-           attr:ATTR, mob:MOB}
+           attr:ATTR, mob:MOB, abrade:ABRADE}
   });
 }
 function apply(d){
@@ -1475,11 +1503,13 @@ function apply(d){
     retop(i);
     T[i].pool=d.pool[i]||0; T[i].flow=d.flow[i]||0;
     T[i].sed =d.sed[i]||0;  T[i].sand=d.sand[i]||0;
-    T[i].wear=d.wear[i]||0;
+    T[i].wear=d.wear[i]||0; T[i].grit=(d.grit&&d.grit[i])||0;
     for(let k=0;k<6;k++) T[i].out[k]=(d.out&&d.out[i*6+k])||0;
   }
   if(d.knobs){ WEATHER=d.knobs.weather; THRESH=d.knobs.thresh; CAP=d.knobs.cap;
                ATTR=d.knobs.attr; MOB=d.knobs.mob;
+               if(d.knobs.abrade!==undefined) ABRADE=d.knobs.abrade;
+               abEl.value=Math.round(ABRADE*100); drawAbrade();
                wearEl.value=Math.round(WEATHER*420*100);
                thEl.value=Math.round(THRESH*100); caEl.value=Math.round(CAP*1000);
                atEl.value=Math.round(ATTR*100);  mbEl.value=Math.round(MOB*10);
@@ -1530,6 +1560,7 @@ window.POT={T,at,use,tick,settle,rebuild,POWERS,scene,
   get cap(){ return CAP }, set cap(v){ CAP=v }, carry, SAND,
   get attr(){ return ATTR }, set attr(v){ ATTR=v },
   get mob(){ return MOB }, set mob(v){ MOB=v },
+  get abrade(){ return ABRADE }, set abrade(v){ ABRADE=v },
   serialise, apply, R,
   CELL,TOP,cell,solid,retop,ZN,Z0,SLAB,zBot,zTop,AIR,BEDROCK,ROCK,MATS,instHex,ground,
   camera:()=>cam, hover:i=>hover(i),
@@ -1541,7 +1572,7 @@ window.POT={T,at,use,tick,settle,rebuild,POWERS,scene,
 function frame(){ controls.update(); renderer.render(scene,cam);
   requestAnimationFrame(frame); }
 drawMenu(); drawBrush(); drawDepth(); drawPalette(); drawRates(); drawHist();
-drawWear(); drawCarry(); drawSand(); setSun(0); settle(); rebuild(); resize(); drawInfo(); frame();
+drawWear(); drawCarry(); drawSand(); drawAbrade(); setSun(0); settle(); rebuild(); resize(); drawInfo(); frame();
 /* a board parked on the way through a resize is picked up here */
 { const parked=sessionStorage.getItem('potLoad');
   if(parked){ sessionStorage.removeItem('potLoad');

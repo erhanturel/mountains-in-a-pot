@@ -363,6 +363,45 @@ last hex that has anything on it has only sand. Conservation is exact across
 all three: 58,660 units of rock lost = 51,181 slag + 240 sand + 7,239 over the
 edge.
 
+## Abrasion — tools and cover
+
+Weathering on its own is **water-blind**. Water's only role was to carry slag
+off, which lifted the shield, and that indirect effect was the whole of the
+incision contrast: a cone under rain wore down as a dome with faint grooves,
+the wettest hexes losing only **1.22×** what the driest did.
+
+Abrasion is grit dragged across bare rock grinding it. That is how a river
+actually cuts — one carrying nothing barely incises at all.
+
+```js
+wear += (WEATHER + ABRADE * grit) / (1 + sed/SHIELD)
+```
+
+**The same shield divides both terms, and that is not tidiness.** A thick bed
+of rubble means the grains bounce on rubble rather than stone, so sediment is
+the *tool* and also the *cover*, and incision peaks at middling supply rather
+than climbing for ever. Both halves of a real model out of one number we
+already had.
+
+`grit` is last tick's, since `carry()` runs after `weather()`. A tick of lag
+at these timescales is nothing.
+
+Measured on a rock cone, 16,000 ticks, ring at radius 5:
+
+```
+  ABRADE            wet     dry   incision
+  off  (0)         1120     917     1.22×
+  default (0.07)   1449    1015     1.43×
+  strong  (0.25)   2079     770     2.70×
+  maximum (0.50)   2240     728     3.08×
+```
+
+The **dry** column falls as abrasion rises. Channels cut faster, make more
+slag, and it settles on the ridges and shields them — the coupling running in
+both directions at once. Conservation is untouched: at `ABRADE` 0.30 over
+6,000 ticks, 63,560 units of rock lost against 60,273 still on the board plus
+3,287 over the edge.
+
 `WEATHER` is a slider, not a constant, because there is no calibration for it
 yet and the only way to find one is to watch a board at several settings. It
 runs 0 to 0.7 units/tick, default 0.07 — one slab per thousand ticks, which
