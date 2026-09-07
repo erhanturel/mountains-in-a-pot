@@ -534,6 +534,17 @@ is scoped to `#powers .pw`.
 
 ## Rendering notes
 
+**The page fills the window and never scrolls.** It was capped at 1140px with
+a fixed 660px board, which on a wide screen left most of the display empty
+*and* pushed the erosion sliders below the fold — controls you could not see
+on a monitor with room to spare. The board now takes whatever is left beside
+the panel: 940×660 became **1488×863** on a 1900px screen.
+
+Above 1500px the panel becomes **two columns**, balanced by the browser with
+`break-inside: avoid` on each block. Multi-column rather than a grid, because
+the blocks are different heights and their order does not matter. The panel
+scrolls itself rather than taking the page with it.
+
 One `InstancedMesh` of hexagonal prisms for the ground — one instance per
 unbroken run of solid cells in a column, so a cave would draw correctly — plus
 one per hex for water and one for clouds. `instHex` maps a ground instance
@@ -745,6 +756,16 @@ flat board, 40 ticks              distinct depths per ring 1 1 2 2 3 3 4,
   above them for a single frame before it pours back out. It is the price of
   the snapshot, and the snapshot is what keeps the board symmetric. Capping
   what a tile may RECEIVE would fix it and costs a second pass.
+
+### Parked: two viewports side by side
+
+The terrain in one and the **drainage overlay** in the other, sharing a
+camera — so you see where the water *would* go next to where it actually
+went, without toggling between them. For a design bench that is the pair of
+pictures you most want at once, and wide screens have the room for it.
+
+It is a second renderer and a camera sync rather than a CSS change, which is
+why it is parked and not done.
 
 ### Parked: UI in three.js
 
