@@ -72,7 +72,8 @@ This is the whole simulation. If a change cannot be stated as one of these,
 it is a new rule and wants deciding rather than drifting into.
 
 ```
-1  a rain tile drops 70 units on the column below it, every tick
+1  a rain tile drops 70 units on the column below it, every tick, and they
+   STACK -- n of them drop n times the rain
 2  one elevation step is 420 units; one water tile is 70 of them
 3  a tile's HEIGHT is its stone plus the water standing on it
 4  a tile with water pours into whichever neighbours stand lower, until
@@ -229,7 +230,13 @@ CLOUD    a rain tile, which lives in the same stack
 `BASALT` went with the lava that made it, several rewrites ago. A **run** is
 an unbroken stretch of *one* material, so a rock slab lying on bedrock draws
 as two prisms and the join is visible. Clouds live in that same stack, which is why a cloud is a thing
-in the world you can see rather than a flag.
+in the world you can see rather than a flag. Their band starts at elevation
+**17**, well clear of the highest ground a player can build (12), and runs to
+the top of the stack — so twelve is the tallest a cloud can get, which is
+exactly the largest intensity. Clicking *sets* the stack to the chosen height;
+clicking again at the same height clears it, which is the old on/off toggle
+generalised. The drainage overlay seeds from the count, not from the presence,
+so a triple cloud weighs three times as much.
 
 **A cell is a slab of 70 units** — a sixth of an elevation step, the same
 quantum a water tile is drawn at. It used to be a whole elevation, which was

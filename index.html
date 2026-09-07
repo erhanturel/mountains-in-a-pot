@@ -283,7 +283,13 @@ const at=(q,r)=>{const i=idx.get(q+','+r);return i===undefined?-1:i};
    where 420 reads 10. */
 const LAYER=1/6;
 const RAINFALL=LAYER;            /* what one rain tile drops each tick */
-const CLOUD_Z=ZN-30;             /* rain tiles ride up here, clear of the ground */
+/* RAIN TILES STACK. The band starts well clear of the highest ground a
+   player can build -- elevation 17 against a limit of 12 -- and runs to the
+   top of the stack, so twelve is the tallest a cloud can get and that is
+   exactly the largest intensity. More clouds drop linearly more rain. */
+const CLOUD_Z=180;               /* elevation 17 */
+const CLOUD_MAX=ZN-CLOUD_Z;      /* twelve slabs of headroom */
+const clouds=i=>{ let n=0; while(n<CLOUD_MAX && cell(i,CLOUD_Z+n)===CLOUD) n++; return n; };
 
 /* ---------------------------------------------------------------------
    SETTLE - one step, and exactly those rules.
@@ -409,8 +415,10 @@ function settle(){
 }
 /* the rain tiles rain, and then everything sheds once */
 function tick(){
-  for(let i=0;i<T.length;i++)
-    if(CELL[i*ZN+CLOUD_Z]===CLOUD) T[i].pool+=RAINFALL;
+  for(let i=0;i<T.length;i++){
+    const n=clouds(i);
+    if(n) T[i].pool+=n*RAINFALL;      /* a stack of n drops n times the rain */
+  }
   settle();
 }
 
@@ -465,9 +473,14 @@ function use(i,p,rad,n,m){
   let did=0;
   if(p.k==='cloud'){
     /* the centre decides for the whole brush, so a stroke is all-on or
-       all-off rather than a checkerboard of toggles */
-    const on = cell(i,CLOUD_Z)!==CLOUD;
-    for(const j of cells) CELL[j*ZN+CLOUD_Z] = on?CLOUD:AIR;
+       all-off rather than a checkerboard of toggles. Clicking SETS the stack
+       to n; clicking again when it is already n clears it, which is the old
+       on/off toggle generalised to a height. */
+    const want = clouds(i)===Math.min(n,CLOUD_MAX) ? 0 : Math.min(n,CLOUD_MAX);
+    for(const j of cells){
+      const b=j*ZN+CLOUD_Z;
+      for(let k=0;k<CLOUD_MAX;k++) CELL[b+k] = k<want ? CLOUD : AIR;
+    }
     did=cells.length;
   } else if(p.k==='subduct'){
     for(const j of cells) did+=lower(j,n);
@@ -792,9 +805,9 @@ const blend=(a,b,f)=>a.map((v,n)=>v+(b[n]-v)*f);
    the accumulating stops, which is exactly where a lake would sit. */
 function accum(){
   const n=T.length, a=new Float64Array(n);
-  let clouds=0;
-  for(let i=0;i<n;i++) if(cell(i,CLOUD_Z)===CLOUD){ a[i]=1; clouds++; }
-  if(!clouds) a.fill(1);
+  let seeded=0;
+  for(let i=0;i<n;i++){ const c=clouds(i); if(c){ a[i]=c; seeded++; } }
+  if(!seeded) a.fill(1);
   const order=T.map((t,i)=>i).sort((x,y)=>T[y].h-T[x].h);
   for(const i of order){
     let tot=0; const outs=[];
@@ -884,10 +897,11 @@ function rebuild(){
         if(d>=RIVER_MIN && ns<MAXSTUB) stub(ns++,t,k,d,y);
       }
     }
-    if(cell(i,CLOUD_Z)===CLOUD)
-      /* drawn a whole elevation tall whatever the slab size, so the cloud
-         reads as a cloud rather than as a wafer */
-      place(cloudMesh,i,t.x,t.y,zBot(CLOUD_Z)*RISE,(zBot(CLOUD_Z)+1)*RISE);
+    /* a stack grows visibly, but a single cloud still has to read as a
+       cloud rather than as a wafer, so there is a floor under the height */
+    const nc=clouds(i);
+    if(nc) place(cloudMesh,i,t.x,t.y,zBot(CLOUD_Z)*RISE,
+                 (zBot(CLOUD_Z)+Math.max(0.35,nc/SLAB))*RISE);
     else hide(cloudMesh,i);
   }
   for(let k=ns;k<MAXSTUB;k++) hide(rivers,k);
@@ -1006,8 +1020,8 @@ function drawInfo(){
   } else h+=row('focus','—','q');
   /* the number that decides everything: stone plus the water on it */
   h+=row('height',  U(t.h+t.pool)+' units', wet?'w':'');
-  h+=row('cloud',  cell(HOVER,CLOUD_Z)===CLOUD ? 'raining' : '—',
-                   cell(HOVER,CLOUD_Z)===CLOUD?'w':'q');
+  const nc=clouds(HOVER);
+  h+=row('cloud', nc ? nc+' × '+U(RAINFALL)+' units/tick' : '—', nc?'w':'q');
   el.innerHTML=h;
 }
 function drawMenu(){
@@ -1128,7 +1142,7 @@ addEventListener('keydown',e=>{
    global — it is how the flat renderer was checked, and it is the only way
    to drive the sim by hand now. */
 window.POT={T,at,use,tick,settle,rebuild,POWERS,scene,
-  CLOUD,CLOUD_Z,LAYER,RAINFALL,
+  CLOUD,CLOUD_Z,CLOUD_MAX,clouds,LAYER,RAINFALL,
   CELL,TOP,cell,solid,retop,ZN,Z0,SLAB,zBot,zTop,AIR,BEDROCK,ROCK,MATS,instHex,ground,
   camera:()=>cam, hover:i=>hover(i),
   get power(){ return POWER.k },
