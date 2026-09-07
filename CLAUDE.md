@@ -4,13 +4,22 @@
 > Hang a cloud, and the water
 > finds its own level.
 
-A single-file hex sandbox. **Radius 8, 10, 12 or 14** — 217, 331, 469 or 631
-hexes — chosen from the URL (`?r=14`) and fixed for the life of the page. The
+A single-file hex sandbox. **Radius 8 to 64** — 217, 331, 469, 631, 1801,
+3997, 7057 or 12,481 hexes — chosen from the URL (`?r=48`) and fixed for the life of the page. The
 size buttons **ask with a second click, not a dialog**: `window.confirm` is
 suppressed in some embedded browsers, returning false without ever showing
 anything, so the button simply looked dead.
 `T`, the cell stack and every instanced mesh are sized from it, so a size
 change starts a *new* world with a reload. That is why save came first.
+
+**Undo depth is a memory budget, not a count.** A snapshot is the cell stack
+plus twelve numbers a hex: 0.13 MB at radius 12, **3.4 MB at radius 64**,
+where sixty of them would be 206 MB. Sixty small boards or fourteen enormous
+ones — about 45 MB either way.
+
+Costs at radius 64, measured: 12,481 hexes, **77 fps**, 15.6 ms a tick, 32 ms
+a rebuild. Fine at 1×; 100× is a second and a half a frame, which runs but is
+not worth watching.
 
 **A save is a file, not a browser slot** — the whole cell stack, every
 per-column number, the radius, the name and the knob settings. A board you can
@@ -533,6 +542,22 @@ is scoped to `#powers .pw`.
 ---
 
 ## Rendering notes
+
+**Framing needs the aspect and the shape.** Both cameras used to size
+themselves from the height alone — ortho took `top = SPAN` and let `right`
+follow, perspective sat at a fixed distance — so any viewport *taller than it
+is wide* cut the board off at the sides. That was true at every radius and
+only became obvious at 64, where the board overflowed by **39%**.
+
+Fitting a *ball* of radius `SPAN` stops the clipping and then wastes half the
+screen, because the board is a flat hexagon seen at a slant. So the extent is
+measured: the rim hexes at both ends of the height range, projected onto the
+camera's own right and up axes. Perspective needs standing 18% further back
+than that says, because the near edge is closer than the middle and projects
+larger — without the allowance a radius-64 board came out 1% over the top.
+
+The result is scale-free: radius 12 and radius 64 both frame to the same clip
+extents, `0.95 × 0.71` orthographic and `0.81 × 0.81` perspective.
 
 **The page fills the window and never scrolls.** It was capped at 1140px with
 a fixed 660px board, which on a wide screen left most of the display empty

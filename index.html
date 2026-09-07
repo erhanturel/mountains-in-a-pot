@@ -85,6 +85,8 @@
   #wname:focus{border-color:#c9a86a}
   input[type=range]{width:calc(100% - 22px);margin:4px 11px 11px;
     accent-color:#c9a86a;background:none;cursor:pointer}
+  #size{flex-wrap:wrap}
+  #size .rt{flex:1 0 25%}
   .rt.arm{color:#e0b070;background:#20190f}
   .rt.off{color:#333a44;cursor:default}
   .rt.off:hover{background:none}
@@ -170,7 +172,7 @@ import { OrbitControls } from './vendor/addons/controls/OrbitControls.js';
    instanced mesh are sized from it, so it cannot change in place -- picking
    a new size starts a new world, and that is why saving came first. Read
    from the URL so a size is a link you can keep. */
-globalThis.POT_R = Math.min(14, Math.max(8,
+globalThis.POT_R = Math.min(64, Math.max(8,
   parseInt(new URLSearchParams(location.search).get('r'),10) || 12));
 
 /*==CORE-START==*/
@@ -809,10 +811,13 @@ scene.add(sun); scene.add(sun.target);
    board is taller than a plateau on the other. A ridge throwing a shadow
    over the plain beside it says so at once. */
 sun.castShadow=true;
-sun.shadow.mapSize.set(2048,2048);
+/* a wider board wants more texels or the shadows go blocky */
+sun.shadow.mapSize.set(R>20?4096:2048, R>20?4096:2048);
 { const c=sun.shadow.camera, W=SPAN*1.35;   /* the board's footprint seen
      from an oblique light is wider than the board itself */
-  c.left=-W; c.right=W; c.top=W; c.bottom=-W; c.near=5; c.far=140;
+  c.left=-W; c.right=W; c.top=W; c.bottom=-W;
+  c.near=SPAN*0.2; c.far=SPAN*5;            /* both scale, or a big board
+     puts its far plane inside itself */
   c.updateProjectionMatrix(); }
 /* bias against the hex tops shadowing themselves: normalBias pushes the
    lookup along the surface normal, which is what flat faces need */
@@ -830,7 +835,10 @@ const SUNNAMES=['NW','NE','SE','SW'];
 let SUNAT=0;
 function setSun(k){
   SUNAT=k; const d=SUNDIRS[k];
-  sun.position.set(d[0]*44,d[1]*44,d[2]*44);
+  /* the sun stands off with the board, or on a big one it ends up INSIDE
+     the terrain it is meant to be lighting */
+  const D=SPAN*2;
+  sun.position.set(d[0]*D,d[1]*D,d[2]*D);
   sun.target.position.set(0,0,0); sun.target.updateMatrixWorld();
   drawSun();
 }
@@ -846,12 +854,57 @@ scene.add(fillLight);
 /* Orthographic reads as isometric, which is the look this board wants.
    Perspective is there for when you want to feel the depth. */
 let ortho=true, cam=null, controls=null;
+const FOV=38, VHALF=Math.tan(FOV*Math.PI/360);
+
+/* FRAMING THE BOARD, which needs the aspect AND the shape.
+
+   Both cameras used to size themselves from the height alone -- ortho took
+   top=SPAN and let right follow, perspective sat at a fixed distance -- so
+   any viewport TALLER THAN IT IS WIDE cut the board off at the sides. That
+   was true at every radius and only became obvious at 64, where the board
+   overflowed the screen by 39%.
+
+   Fitting a BALL of radius SPAN fixes the clipping and then wastes half the
+   screen, because the board is a flat hexagon seen at a slant and nothing
+   like a ball. So measure it: take the rim hexes at both ends of the height
+   range, and project them onto the camera's own right and up axes. That is
+   the real extent, and everything else is arithmetic. */
+const FITPTS=[];
+{ const yLo=BASE*RISE, yHi=H_MAX*RISE;
+  for(const t of T){
+    const d=Math.max(Math.abs(t.q),Math.abs(t.r),Math.abs(t.q+t.r));
+    if(d<R) continue;
+    FITPTS.push([t.x,yLo,t.y],[t.x,yHi,t.y]);
+  }
+}
+const VIEWDIR=new THREE.Vector3(0,1.6,1.9).normalize();
+const CAMRIGHT=new THREE.Vector3(1,0,0);
+const CAMUP=new THREE.Vector3().crossVectors(VIEWDIR,CAMRIGHT).normalize();
+const MARGIN=1.05;
+function extents(){
+  let ex=0, ey=0;
+  for(const [x,y,z] of FITPTS){
+    ex=Math.max(ex,Math.abs(x*CAMRIGHT.x+y*CAMRIGHT.y+z*CAMRIGHT.z));
+    ey=Math.max(ey,Math.abs(x*CAMUP.x   +y*CAMUP.y   +z*CAMUP.z));
+  }
+  return [ex*MARGIN,ey*MARGIN];
+}
+const EX=extents();
+const fitTop  = a => Math.max(EX[1],EX[0]/a);     /* ortho half-height */
+/* perspective needs standing further back than the parallel extent says:
+   the near edge of the board is closer than its middle and projects larger,
+   which the extents above cannot know. Measured at radius 64 -- without the
+   allowance the board came out 1% over the top of the screen. */
+const fitDist = a => fitTop(a)/VHALF*1.18;
+
 function makeCam(){
   const w=board.clientWidth||900, h=board.clientHeight||660, a=w/h;
   const was=cam;
-  cam = ortho ? new THREE.OrthographicCamera(-SPAN*a,SPAN*a,SPAN,-SPAN,0.1,300)
-              : new THREE.PerspectiveCamera(38,a,0.1,300);
-  cam.position.copy(was?was.position:new THREE.Vector3(0,SPAN*1.6,SPAN*1.9));
+  if(ortho){ const t=fitTop(a);
+    cam=new THREE.OrthographicCamera(-t*a,t*a,t,-t,0.1,SPAN*20); }
+  else cam=new THREE.PerspectiveCamera(FOV,a,0.1,SPAN*20);
+  cam.position.copy(was ? was.position
+    : VIEWDIR.clone().multiplyScalar(fitDist(a)));
   if(controls){ controls.object=cam; controls.update(); }
   return cam;
 }
@@ -1244,7 +1297,8 @@ function resize(){
   renderer.setSize(w,h,false);
   const a=w/h;
   if(cam.isOrthographicCamera){
-    cam.left=-SPAN*a; cam.right=SPAN*a; cam.top=SPAN; cam.bottom=-SPAN;
+    const t=fitTop(a);
+    cam.left=-t*a; cam.right=t*a; cam.top=t; cam.bottom=-t;
   } else cam.aspect=a;
   cam.updateProjectionMatrix();
 }
@@ -1406,7 +1460,14 @@ ovProj.onclick=()=>{ ortho=!ortho;
    is the UI keeping copies of past states, not the simulation deriving
    anything from history; the board is still a pure function of whichever
    snapshot is current. */
-const HIST=[], FUT=[], HIST_MAX=60;
+/* HOW DEEP THE HISTORY GOES IS A MEMORY BUDGET, not a fixed count. A
+   snapshot is the cell stack plus twelve numbers a hex, so at radius 12 it
+   is 0.13MB and sixty of them are nothing -- but at radius 64 it is 3.4MB
+   and sixty would be 206MB. Sixty small boards or fourteen enormous ones,
+   either way about fifty megabytes. */
+const HIST=[], FUT=[];
+const SNAP_BYTES=CELL.length + T.length*8*12;
+const HIST_MAX=Math.max(5, Math.min(60, Math.floor(48e6/SNAP_BYTES)));
 function snap(){
   const n=T.length, out=new Float64Array(n*6);
   for(let i=0;i<n;i++) out.set(T[i].out,i*6);
@@ -1478,7 +1539,7 @@ NAME.oninput=()=>localStorage.setItem('potName',NAME.value);
    suppressed in some embedded browsers -- it returns false without ever
    showing anything -- so the button simply looked dead. Asking in the page
    costs nothing and works everywhere. */
-const SIZES=[8,10,12,14];
+const SIZES=[8,10,12,14,24,36,48,64];
 let ARM=0, armTimer=null;
 function drawSize(){
   document.getElementById('size').innerHTML=SIZES.map(r=>
