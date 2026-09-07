@@ -601,6 +601,23 @@ flat board, 40 ticks              distinct depths per ring 1 1 2 2 3 3 4,
   the snapshot, and the snapshot is what keeps the board symmetric. Capping
   what a tile may RECEIVE would fix it and costs a second pass.
 
+### Parked: burying
+
+Slag is an *amount*, and amounts always ride on top of the stack — so placing
+rock on a slag pile puts the rock underneath and lifts the slag. That is the
+same rule water follows (place rock under a lake and the lake rises), and the
+end state is right: taller column, loose material on top.
+
+What it means is that **loose material can never be buried under solid**. A
+landslide covering a valley floor, a flood laying silt over rubble which then
+lithifies, a rock slab collapsing onto sand — none of those can be
+represented. Doing it means slag becoming a *cell* rather than an amount, at
+which point transport has to move whole 70-unit slabs or the two
+representations have to coexist.
+
+Parked deliberately, and worth its own careful pass rather than being drifted
+into. It is the most interesting unbuilt thing here.
+
 ### Open questions
 
 - Is one hex per tick the right speed, or does a distant basin take too long
