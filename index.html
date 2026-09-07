@@ -1185,6 +1185,43 @@ function terrain(t,mat){
   return c;
 }
 
+/* ---------------------------------------------------------------------
+   ONE STATIC BOUNDING SPHERE, set here and never recomputed.
+
+   three.js frustum-culls by a sphere, and an InstancedMesh works one out by
+   walking every instance matrix. rebuild() was doing that seven times a call
+   — 7.3 ms of a 61.5 ms rebuild at radius 64.
+
+   It never needed to. The board's extent is known: a fixed hex radius in x
+   and z, and a stack that runs from the floor to the top of the cloud band.
+   Nothing the player can do reaches outside it, so one sphere covers every
+   mesh for the life of the page.
+
+   BUT THE CALLS COULD NOT SIMPLY BE DELETED. An InstancedMesh measures itself
+   ONCE, lazily, and caches the result: both liquid meshes were first measured
+   while every instance was still parked out of sight, so they cached a
+   zero-radius sphere and were culled from then on — placed correctly, updated
+   correctly, and never drawn. A static sphere is fine; no sphere is not.
+
+   GENEROUS ON PURPOSE. InstancedMesh.raycast() sphere-tests before it tests
+   instances, so a sphere too SMALL silently breaks hex picking, while one too
+   large only costs a draw call on a mesh that is off screen — and at six
+   meshes that is nothing worth culling for. The edge lines were never culled
+   anyway: their unused vertices are parked at z=-999, which put their measured
+   sphere a thousand units across. */
+{
+  let rh=0;
+  for(const t of T) rh=Math.max(rh,Math.hypot(t.x,t.y));
+  rh+=1.05;                                    /* the prism's own circumradius */
+  const yTop=zTop(ZN-1)*RISE, yBot=BASE*RISE;
+  const yc=(yTop+yBot)/2;
+  const SPHERE=new THREE.Sphere(new THREE.Vector3(0,yc,0),
+                                Math.hypot(rh,(yTop-yBot)/2)*1.02);
+  for(const m of [ground,water,cloudMesh,slag,sand,rivers])
+    m.boundingSphere=SPHERE.clone();
+  edgeGeo.boundingSphere=SPHERE.clone();
+}
+
 function rebuild(){
   let n=0, ns=0;
   if(DRAIN){ ACC=accum(); ACCMAX=Math.max(1,...ACC); } else ACC=null;
@@ -1239,27 +1276,15 @@ function rebuild(){
   for(let k=ns;k<MAXSTUB;k++) hide(rivers,k);
   rivers.count=ns;
   rivers.instanceMatrix.needsUpdate=true;
-  rivers.computeBoundingSphere();
   for(let k=n;k<MAXRUN;k++){ hide(ground,k); rim(k,0,-999,0); }
   ground.count=n;
   ground.instanceMatrix.needsUpdate=true;
   ground.instanceColor.needsUpdate=true;
   edgeGeo.attributes.position.needsUpdate=true;
-  edgeGeo.computeBoundingSphere();
   slag.instanceMatrix.needsUpdate=true;
-  slag.computeBoundingSphere();
   sand.instanceMatrix.needsUpdate=true;
-  sand.computeBoundingSphere();
   water.instanceMatrix.needsUpdate=true;
-  /* An InstancedMesh measures itself ONCE, lazily, and caches it. Both liquid
-     meshes were first measured while every instance was still parked out of
-     sight, so they cached a zero-radius sphere and were frustum-culled from
-     then on — placed correctly, updated correctly, and never drawn. Re-measure
-     whenever the instances move. */
-  ground.computeBoundingSphere();
   cloudMesh.instanceMatrix.needsUpdate=true;
-  water.computeBoundingSphere();
-  cloudMesh.computeBoundingSphere();
 }
 
 /* ---- picking: the raycaster hands back the instance, which IS the hex ---- */
