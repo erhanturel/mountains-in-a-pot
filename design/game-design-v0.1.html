@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Mountains in a Pot — The Game, Step by Step (v0.1)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zilla+Slab:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  @page{size:A4;margin:18mm 17mm 20mm 17mm}
+  :root{--ink:#191e25;--soft:#3a424c;--muted:#5d666f;--faint:#8b939c;--line:#d2d8de;--line2:#e6eaee;
+    --accent:#a9762f;--accent-bg:#f4ecdc;--water:#2f6f9e;--water-bg:#e3eef5;--life:#4f8b3d;--life-bg:#e6f0df;
+    --ember:#c1541f;--ember-bg:#f8e7dc;--stone:#6b6470;--stone-bg:#ecebee}
+  *{box-sizing:border-box}
+  html,body{margin:0;background:#fff;color:var(--ink);font-family:"IBM Plex Sans",system-ui,Helvetica,Arial,sans-serif;
+    font-size:10.6pt;line-height:1.55}
+  h1,h2,h3,h4{font-family:"Zilla Slab",Georgia,"Times New Roman",serif;color:var(--ink);margin:0}
+  h1{font-size:30pt;font-weight:700;line-height:1.05;letter-spacing:-.01em;margin:6mm 0 4mm}
+  h2{font-size:19pt;font-weight:600;line-height:1.15;margin:0 0 3mm;page-break-after:avoid}
+  h2 .n{font-family:"IBM Plex Mono",monospace;font-size:10pt;color:var(--accent);margin-right:8px;vertical-align:2px}
+  h3{font-size:13pt;font-weight:600;margin:6mm 0 2mm;page-break-after:avoid}
+  h4{font-size:11pt;font-weight:600;margin:4mm 0 1.5mm;page-break-after:avoid}
+  p{margin:0 0 3mm;color:var(--soft)}
+  strong{color:var(--ink);font-weight:600}
+  em{font-style:normal;color:var(--accent);font-weight:500}
+  code{font-family:"IBM Plex Mono",Menlo,Consolas,monospace;font-size:.88em;background:#f1f3f5;border:1px solid var(--line2);
+    border-radius:3px;padding:0 4px;color:var(--ink)}
+  .eyebrow{font-family:"IBM Plex Mono",monospace;font-size:8pt;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);margin:0 0 2mm}
+  section{page-break-before:always;padding-top:2mm}
+  section.cont{page-break-before:auto}
+  .cover{page-break-before:auto;min-height:230mm;display:flex;flex-direction:column;justify-content:center}
+  .cover .kicker{font-family:"IBM Plex Mono",monospace;font-size:9pt;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+  .cover .lede{font-size:14pt;line-height:1.45;max-width:120mm;color:var(--soft)}
+  .cover .meta{margin-top:12mm;font-family:"IBM Plex Mono",monospace;font-size:8.5pt;color:var(--faint);line-height:1.8}
+  .box{border:1px solid var(--line);border-radius:6px;padding:4mm 5mm;margin:3mm 0 4mm;page-break-inside:avoid;background:#fff}
+  .box.gold{background:var(--accent-bg);border-color:var(--accent)}
+  .box.gold p:last-child,.box p:last-child{margin-bottom:0}
+  .box .tag{font-family:"IBM Plex Mono",monospace;font-size:7.5pt;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);margin:0 0 1.5mm}
+  .big{font-family:"Zilla Slab",Georgia,serif;font-size:15pt;line-height:1.3;color:var(--ink);font-weight:500}
+  .rules{border:1px solid var(--line);border-radius:6px;overflow:hidden;margin:3mm 0 4mm;page-break-inside:avoid}
+  .rules .r{display:grid;grid-template-columns:9mm 1fr;gap:3mm;padding:2.4mm 4mm;border-bottom:1px solid var(--line2);align-items:baseline}
+  .rules .r:last-child{border-bottom:none}
+  .rules .i{font-family:"IBM Plex Mono",monospace;color:var(--accent);font-weight:500}
+  .rules .t{margin:0}
+  table{border-collapse:collapse;width:100%;font-size:9.6pt;margin:2mm 0 4mm;page-break-inside:avoid}
+  th,td{text-align:left;padding:2mm 3mm;border-bottom:1px solid var(--line2);vertical-align:top}
+  thead th{font-family:"IBM Plex Mono",monospace;font-size:7.5pt;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);
+    font-weight:500;background:#f4f6f8;border-bottom:1px solid var(--line)}
+  td.k{font-family:"Zilla Slab",serif;font-weight:600;color:var(--ink);white-space:nowrap}
+  td.m{font-family:"IBM Plex Mono",monospace;white-space:nowrap;color:var(--accent)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:4mm;margin:2mm 0 4mm}
+  .card{border:1px solid var(--line);border-radius:6px;padding:3.5mm 4mm;page-break-inside:avoid}
+  .card h4{margin:0 0 1.5mm}
+  .card p{font-size:9.6pt;margin:0 0 1.5mm}
+  .card .sub{font-family:"IBM Plex Mono",monospace;font-size:7.5pt;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:0 0 1.5mm}
+  .card.w{border-left:3px solid var(--water)} .card.g{border-left:3px solid var(--life)}
+  .card.e{border-left:3px solid var(--ember)} .card.s{border-left:3px solid var(--stone)} .card.a{border-left:3px solid var(--accent)}
+  .steps{margin:2mm 0 4mm}
+  .step{display:grid;grid-template-columns:12mm 1fr;gap:4mm;padding:3mm 0;border-bottom:1px solid var(--line2);page-break-inside:avoid}
+  .step:last-child{border-bottom:none}
+  .step .num{font-family:"IBM Plex Mono",monospace;font-size:16pt;color:var(--accent);line-height:1}
+  .step h4{margin:0 0 1mm}
+  .step p{margin:0 0 1.5mm;font-size:9.8pt}
+  .step .out{font-family:"IBM Plex Mono",monospace;font-size:8pt;color:var(--muted)}
+  .step .out b{color:var(--accent);font-weight:500}
+  .pull{border-left:3px solid var(--accent);padding:1mm 0 1mm 5mm;margin:4mm 0;font-family:"Zilla Slab",Georgia,serif;
+    font-size:13pt;line-height:1.35;color:var(--ink);font-weight:500;max-width:135mm;page-break-inside:avoid}
+  figure{margin:3mm 0 4mm;page-break-inside:avoid}
+  figure img{width:100%;border:1px solid var(--line);border-radius:6px;display:block}
+  figcaption{font-size:8.8pt;color:var(--muted);margin-top:1.5mm}
+  .svgwrap{margin:3mm 0 4mm;page-break-inside:avoid}
+  .svgwrap svg{width:100%;height:auto;display:block}
+  ul{margin:0 0 3mm;padding-left:5mm;color:var(--soft)} li{margin:0 0 1mm}
+  .decide{display:grid;grid-template-columns:1fr;gap:2.5mm;margin:2mm 0 4mm}
+  .d{border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:0 6px 6px 0;padding:2.5mm 4mm;page-break-inside:avoid}
+  .d h4{margin:0 0 1mm} .d p{margin:0;font-size:9.6pt}
+  .d.q{border-left-color:var(--stone)}
+  .d .opt{font-family:"IBM Plex Mono",monospace;font-size:8.2pt;color:var(--muted);margin-top:1mm}
+  .d .opt b{color:var(--accent);font-weight:500}
+  .foot{font-family:"IBM Plex Mono",monospace;font-size:8pt;color:var(--faint);margin-top:6mm;border-top:1px solid var(--line);padding-top:2mm}
+  .toc{columns:2;column-gap:8mm;font-size:9.8pt}
+  .toc div{break-inside:avoid;padding:1mm 0;border-bottom:1px solid var(--line2);display:flex;gap:3mm}
+  .toc .n{font-family:"IBM Plex Mono",monospace;color:var(--accent);width:7mm;flex:none}
+  .kv{display:grid;grid-template-columns:34mm 1fr;gap:1.5mm 4mm;font-size:9.8pt;margin:2mm 0 3mm}
+  .kv .k{font-family:"IBM Plex Mono",monospace;font-size:8pt;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding-top:.6mm}
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <p class="kicker">Design document · v0.1 · plan before code</p>
+  <h1>Mountains in a Pot<br>The game, step by step</h1>
+  <p class="lede">A plain-language walk through the whole design — what the world is, what you do in it, what you win, and how we will build it in order. Written so that anyone on the team can read it cold, argue with it, and sign off before the next line of code.</p>
+  <div class="meta">
+    branch · claude/mountains-pot-design-jbdw7t (main + life)<br>
+    status · the water bench exists and is measured; life was returned today; nothing of the game layer is built yet<br>
+    sources · The Determinism Bet · Five Days to Steam · The Hand of Gaia · Inside the Pot · Where the Momentum Is · How Tiny Teams Win · The Water Codex<br>
+    date · 7 September 2026
+  </div>
+</div>
+
+<section>
+<p class="eyebrow">Contents</p>
+<h2>What is in here</h2>
+<div class="toc">
+  <div><span class="n">01</span>The game in one breath</div>
+  <div><span class="n">02</span>What exists today (the bench)</div>
+  <div><span class="n">03</span>The world: rock, water, soil, life</div>
+  <div><span class="n">04</span>Your four powers</div>
+  <div><span class="n">05</span>A run, step by step</div>
+  <div><span class="n">06</span>Time: Moons and Years</div>
+  <div><span class="n">07</span>Mana: the budget</div>
+  <div><span class="n">08</span>Bloom: the score</div>
+  <div><span class="n">09</span>Wonders: the multipliers</div>
+  <div><span class="n">10</span>Seed cards: what you sow</div>
+  <div><span class="n">11</span>Boons and the Spring shop</div>
+  <div><span class="n">12</span>Builds: how it all combines</div>
+  <div><span class="n">13</span>Cozy mode</div>
+  <div><span class="n">14</span>The look (Phase 0 beauty pass)</div>
+  <div><span class="n">15</span>The implementation plan</div>
+  <div><span class="n">16</span>Decisions taken, and what is still open</div>
+  <div><span class="n">17</span>Glossary</div>
+</div>
+
+<h3>How to read this</h3>
+<p>Sections 01–04 describe what is <strong>already true</strong> in the code. Sections 05–13 are the <strong>game we are about to build</strong>; every number in them is a first guess to be tuned by playing, and is flagged as such. Section 15 is the order we build in. Section 16 is the list of things you need to confirm or veto — that is the page to answer.</p>
+<div class="box gold">
+  <p class="tag">The razor, kept on the wall</p>
+  <p class="big">If a thing could be done by placing pre-made objects on a fixed map, we have slid into Islanders. Back up. The score must come from the world, never from the placement.</p>
+</div>
+</section>
+
+<section>
+<p class="eyebrow">01</p>
+<h2>The game in one breath</h2>
+<div class="box gold">
+  <p class="tag">The hook</p>
+  <p class="big">The only builder where you place nothing. You shape the ground, and a living world grows itself.</p>
+</div>
+<p>You have a small disc of bare rock — a <strong>pot</strong>. You can raise it, dig it, and hang rain over it. That is nearly all you can do. Water then finds its own way: it pools in the hollows you dug, runs off the hills you raised, and where it settles or flows, soil gathers and life takes root. <strong>You never paint a lake or plant a forest. You cause them.</strong></p>
+<p>The game around that toy is a <strong>run</strong>: eight Years in one pot. Each Year you spend a small budget of <strong>mana</strong> shaping the ground, then the Year ends in a <strong>Harvest</strong> where the world is scored by how much of it is alive — its <strong>Bloom</strong>. The Bloom you need rises every Year. Between Years, a <strong>Spring shop</strong> sells <strong>Boons</strong> (permanent bonuses) and <strong>Seed cards</strong> (new kinds of life), and those shape your <strong>build</strong>. Fall short of the Bloom you need and the run ends; reach Year 8 and you <em>behold</em> what you grew.</p>
+<p>That is it: <em>shape → the world responds → score what emerged → the bar rises → shop → shape again.</em> Islanders' skeleton, Balatro's spine, and a verb no one else has.</p>
+
+<h3>Three pillars every decision serves</h3>
+<div class="grid2">
+  <div class="card a"><h4>Cause, don't place</h4><p>You shape terrain. Water, soil and life are computed by the world, never dropped by you.</p></div>
+  <div class="card a"><h4>Plan, don't gamble</h4><p>The world is deterministic. The same ground always gives the same world; the preview cannot lie. Skill is foresight.</p></div>
+  <div class="card a"><h4>Grow, then behold</h4><p>Every run ends in a living world you made from bare rock. That is the felt moment and the trailer's last shot.</p></div>
+  <div class="card s"><h4>What we are not</h4><p>Not a mobile snack, not a $5 toy, not a random slot machine bolted to a world. Steam, ~$13, showcase-grade.</p></div>
+</div>
+</section>
+
+<section>
+<p class="eyebrow">02</p>
+<h2>What exists today: the bench</h2>
+<p>The bench is a single HTML file with a hex-grid simulation and a 3D renderer. It has <strong>no goal, no score and no failure</strong> — it exists to find out which mechanics are worth keeping. Everything below has been measured, not guessed.</p>
+<figure>
+  <img src="bench-life.png" alt="The bench: a lake in a dug bowl, a hill with a stream, slag fanning at its foot, and green life on the lake shore">
+  <figcaption>The bench today. A bowl dug two steps down holds a lake; a hill to the north-east sheds slag (brown) down a stream; a seed on the shore has spread into the green hexes. The Bloom counter reads 5.</figcaption>
+</figure>
+<div class="kv">
+  <div class="k">the board</div><div>a disc of hexagonal columns, radius 8 to 64 (217 to 12,481 hexes). Radius 12 (469 hexes) is the working size.</div>
+  <div class="k">stored per hex</div><div>the column of rock cells, the water standing on it, the loose slag and sand lying on it, and whether it is alive. Nothing else is remembered.</div>
+  <div class="k">derived every tick</div><div>how much water crossed each hex and through which of its six edges. Rivers are drawn from this.</div>
+  <div class="k">a tick</div><div>one step of the world. Water moves one hex per tick. A tick at radius 64 costs 4.4 ms; at radius 12 it is under 0.1 ms.</div>
+  <div class="k">deterministic</div><div>no randomness anywhere. The same clicks on the same board give the same world, to twelve decimals, every time.</div>
+  <div class="k">conserved</div><div>water is created only by rain and lost only over the edge. Rock lost to weathering equals slag on the board plus slag gone over the edge. Measured over hundreds of boards.</div>
+  <div class="k">saved</div><div>a board is a file you can hand to someone. Undo is snapshots. Size is fixed per world.</div>
+</div>
+<p>What was deliberately stripped out while the water was built and is <strong>still out</strong>: a sea, a pot wall, moisture and heat auras, lava and basalt, and the old instant-solve model. Life came back today, on the water's terms (section 03).</p>
+</section>
+
+<section>
+<p class="eyebrow">03</p>
+<h2>The world: rock, water, soil, life</h2>
+<p>This is the whole simulation. If a mechanic cannot be stated as one of these rules, it is a new rule and gets decided, not drifted into.</p>
+
+<h3>Rock</h3>
+<p>Every hex is a stack of slabs. A slab is 70 units tall; six slabs make one <strong>elevation step</strong> (420 units). Two materials matter: <strong>bedrock</strong>, the floor, which nothing in the world can wear away; and <strong>rock</strong>, which weathers. A cloud is also a thing in the stack, hanging high above the ground.</p>
+
+<h3>Water — five rules</h3>
+<div class="rules">
+  <div class="r"><span class="i">1</span><p class="t">A rain tile drops 70 units of water on the column under it, every tick. Two stacked rain tiles drop twice as much.</p></div>
+  <div class="r"><span class="i">2</span><p class="t">One elevation step is 420 units; one drawn water tile is 70. Water under 70 units is there but not drawn.</p></div>
+  <div class="r"><span class="i">3</span><p class="t">A hex's height is its ground plus the water standing on it.</p></div>
+  <div class="r"><span class="i">4</span><p class="t">A hex with water pours into whichever neighbours stand lower, until it and all of them are at one height.</p></div>
+  <div class="r"><span class="i">5</span><p class="t">Off the edge of the disc is lower than anything. Water that reaches the rim leaves and is gone.</p></div>
+</div>
+<p>Consequences you can rely on: a basin fills to its brim and then overflows; a lake stands level; a dug channel becomes a river; water on flat ground spreads into an invisible film; the outer ring always drains. A board with no cloud on it is perfectly still.</p>
+
+<h3>Soil — rock becomes slag, slag becomes sand</h3>
+<p>Exposed rock slowly weathers into <strong>slag</strong>, loose rubble lying on the column. Slag <strong>rides the water</strong>: it moves through the same edges the water moved through, and only when the water is strong enough (moving water down a drop). Where the water slows or the ground flattens, slag stays — so fans form at the foot of slopes and lakes silt up, with no deposition rule needed. Slag that travels grinds into <strong>sand</strong>, which is finer and moves more easily. Grit dragged across bare rock cuts it (abrasion), which is how a river carves a valley. A blanket of slag shields the rock under it, so a mountain with nothing to carry its rubble away stops weathering: <em>to lower a mountain you have to route water over it.</em></p>
+
+<h3>Life — three rules</h3>
+<div class="rules">
+  <div class="r"><span class="i">6</span><p class="t">A hex is <strong>habitable</strong> when it has a course of loose ground to root in (70 units of slag or sand), is not drowned (under a drawn water tile), and has water in reach: a <strong>shore</strong> (a drowned neighbour) or a <strong>bank</strong> (a river edge on it or beside it).</p></div>
+  <div class="r"><span class="i">7</span><p class="t">Life spreads one hex a tick, to any habitable hex beside a living one. A hex that stops being habitable dies that tick.</p></div>
+  <div class="r"><span class="i">8</span><p class="t">Life binds the ground it stands on: a living hex sheds no soil and weathers no rock.</p></div>
+</div>
+<p>Life asks for <strong>water you can see</strong> — a lake tile or a river — not the invisible film. That is why green appears along shores and banks and nowhere else, which is exactly the picture we want. A <strong>seed</strong> is the only thing you contribute: it roots one hex if the world has made that hex habitable, and does nothing otherwise. Nothing germinates on its own. <em>Where you sow is a decision.</em></p>
+<div class="box">
+  <p class="tag">Measured today</p>
+  <p>A settled lake with a course of soil on its 12-hex rim, one seed: alive per tick 3, 5, 7, 9, 11, 12. It holds for 600 ticks without a flicker, and through the rain coming back. Roots keep 169 of 210 units of slag that a bare slab lost entirely. Rock under roots does not weather at ten times the default rate. With no seed sown, 40 of 40 random boards are bit-identical to the previous build.</p>
+</div>
+</section>
+
+<section>
+<p class="eyebrow">04</p>
+<h2>Your four powers</h2>
+<p>Every power is aimed with a <strong>brush</strong> (1, 7, 19 or 37 hexes) and a <strong>depth</strong> (1, 2, 3, 6 or 12 slabs). Every click is one tick of the world — the weather runs while you sculpt.</p>
+<table>
+  <thead><tr><th>Power</th><th>What it does</th><th>What it is for</th></tr></thead>
+  <tbody>
+    <tr><td class="k">Uplift</td><td>Adds slabs on top of whatever the column already has — rock on rock, bedrock on bedrock.</td><td>Hills, ridges, dams, walls. Relief is where soil is born.</td></tr>
+    <tr><td class="k">Subduct</td><td>Takes slabs off the top. Never touches the sky (you can dig under a cloud).</td><td>Basins for lakes, channels for rivers, an outlet to drain a lake.</td></tr>
+    <tr><td class="k">Place</td><td>Lays down what the palette says: rock, bedrock, slag, sand, a cloud, or a seed.</td><td>Rain is the only water source. Slag is soil you can lay by hand (it costs mana; the world makes it for free, slowly).</td></tr>
+    <tr><td class="k">Erase</td><td>Takes away only the palette material from the top. Erase rock and the bedrock under it is safe; erase a cloud and the ground is untouched.</td><td>Stopping the rain. Clearing a seed. Undoing a placement precisely.</td></tr>
+  </tbody>
+</table>
+<p>Two arrangements were tried and rejected on the bench and stay rejected: a cloud "power" that toggled (clicking three-then-three gave three, not six), and Subduct removing clouds first (you could not dig under rain). A rain tile is a material; Subduct means one thing.</p>
+<div class="box">
+  <p class="tag">Why this matters for the game</p>
+  <p>These four verbs and the eight rules above are the entire surface the player learns. Everything in sections 05–12 is framing, budget and scoring around them. <strong>No new world rules are proposed in this document.</strong> Richness has to come from how few pieces interact, never from adding pieces.</p>
+</div>
+</section>
+
+<section>
+<p class="eyebrow">05</p>
+<h2>A run, step by step</h2>
+<p>A run is <strong>one pot, eight Years</strong>. The same board grows for the whole run; it is not a chain of separate islands. Here is one Year, in order.</p>
+<div class="svgwrap">
+<svg viewBox="0 0 760 250" xmlns="http://www.w3.org/2000/svg" font-family="IBM Plex Sans, Helvetica, Arial, sans-serif">
+  <defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5 0 10z" fill="#a9762f"/></marker></defs>
+  <g font-size="12" fill="#191e25">
+    <rect x="20" y="40" width="130" height="70" rx="8" fill="#f4ecdc" stroke="#a9762f"/>
+    <text x="85" y="66" text-anchor="middle" font-weight="600">1 · Shape</text>
+    <text x="85" y="84" text-anchor="middle" font-size="10" fill="#5d666f">12 Moons, spend mana</text>
+    <text x="85" y="98" text-anchor="middle" font-size="10" fill="#5d666f">the world runs as you act</text>
+    <rect x="200" y="40" width="130" height="70" rx="8" fill="#e6f0df" stroke="#4f8b3d"/>
+    <text x="265" y="66" text-anchor="middle" font-weight="600">2 · Harvest</text>
+    <text x="265" y="84" text-anchor="middle" font-size="10" fill="#5d666f">count Bloom</text>
+    <text x="265" y="98" text-anchor="middle" font-size="10" fill="#5d666f">living hexes × Wonders</text>
+    <rect x="380" y="40" width="130" height="70" rx="8" fill="#ecebee" stroke="#6b6470"/>
+    <text x="445" y="66" text-anchor="middle" font-weight="600">3 · The bar</text>
+    <text x="445" y="84" text-anchor="middle" font-size="10" fill="#5d666f">Bloom ≥ target?</text>
+    <text x="445" y="98" text-anchor="middle" font-size="10" fill="#5d666f">no → the pot rests (run ends)</text>
+    <rect x="560" y="40" width="130" height="70" rx="8" fill="#e3eef5" stroke="#2f6f9e"/>
+    <text x="625" y="66" text-anchor="middle" font-weight="600">4 · Spring</text>
+    <text x="625" y="84" text-anchor="middle" font-size="10" fill="#5d666f">earn Dew, shop for</text>
+    <text x="625" y="98" text-anchor="middle" font-size="10" fill="#5d666f">Boons and Seed cards</text>
+    <line x1="150" y1="75" x2="198" y2="75" stroke="#a9762f" stroke-width="1.5" marker-end="url(#ar)"/>
+    <line x1="330" y1="75" x2="378" y2="75" stroke="#a9762f" stroke-width="1.5" marker-end="url(#ar)"/>
+    <line x1="510" y1="75" x2="558" y2="75" stroke="#a9762f" stroke-width="1.5" marker-end="url(#ar)"/>
+    <path d="M625 110 V160 H85 V112" fill="none" stroke="#a9762f" stroke-width="1.5" marker-end="url(#ar)"/>
+    <text x="355" y="178" text-anchor="middle" font-size="11" fill="#a9762f">next Year · the target rises · the same pot, one Year older</text>
+    <text x="355" y="222" text-anchor="middle" font-size="11" fill="#5d666f">after Year 8 · Behold: the diorama, photo mode, the run's story</text>
+  </g>
+</svg>
+</div>
+<div class="steps">
+  <div class="step"><div class="num">1</div><div><h4>Shape</h4><p>The Year has twelve <strong>Moons</strong>. Each Moon you either <strong>act</strong> (a power click, which costs mana) or <strong>rest</strong> (let the world run, free). Either way the world advances twelve ticks — enough for water to walk twelve hexes and life to spread twelve hexes along a shore. You can see the Bloom counter the whole time; there is no hidden information.</p><p class="out">reads the world · spends <b>mana</b> · spends <b>Moons</b></p></div></div>
+  <div class="step"><div class="num">2</div><div><h4>Harvest</h4><p>When the twelfth Moon is spent, the world is scored exactly as it stands. No extra simulation, no hidden roll: what you see is what you score. Bloom = living hexes × (1 + the sum of your Wonders). Section 08 has the arithmetic.</p><p class="out">produces <b>Bloom</b></p></div></div>
+  <div class="step"><div class="num">3</div><div><h4>The bar</h4><p>Each Year has a target Bloom. Meet it and you continue. Miss it and <strong>the pot rests</strong>: the run ends on the Behold screen, gently, with what you grew. There is no other punishment in the game.</p><p class="out">the only fail state</p></div></div>
+  <div class="step"><div class="num">4</div><div><h4>Spring</h4><p>You earn <strong>Dew</strong> from how far you cleared the bar. The shop offers three Boons and two Seed cards; buy what you can afford, skip what you do not want. Then the next Year begins on the same pot, with a higher target.</p><p class="out">produces a <b>build</b></p></div></div>
+</div>
+<p class="pull">Eight Years, one pot. Year 1 is a puddle and a patch of moss. Year 8 is a world.</p>
+</section>
+
+<section>
+<p class="eyebrow">06</p>
+<h2>Time: Moons and Years</h2>
+<p>The bench runs one tick per click and lets you play time freely. The game gives time a shape, because a score needs a moment to be counted at.</p>
+<div class="kv">
+  <div class="k">tick</div><div>one step of the simulation. Water moves one hex; life spreads one hex.</div>
+  <div class="k">Moon</div><div><strong>12 ticks.</strong> Every action you take, and every rest you choose, advances the world one Moon. Twelve is chosen so that one Moon is "enough for something to happen": a shore of twelve hexes greens in one Moon from one seed; a cloud fills a nearby basin in one or two.</div>
+  <div class="k">Year</div><div><strong>12 Moons</strong>, then Harvest. About 150 ticks of world per Year. At the bench's default weathering (one slab per thousand ticks) rock barely weathers in a Year, so in the game <strong>weathering runs 5× the bench default</strong> — a slab in two Years, so soil visibly appears from Year 2 on high ground you raised in Year 1.</div>
+  <div class="k">run</div><div>8 Years, about 1,200 ticks, and about 40 minutes of play at a thoughtful pace. Long enough to feel a world age; short enough to finish in a sitting.</div>
+  <div class="k">while you think</div><div>nothing moves. The world advances only when you spend a Moon. A cozy player can stare for an hour.</div>
+</div>
+<div class="box">
+  <p class="tag">Flagged: numbers to tune</p>
+  <p>12 ticks a Moon and 12 Moons a Year are the first guess. The test is whether a Year <em>feels</em> like a Year: a change you make early should be visibly answered by the world before Harvest, and a change in the last Moon should feel like a gamble on foresight rather than a nothing. We will tune by playing, not by argument.</p>
+</div>
+</section>
+
+<section>
+<p class="eyebrow">07</p>
+<h2>Mana: the budget</h2>
+<p>Mana is what makes a decision cost something. In the fiction it is what Gaia grants her hand each Year. In the design it is Islanders' limited supply of buildings, and it is the reason a wide brush is a real choice rather than the obvious one.</p>
+<div class="kv">
+  <div class="k">per Year</div><div><strong>10 mana</strong> at the start of every Year. It does not carry over — spend it or lose it. (Boons raise it.)</div>
+  <div class="k">an action's cost</div><div><strong>brush cost × depth cost</strong>, per the tables below. The smallest action costs 1; the largest (37 hexes, 12 slabs) costs 12, more than a Year's grant, so it needs a build.</div>
+  <div class="k">resting</div><div>free. Passing a Moon costs no mana, only time.</div>
+</div>
+<div class="grid2">
+  <div>
+    <table><thead><tr><th>Brush</th><th>Hexes</th><th>Cost</th></tr></thead><tbody>
+      <tr><td class="k">1</td><td>1</td><td class="m">×1</td></tr>
+      <tr><td class="k">2</td><td>7</td><td class="m">×2</td></tr>
+      <tr><td class="k">3</td><td>19</td><td class="m">×3</td></tr>
+      <tr><td class="k">4</td><td>37</td><td class="m">×4</td></tr>
+    </tbody></table>
+  </div>
+  <div>
+    <table><thead><tr><th>Depth</th><th>Slabs</th><th>Cost</th></tr></thead><tbody>
+      <tr><td class="k">a course</td><td>1, 2 or 3</td><td class="m">×1</td></tr>
+      <tr><td class="k">a step</td><td>6</td><td class="m">×2</td></tr>
+      <tr><td class="k">two steps</td><td>12</td><td class="m">×3</td></tr>
+    </tbody></table>
+  </div>
+</div>
+<table><thead><tr><th>Special cases</th><th>Cost</th><th>Why</th></tr></thead><tbody>
+  <tr><td class="k">Place a cloud</td><td class="m">3 per rain tile</td><td>Rain is the only source of water and the most powerful thing on the board. Stacking clouds multiplies both rain and cost.</td></tr>
+  <tr><td class="k">Erase a cloud</td><td class="m">0</td><td>Stopping the rain should never be a trap.</td></tr>
+  <tr><td class="k">Place slag or sand</td><td class="m">brush × depth, as rock</td><td>Hand-laid soil is allowed but priced like earthwork. The world makes soil for free; you pay for impatience.</td></tr>
+  <tr><td class="k">Sow a seed</td><td class="m">1, and a Seed card in hand</td><td>Cheap, because it only works where the world already agrees.</td></tr>
+  <tr><td class="k">Erase a seed</td><td class="m">0</td><td>Clearing life is never something you should hesitate over.</td></tr>
+</tbody></table>
+<p>The larger the brush, the cheaper each hex: 37 hexes for 4 mana against 1 for 1. That is on purpose — bold earthworks are what make interesting water, and we want to reward them, not tax them. The counterweight is that a bold move is a commitment you cannot afford to undo.</p>
+<div class="box"><p class="tag">Flagged</p><p>10 mana a Year and the cost tables are a first guess. The check: a first-Year player should be able to dig one basin, hang one cloud and sow one seed with a little to spare (1 + 3 + 1 = 5, plus a hill for 2), and a Year-6 player with two mana Boons should be able to do one grand thing.</p></div>
+</section>
+
+<section>
+<p class="eyebrow">08</p>
+<h2>Bloom: the score</h2>
+<div class="box gold"><p class="tag">The formula</p><p class="big">Bloom = living hexes × (1 + sum of Wonder bonuses)</p></div>
+<p>Two halves, like chips and mult. The first half is honest counting: how many hexes are alive at Harvest. The second half rewards the <em>shape</em> of the world you grew, and that is where builds live. Both halves are read straight off the world; nothing you placed scores by itself.</p>
+
+<h3>A worked example</h3>
+<table><thead><tr><th>Year 3, at Harvest</th><th>Value</th></tr></thead><tbody>
+  <tr><td>Living hexes</td><td class="m">22</td></tr>
+  <tr><td>Wonder · The Lake (a still body of 3 or more)</td><td class="m">+0.5</td></tr>
+  <tr><td>Wonder · The River (four linked river tiles)</td><td class="m">+0.5</td></tr>
+  <tr><td>Wonder · The Ring of Life (a lake fully ringed by life)</td><td class="m">+1.0</td></tr>
+  <tr><td>Multiplier</td><td class="m">1 + 2.0 = 3.0</td></tr>
+  <tr><td class="k">Bloom</td><td class="m">22 × 3.0 = 66</td></tr>
+  <tr><td>Year 3 target</td><td class="m">25</td></tr>
+  <tr><td>Surplus</td><td class="m">41 → Dew earned 2 + 41 ÷ 5 = 10 (cap 10)</td></tr>
+</tbody></table>
+
+<h3>The rising bar</h3>
+<table><thead><tr><th>Year</th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th><th>7</th><th>8</th></tr></thead><tbody>
+  <tr><td class="k">Target Bloom</td><td class="m">8</td><td class="m">15</td><td class="m">25</td><td class="m">40</td><td class="m">60</td><td class="m">90</td><td class="m">130</td><td class="m">180</td></tr>
+  <tr><td class="k">Roughly means</td><td>a puddle and a patch</td><td>a shore</td><td>a lake with a shore and a river</td><td>two bodies, one Wonder</td><td>a build forming</td><td>a valley system</td><td>most of the pot</td><td>a world</td></tr>
+</tbody></table>
+<p>Year 8's target of 180 on a 469-hex pot is 60 living hexes at ×3 — a real world, not a green disc. The curve rises about ×1.5 a Year, and a build that only counts hexes (no Wonders) stalls around Year 5. That is the intended pressure toward shape.</p>
+
+<h3>Dew — the shop money</h3>
+<div class="kv">
+  <div class="k">earned at Harvest</div><div>2 + (surplus over the target ÷ 5), rounded down, capped at 10.</div>
+  <div class="k">interest</div><div>+1 Dew for every 5 Dew you carry into Spring, up to +3. Saving is a strategy; hoarding is not.</div>
+  <div class="k">spent on</div><div>Boons (4–8 Dew) and Seed cards (2–4 Dew). Section 11.</div>
+</div>
+<div class="box"><p class="tag">Flagged</p><p>Every number on this page is a first guess. The <em>shape</em> is not: counting × shape, a rising bar, surplus becoming shop money.</p></div>
+</section>
+
+<section>
+<p class="eyebrow">09</p>
+<h2>Wonders: the multipliers</h2>
+<p>A Wonder is a thing the world can be, detected from the world's own state at Harvest. They are the Water Codex's phenomena given a number. Each one you have at Harvest adds its bonus to the multiplier. Having a Wonder for the first time also opens its Codex page — the cozy discovery layer and the score layer are the same list.</p>
+<table><thead><tr><th>Wonder</th><th>What it is, in plain words</th><th>How the game detects it</th><th>Bonus</th></tr></thead><tbody>
+  <tr><td class="k">The Lake</td><td>Still water resting in a basin, three hexes or more</td><td>a connected group of ≥3 drowned hexes with no flow</td><td class="m">+0.5</td></tr>
+  <tr><td class="k">The Great Lake</td><td>A sea in a pot</td><td>as the Lake, ≥12 hexes (replaces it)</td><td class="m">+1.0</td></tr>
+  <tr><td class="k">The River</td><td>A channel that carries water tile after tile</td><td>a chain of ≥4 hexes each sending ≥ a river edge to the next</td><td class="m">+0.5</td></tr>
+  <tr><td class="k">The Waterfall</td><td>A river spilling over a real cliff</td><td>a river tile whose downstream drop is ≥2 steps</td><td class="m">+0.5</td></tr>
+  <tr><td class="k">The Fork</td><td>One hex sends its water two ways</td><td>≥2 river edges leaving one hex</td><td class="m">+0.25</td></tr>
+  <tr><td class="k">The Delta</td><td>A river fanning into the edge of the pot</td><td>a fork within 2 hexes of the rim with ≥2 exits to the void</td><td class="m">+0.75</td></tr>
+  <tr><td class="k">The Island</td><td>Dry land ringed entirely by water</td><td>a dry group whose every neighbour is drowned</td><td class="m">+1.0</td></tr>
+  <tr><td class="k">The Ring of Life</td><td>A lake wholly encircled by living shore</td><td>a Lake all of whose rim hexes are alive</td><td class="m">+1.0</td></tr>
+  <tr><td class="k">The Grove</td><td>A living patch that remembers itself</td><td>a connected living group of ≥7 hexes (each such group)</td><td class="m">+0.25 each</td></tr>
+  <tr><td class="k">The Terrace</td><td>Life holding soil on a slope bare rock could not</td><td>≥5 living hexes with a higher and a lower neighbour</td><td class="m">+0.5</td></tr>
+  <tr><td class="k">The Highland Meadow</td><td>Life coaxed onto high ground</td><td>≥3 living hexes at height ≥3</td><td class="m">+0.5</td></tr>
+  <tr><td class="k">The Watershed</td><td>One cloud's water reaching two edges</td><td>one catchment with ≥2 distinct outlets to the void</td><td class="m">+0.75</td></tr>
+</tbody></table>
+<p>Twelve to start; the list is open-ended by design. Every detector reads only what the simulation already stores or derives, so the world awards them itself — no hand-authored levels, no scripting. Determinism makes the award trustworthy: the same pot always has the same Wonders.</p>
+<div class="box"><p class="tag">Design note</p><p>Wonders are deliberately <strong>about water and shape</strong>, not about life, except where life meets water (the Ring, the Terrace, the Meadow). The count half of the score is life; the shape half is the world. Keeping them separate is what stops the optimal play from being "cover everything in moss".</p></div>
+</section>
+
+<section>
+<p class="eyebrow">10</p>
+<h2>Seed cards: what you sow</h2>
+<p>The one decision the bench already asks — <em>where do you sow?</em> — becomes two: <em>where, and what?</em> A Seed card is a kind of life with its own habitability rule and its own worth. Your <strong>deck</strong> starts with three cards; each Year you draw a <strong>hand</strong> of three, and a sown seed spends the card until next Year. The shop sells new ones. This is the "card" in the design and it is squarely on the right side of the razor: a seed only takes where the world makes room for it.</p>
+<div class="grid2">
+  <div class="card g"><p class="sub">starter · ×1</p><h4>Moss</h4><p><strong>Roots on bare rock</strong> — needs water in reach but no soil. Worth <strong>½</strong> a hex. Does not bind soil. The first green you will ever see, and never the last.</p></div>
+  <div class="card g"><p class="sub">starter · ×2</p><h4>Grass</h4><p>The rule in section 03 exactly: a course of soil, not drowned, a shore or a bank. Worth <strong>1</strong>. Binds soil. The backbone of every build.</p></div>
+  <div class="card w"><p class="sub">shop · 2 Dew</p><h4>Reed</h4><p>Lives <strong>up to one water tile deep</strong> on soil — a wetland. Worth 1. Turns a lake's shallow margin into life and enables the Ring of Life on lakes with no dry rim.</p></div>
+  <div class="card w"><p class="sub">shop · 3 Dew</p><h4>Willow</h4><p><strong>Banks only</strong> (a river edge on it or beside it). Worth 1. Spreads <strong>two hexes a tick along the river</strong>, and holds slag twice as firmly. The river build's engine.</p></div>
+  <div class="card s"><p class="sub">shop · 3 Dew</p><h4>Pine</h4><p>Needs soil and <strong>height ≥ 2</strong>; spreads only every other Moon. Worth <strong>2</strong>. The Highland Meadow's tree, and the reason to raise land before you water it.</p></div>
+  <div class="card w"><p class="sub">shop · 4 Dew</p><h4>Lotus</h4><p>Lives <strong>on still water</strong> instead of ground (drowned, no flow). Worth 1. A lake stops being empty space in the count. Dies the moment the lake moves — an outlet kills a lotus field.</p></div>
+</div>
+<p>Six kinds is the whole roster for the first playable; three (Moss, Grass, Reed) are enough for the vertical slice. Each species is <strong>one line of rule</strong> in the habitability check, not a new system — the same eight rules with one clause changed. That is the constraint on adding more: if a species needs a rule the world does not already compute, it does not go in.</p>
+<div class="box"><p class="tag">Decision · cards are seeds, not powers</p><p>The alternative — a hand of shaping cards (Uplift ×7, Cloud, …) — was considered and set aside. It fights "free-shape": you should be able to dig <em>this</em> hex now. Seeds give the deck-building lever without taking the sculpting away, and they are the only card that passes the razor cleanly.</p></div>
+</section>
+
+<section>
+<p class="eyebrow">11</p>
+<h2>Boons and the Spring shop</h2>
+<p>A Boon is a permanent change to the rules of <em>your</em> run. Balatro's Joker; Gaia's gift. Three are offered each Spring, from a pool, chosen by a seeded shuffle so the same run seed always shows the same shop. You may hold at most <strong>five</strong>. The first twelve:</p>
+<table><thead><tr><th>Boon</th><th>What it changes</th><th>The build it feeds</th><th>Dew</th></tr></thead><tbody>
+  <tr><td class="k">Monsoon</td><td>Every rain tile drops 1.5× the rain.</td><td>wet · big lakes fast</td><td class="m">5</td></tr>
+  <tr><td class="k">Wellspring</td><td>+3 mana every Year.</td><td>any</td><td class="m">6</td></tr>
+  <tr><td class="k">Long Summer</td><td>+3 Moons every Year (15 instead of 12).</td><td>slow builds · Pine</td><td class="m">5</td></tr>
+  <tr><td class="k">Deep Roots</td><td>Life survives one water tile of flooding.</td><td>lake · flood-and-drain</td><td class="m">4</td></tr>
+  <tr><td class="k">Basalt Heart</td><td>Uplift and Subduct cost one step less (a step costs ×1, two steps ×2).</td><td>earthworks · mountain</td><td class="m">6</td></tr>
+  <tr><td class="k">Beaver</td><td>Slag carried by a river is dropped on its banks instead of carried on.</td><td>river · Willow</td><td class="m">5</td></tr>
+  <tr><td class="k">Silt</td><td>Sand counts double as soil (half a course is enough).</td><td>delta · fan</td><td class="m">4</td></tr>
+  <tr><td class="k">Terraces</td><td>Every Terrace Wonder is worth +1.0 instead of +0.5.</td><td>highland</td><td class="m">6</td></tr>
+  <tr><td class="k">Lake Heart</td><td>Every Lake and Great Lake is worth +0.5 more.</td><td>lake</td><td class="m">6</td></tr>
+  <tr><td class="k">Migrating Birds</td><td>Each Spring, the habitable hex farthest from any life is sown with Grass for free.</td><td>spread · any</td><td class="m">4</td></tr>
+  <tr><td class="k">Gaia's Patience</td><td>Targets rise by ×1.35 a Year instead of ×1.5.</td><td>cozy-leaning runs</td><td class="m">8</td></tr>
+  <tr><td class="k">Old Growth</td><td>Life that has stood for three Years or more counts double.</td><td>patient builds</td><td class="m">7</td></tr>
+</tbody></table>
+<div class="box"><p class="tag">Two things to notice</p><p><strong>No Boon adds randomness.</strong> "Migrating Birds" picks the farthest hex, not a random one. <strong>One Boon needs new state</strong>: Old Growth needs each living hex to remember how many Years it has stood, which the bench does not store. It is listed so that the cost is visible; it is the last one we build, if at all.</p></div>
+<h3>The shop, step by step</h3>
+<div class="steps">
+  <div class="step"><div class="num">1</div><div><h4>Harvest is shown</h4><p>The Bloom arithmetic, line by line, on the diorama. Which Wonders fired, which just missed. This screen is the teacher.</p></div></div>
+  <div class="step"><div class="num">2</div><div><h4>Dew is counted</h4><p>Base 2, plus surplus, plus interest. Shown as a sum, not a number.</p></div></div>
+  <div class="step"><div class="num">3</div><div><h4>Three Boons and two Seed cards</h4><p>Buy any, skip any. A <strong>reroll</strong> costs 2 Dew. Nothing is timed.</p></div></div>
+  <div class="step"><div class="num">4</div><div><h4>Next Year</h4><p>Mana refills, a hand of three seeds is drawn, the target is shown, and the pot is exactly where you left it.</p></div></div>
+</div>
+</section>
+
+<section>
+<p class="eyebrow">12</p>
+<h2>Builds: how it all combines</h2>
+<p>A build is not a menu you pick from. It is what happens when a few Boons, a few seeds and the shape you have been carving start to agree with each other. Four that fall out of the pieces above:</p>
+<div class="grid2">
+  <div class="card w"><h4>The Lake build</h4><p>Dig one deep basin early; Monsoon fills it fast; Reed rings its shallows, Lotus covers its face, Grass its rim. Ring of Life + Great Lake + Lake Heart. Fragile: an outlet, or a Year of drought, unmakes it.</p></div>
+  <div class="card e"><h4>The River build</h4><p>A long channel from a high cloud to the rim. Willow runs its banks two hexes a Moon; Beaver drops slag on those banks so they stay habitable; Waterfall, Fork and Delta stack. Cheap in mana, greedy in Moons.</p></div>
+  <div class="card s"><h4>The Highland build</h4><p>Raise a massif in Year 1 and let it weather; Pine on the slopes, Terraces on the shoulders, tarns in the folds. Basalt Heart makes it affordable; Long Summer gives the slow Pine time. Scores late, scores big.</p></div>
+  <div class="card g"><h4>The Sprawl build</h4><p>Many small lakes, Grass everywhere, Migrating Birds seeding the far corners, Wellspring paying for the digging. Wins on count, weak on Wonders; stalls near Year 5 unless it finds a shape.</p></div>
+</div>
+<p>The three sources of variety the design plan asked for are all here: <strong>situation</strong> (the starting pot — a seeded, deterministic shape: a few hills, a hollow, some rubble), <strong>build</strong> (Boons and seeds), and <strong>goal</strong> (which Wonders you chase to clear the bar). Every run is different; no run is random once it has begun.</p>
+<p class="pull">Could any of these be done by placing pre-made objects on a fixed map? No. Every one of them is a shape the water agrees with, or it is nothing.</p>
+</section>
+
+<section>
+<p class="eyebrow">13</p>
+<h2>Cozy mode</h2>
+<p>Cozy is a <strong>mode</strong>, not the spine. It is the same game with the pressure removed, for the player who wants the toy, the Codex and the diorama, and it is also our on-ramp and screenshot engine.</p>
+<div class="kv">
+  <div class="k">no bar</div><div>Harvest still happens and Bloom is still counted, but nothing ends. Years are optional milestones.</div>
+  <div class="k">no clock</div><div>Moons are unlimited. Rest as long as you like.</div>
+  <div class="k">generous mana</div><div>20 a Year, and it carries over.</div>
+  <div class="k">the shop is a menu</div><div>Every Boon and seed is available; Dew still counts, as a gentle pacing.</div>
+  <div class="k">the Codex</div><div>The Wonders list becomes a field notebook that fills in as you discover things. Fifteen water phenomena from the Water Codex, plus the life ones above.</div>
+  <div class="k">Requests</div><div>Optional prompts ("bring water to the marked edge", "make a lake of six") — sim-validated, no fail, one at a time. From the Water Codex, unchanged.</div>
+</div>
+<p>Cozy mode ships in the demo. It is the mode a jury member will open first, and the one that makes the GIF.</p>
+</section>
+
+<section>
+<p class="eyebrow">14</p>
+<h2>The look: the Phase 0 beauty pass</h2>
+<p>The art budget is a palette, a light, a camera and a post-process — the four things a programmer controls, and the four things Tiny Glade and Townscaper won with. No bought assets touch the hexes, the water or the terrain: they are the identity.</p>
+<div class="steps">
+  <div class="step"><div class="num">1</div><div><h4>Lock the camera</h4><p>A diorama orbit: pitch held between about 30° and 50° above the table, yaw and zoom free, orthographic by default. Every angle is a good angle and the hex grid reads from all sides.</p><p class="out">exists today as a free orbit · <b>one constraint to add</b></p></div></div>
+  <div class="step"><div class="num">2</div><div><h4>One palette</h4><p>Eight to twelve warm, harmonious colours, and every material painted from them: two stone ramps (bedrock cool, rock warm), slag, sand, water, river, cloud, two greens for life, a dusk background. Written down once and used everywhere.</p><p class="out"><b>biggest single free upgrade</b></p></div></div>
+  <div class="step"><div class="num">3</div><div><h4>One light</h4><p>A warm sun with soft shadows raking across the hexes (the shadow map exists), a cool-warm hemisphere for sky and bounce, a faint fill. The sun stays a hand-set viewing control, never tied to the clock.</p><p class="out">exists · <b>retune colours and strengths</b></p></div></div>
+  <div class="step"><div class="num">4</div><div><h4>One post-process</h4><p>A single full-screen shader written by us (no library): warm colour grade, a soft vignette, a gentle bloom on the water, and a tilt-shift blur that sells the miniature. Toggleable from View so the bench can compare.</p><p class="out">new · <b>about 150 lines</b></p></div></div>
+  <div class="step"><div class="num">5</div><div><h4>Later: the water shader</h4><p>Depth-graded colour, a slow ripple, foam where a river meets a lake. Phase 1, after the game layer exists; the hero visual for the trailer.</p><p class="out">parked</p></div></div>
+</div>
+<p>Everything here is reversible and lives entirely below the simulation. It can be done in a day and it is scheduled as step 2 of the plan because the game-layer screens (Harvest, Spring) need to be designed on the real look, not the bench's.</p>
+</section>
+
+<section>
+<p class="eyebrow">15</p>
+<h2>The implementation plan</h2>
+<p>Ten steps, each one small, each ending in something you can play and a number we can measure. We stop after every step and play it before the next. The ordering is a dependency chain: each step needs the one before it and nothing after it.</p>
+<div class="steps">
+  <div class="step"><div class="num">1</div><div><h4>Life on the water branch — done</h4><p>Rules 6–8, seed on the palette, Bloom counter. Measured and pushed today.</p><p class="out">proves · <b>life reads from water and soil without an aura</b> · status <b>done</b></p></div></div>
+  <div class="step"><div class="num">2</div><div><h4>Phase 0 beauty pass</h4><p>Section 14, items 1–4. Screenshot before and after at radius 12 and 36.</p><p class="out">proves · <b>the look is ours</b> · about <b>1 day</b></p></div></div>
+  <div class="step"><div class="num">3</div><div><h4>Harvest: Bloom and Wonders</h4><p>The twelve detectors, a Harvest readout showing the arithmetic, a "Harvest now" button on the bench. No Years yet — this is the bench with a score you can read at any moment. This is the reversible Step-1 experiment from the strategy note: <em>is beating your own Bloom fun on this sim?</em></p><p class="out">proves · <b>the score comes from the world</b> · about <b>2 days</b> · gate: <b>go / no-go</b></p></div></div>
+  <div class="step"><div class="num">4</div><div><h4>Moons, Years, mana, the bar</h4><p>Section 05–08: the Year loop, mana costs, targets, the pot resting. No shop yet; Dew is counted and shown but buys nothing. Play three full runs.</p><p class="out">proves · <b>the loop has tension</b> · about <b>2 days</b></p></div></div>
+  <div class="step"><div class="num">5</div><div><h4>Seed cards: Moss, Grass, Reed</h4><p>Deck, hand, draw, the three starter kinds. Each kind is one clause in the habitability rule.</p><p class="out">proves · <b>"what to sow" is a decision</b> · about <b>1 day</b></p></div></div>
+  <div class="step"><div class="num">6</div><div><h4>The Spring shop and six Boons</h4><p>Dew, the shop screen, reroll, the first six Boons (Monsoon, Wellspring, Long Summer, Deep Roots, Basalt Heart, Lake Heart). Builds start to exist.</p><p class="out">proves · <b>builds emerge</b> · about <b>2 days</b></p></div></div>
+  <div class="step"><div class="num">7</div><div><h4>Starting pots and the run seed</h4><p>A deterministic starting shape from a seed number; the same seed always gives the same pot and the same shops. Daily seed for free.</p><p class="out">proves · <b>variety without randomness in play</b> · about <b>1 day</b></p></div></div>
+  <div class="step"><div class="num">8</div><div><h4>Behold, and cozy mode</h4><p>The end-of-run diorama with photo mode; the cozy toggle; the Codex notebook.</p><p class="out">proves · <b>the felt moment</b> · about <b>2 days</b></p></div></div>
+  <div class="step"><div class="num">9</div><div><h4>The rest of the roster</h4><p>Willow, Pine, Lotus; the remaining Boons; Requests in cozy mode. Only after steps 3–6 have been played and survived.</p><p class="out">about <b>3 days</b></p></div></div>
+  <div class="step"><div class="num">10</div><div><h4>Vertical slice → demo</h4><p>Onboarding without text walls (the first Year teaches by a fixed starting pot), the capsule, the GIF, the Steam page. Next Fest is the target.</p><p class="out">about <b>1 week</b></p></div></div>
+</div>
+<div class="box"><p class="tag">Working rules for the build</p><p>One step at a time. Every rule is discussed before it is coded. Every claim comes with a number. The simulation stays a pure function of what is stored; the game layer sits above it and never reaches in. You test; I measure.</p></div>
+</section>
+
+<section>
+<p class="eyebrow">16</p>
+<h2>Decisions taken, and what is still open</h2>
+<h3>Decided in this document — veto anything here</h3>
+<div class="decide">
+  <div class="d"><h4>One pot for the whole run</h4><p>The board persists across all eight Years; it is not a chain of islands. The world ages, and Year 8 stands on Year 1.</p><p class="opt">alternative · <b>a new, larger pot each Year (Islanders)</b> · rejected because the world has to remember itself to be worth beholding</p></div>
+  <div class="d"><h4>Time is Moons: every action or rest advances the world 12 ticks</h4><p>The bench's "one click, one tick" becomes a game-layer setting. The core is untouched.</p><p class="opt">alternative · <b>real-time with pause</b> · rejected: nothing may move while you think</p></div>
+  <div class="d"><h4>Cards are seeds, not powers</h4><p>Shaping stays free-form and mana-priced; the deck is what you can sow.</p><p class="opt">alternative · <b>a hand of shaping cards</b> · set aside, see section 10</p></div>
+  <div class="d"><h4>Two currencies</h4><p>Mana (per Year, for actions) and Dew (carried, for the shop). One currency was considered and makes saving for the shop fight spending on the board.</p></div>
+  <div class="d"><h4>Score = count × shape</h4><p>Living hexes times one plus the sum of Wonder bonuses. Wonders are about water and shape; the count is about life.</p></div>
+  <div class="d"><h4>Weathering runs 5× the bench default in the game</h4><p>So soil visibly appears within a run. The bench keeps its slider.</p></div>
+  <div class="d"><h4>The only fail is a gentle one</h4><p>Missing the bar ends the run on the Behold screen. Nothing is lost that was not already grown.</p></div>
+  <div class="d"><h4>No randomness after a run begins</h4><p>The run seed fixes the starting pot and every shop. Everything else is deterministic.</p></div>
+</div>
+<h3>Open — these need your answer before step 4</h3>
+<div class="decide">
+  <div class="d q"><h4>Is 12 ticks a Moon right?</h4><p>Too few and the world does not answer you within a Year; too many and a late move is meaningless. Decide by playing step 4.</p></div>
+  <div class="d q"><h4>Should Bloom be counted at the last Moon, or after a free "Rains" of extra ticks?</h4><p>Counting exactly what stands is honest and previewable. A free settle before counting is kinder to slow builds. Recommendation: count what stands.</p></div>
+  <div class="d q"><h4>Does life need Old Growth (age) at all?</h4><p>It is the only proposal that adds stored state. Recommendation: leave it out until a build needs it.</p></div>
+  <div class="d q"><h4>Radius for a run</h4><p>12 (469 hexes) is the working guess. 14 (631) gives more room for a Watershed. Decide when the Year-8 target is tuned.</p></div>
+  <div class="d q"><h4>Does hand-laid slag cheapen soil?</h4><p>Placing slag is allowed and priced like earthwork. If playtests show players skipping weathering entirely, raise its cost or remove it from the game palette.</p></div>
+</div>
+</section>
+
+<section class="cont">
+<p class="eyebrow">17</p>
+<h2>Glossary</h2>
+<table><tbody>
+  <tr><td class="k">pot</td><td>the disc of hex columns you play on</td></tr>
+  <tr><td class="k">tick</td><td>one step of the simulation; water and life move one hex</td></tr>
+  <tr><td class="k">Moon</td><td>12 ticks; the cost in time of one action or one rest</td></tr>
+  <tr><td class="k">Year</td><td>12 Moons, then Harvest</td></tr>
+  <tr><td class="k">run</td><td>8 Years in one pot</td></tr>
+  <tr><td class="k">mana</td><td>the per-Year action budget; 10 to start</td></tr>
+  <tr><td class="k">Dew</td><td>shop money, earned from surplus Bloom, carried between Years</td></tr>
+  <tr><td class="k">Bloom</td><td>the score: living hexes × (1 + Wonder bonuses)</td></tr>
+  <tr><td class="k">Wonder</td><td>a shape the world can be, detected at Harvest, worth a bonus</td></tr>
+  <tr><td class="k">Seed card</td><td>a kind of life you can sow; the deck is what you own, the hand is what you can sow this Year</td></tr>
+  <tr><td class="k">Boon</td><td>a permanent rule change for this run, bought in Spring</td></tr>
+  <tr><td class="k">build</td><td>the way your Boons, seeds and shape agree with each other</td></tr>
+  <tr><td class="k">slab</td><td>70 units of rock; six make an elevation step</td></tr>
+  <tr><td class="k">slag / sand</td><td>loose ground, made by weathering, moved by water; what life roots in</td></tr>
+  <tr><td class="k">drowned</td><td>standing under a drawn water tile (70 units or more)</td></tr>
+  <tr><td class="k">shore / bank</td><td>beside a drowned hex / on or beside a river edge</td></tr>
+  <tr><td class="k">Behold</td><td>the end-of-run screen: the diorama, photo mode, the run's story</td></tr>
+</tbody></table>
+<p class="foot">Mountains in a Pot · design v0.1 · written to be argued with · the code on the branch is the source of truth for sections 02–04; this document is the source of truth for 05–16 until it is overtaken by play.</p>
+</section>
+
+</body>
+</html>
