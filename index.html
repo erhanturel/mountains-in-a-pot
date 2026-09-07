@@ -137,6 +137,9 @@
         <button class="pw on" id="ovRiver"><svg viewBox="0 0 18 18">
           <path d="M3 13c3-1 3-4 6-5s3-4 6-5"/></svg>
           <span>Rivers</span></button>
+        <button class="pw on" id="ovDeck"><svg viewBox="0 0 18 18">
+          <path d="M2 11h14"/><path d="M5 8h8"/><path d="M7 5h4"/></svg>
+          <span>Cloud deck</span></button>
         <button class="pw" id="ovDrain"><svg viewBox="0 0 18 18">
           <path d="M3 3v4l6 4v4"/><path d="M15 3v4l-6 4"/></svg>
           <span>Drainage</span></button>
@@ -146,6 +149,13 @@
         <h2>Climate</h2>
         <div class="cap" id="ecap">temperature</div>
         <input id="evap" type="range" min="0" max="100" step="1" value="4">
+        <div class="cap" id="dcap">dew line</div>
+        <input id="dew" type="range" min="0" max="24" step="1" value="8">
+        <div class="cap" id="ocap">orographic lift</div>
+        <input id="oro" type="range" min="0" max="100" step="1" value="35">
+        <div class="cap" id="gcap">wind</div>
+        <input id="gust" type="range" min="0" max="100" step="1" value="35">
+        <div class="rates" id="wind"></div>
       </div>
       <div class="menu">
         <h2>Erosion</h2>
@@ -219,7 +229,7 @@ for(let q=-R;q<=R;q++){
   for(let r=lo;r<=hi;r++){
     idx.set(q+','+r,T.length);
     T.push({q,r,x:Math.sqrt(3)*(q+r/2),y:1.5*r,pool:0,flow:0,out:new Float64Array(6),
-            sed:0,sand:0,wear:0,grit:0});
+            sed:0,sand:0,wear:0,grit:0,vap:0});
   }
 }
 
@@ -706,11 +716,112 @@ function carry(){
    (that is the cycle, and it stays in the fever dream).
    --------------------------------------------------------------------- */
 let EVAP=0.2/420;                /* units of water off every wet column a tick */
+
+/* ---------------------------------------------------------------------
+   THE CYCLE. What evaporates becomes VAPOUR standing on the column, and
+   vapour is a third amount alongside water and slag -- carried, not routed,
+   and invisible until it condenses.
+
+   THREE RULES, and between them they are the whole of orographic rainfall:
+
+   1 EVAPORATION  every wet column hands EVAP units of water to its vapour.
+   2 ADVECTION    the wind carries a share of every column's vapour to the
+                  neighbours it blows towards. Vapour that reaches an edge
+                  leaves the board, which is rule 5 again and is the sink
+                  that keeps the sky from filling up.
+   3 CONDENSATION a column can hold vapour in proportion to how far it is
+                  BELOW THE DEW LINE. Anything over that falls as rain.
+
+   WHY THAT IS ENOUGH FOR A RAIN SHADOW. Capacity falls as the ground rises,
+   so air blown at a mountain sheds its load climbing the windward flank and
+   arrives over the far side with nothing left. The lee is dry because the
+   vapour was spent, not because a second rule says so.
+
+   THE CLOUD BASE IS FLAT, and that is not a rendering convenience -- it is
+   why real cumulus have flat bottoms. One altitude, set by temperature, at
+   which air gives up its water.
+
+   LIFT IS THE OTHER HALF, and it is not optional -- it was left out of the
+   first build and measured, and capacity alone rained on the SUMMIT AND
+   NOWHERE ELSE: 100% of the rain on one crest hex, 0% on either flank, and
+   no shadow at all, because below the dew line there is always spare
+   capacity and above it everything falls at once. A step function, not a
+   gradient.
+
+   So vapour also sheds a share of its load WHEREVER IT CLIMBS. As the wind
+   carries it across an edge that rises, ORO of its load per elevation of
+   ascent falls as rain on arrival. That is the standard upslope model, it
+   costs nothing extra because advection already walks those edges, and it
+   is what puts rain on the windward FLANK rather than the top, dries the
+   lee (descending edges lift nothing and the vapour is spent by then), and
+   makes a steep face wetter than a gentle ramp of the same height.
+
+   A PLACED CLOUD IS STILL THE DOMINANT SOURCE. Rain everywhere plus
+   accumulation is exactly what killed rivers here twice; the cycle is a
+   second, weaker source and is meant to stay that way.
+   --------------------------------------------------------------------- */
+let WIND=-1;                     /* which of the six DIRS, or -1 for calm */
+let GUST=0.35;                   /* share of a column's vapour moved per tick */
+let DEW=8;                       /* elevation at which capacity reaches zero */
+let ORO=0.35;                    /* share of a load shed per elevation climbed */
+const HOLD=1;                    /* water tiles a column holds per elevation below it */
+const capOf=i=>Math.max(0,(DEW-gnd(i))*HOLD*LAYER);
+
 function evaporate(){
   if(EVAP<=0) return;
   for(let i=0;i<T.length;i++){
     const p=T[i].pool;
-    if(p>0) T[i].pool = p>EVAP ? p-EVAP : 0;
+    if(p<=0) continue;
+    const e=p>EVAP?EVAP:p;
+    T[i].pool=p-e; T[i].vap+=e;
+  }
+}
+
+/* the wind's share of each of the six edges: how much it blows that way, or
+   nothing if it blows against it. Recomputed only when the wind changes. */
+let WSHARE=null;
+function setWind(d,g){
+  if(d!==undefined) WIND=d;
+  if(g!==undefined) GUST=g;
+  if(WIND<0){ WSHARE=null; return; }
+  const w=DIRV[WIND], raw=DIRV.map(v=>Math.max(0,v[0]*w[0]+v[1]*w[1]));
+  const S=raw.reduce((a,v)=>a+v,0);
+  WSHARE=raw.map(v=>v/S);
+}
+
+function advect(){
+  if(WSHARE===null || GUST<=0) return;
+  const n=T.length, was=new Float64Array(n),
+        add=new Float64Array(n), wet=new Float64Array(n);
+  for(let i=0;i<n;i++) was[i]=T[i].vap;
+  for(let i=0;i<n;i++){
+    const v=was[i]; if(v<=0) continue;
+    const moved=v*GUST, gi=gnd(i);
+    T[i].vap-=moved;
+    for(let k=0;k<6;k++){
+      const sh=WSHARE[k]; if(sh<=0) continue;
+      const j=T[i].nb[k];
+      if(j<0) continue;                    /* off the board it simply leaves */
+      const load=moved*sh;
+      /* FORCED ASCENT: what has to climb, sheds. A descending edge lifts
+         nothing, which is the whole of the rain shadow. */
+      const climb=gnd(j)-gi;
+      const drop=climb>0 ? load*Math.min(1,ORO*climb) : 0;
+      if(drop>0) wet[j]+=drop;
+      add[j]+=load-drop;
+    }
+  }
+  for(let i=0;i<n;i++){
+    if(add[i]) T[i].vap+=add[i];
+    if(wet[i]) T[i].pool+=wet[i];
+  }
+}
+
+function condense(){
+  for(let i=0;i<T.length;i++){
+    const v=T[i].vap; if(v<=0) continue;
+    const over=v-capOf(i);
+    if(over>0){ T[i].vap=v-over; T[i].pool+=over; }
   }
 }
 
@@ -723,8 +834,11 @@ function tick(){
   weather();
   carry();                      /* slag last, so what just broke loose can move */
   /* LAST, so water gets to move before it dries and a channel is not drained
-     out from under the erosion that reads it. */
+     out from under the erosion that reads it. Then the sky: what left the
+     ground blows downwind and falls again where the air cannot hold it. */
   evaporate();
+  advect();
+  condense();
 }
 
 /* ERASE is the mirror of PLACE, and like Place it is driven by the palette:
@@ -1062,6 +1176,26 @@ const cloudMesh=new THREE.InstancedMesh(prism,
   T.length);
 cloudMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
 scene.add(cloudMesh);
+
+/* THE CLOUD DECK: vapour, drawn as a thin translucent slab sitting AT THE
+   DEW LINE rather than on the ground. A flat bottom across the whole board
+   is not a rendering convenience -- it is why real cumulus have flat
+   bottoms, one altitude at which the air gives up its water, and drawing it
+   any other way would hide the mechanic rather than show it.
+
+   Opacity cannot vary per instance on one material, so DEPTH carries the
+   amount instead: a column holding more vapour draws a thicker slab. Where
+   the ground stands above the dew line there is no capacity and so never
+   any vapour, and the deck simply stops -- which is the mountain poking
+   through the cloud, for free. */
+const deck=new THREE.InstancedMesh(prism,
+  new THREE.MeshBasicMaterial({color:0xdfe8f2,transparent:true,opacity:0.30,
+                               depthWrite:false}),
+  T.length);
+deck.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+deck.renderOrder=2;
+scene.add(deck);
+let DECK=true;
 water.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
 /* water RECEIVES but does not CAST: a shadow map has no idea it is
    see-through, so a lake would lay a solid black slab on its own bed */
@@ -1293,7 +1427,7 @@ function terrain(t,mat){
   const yc=(yTop+yBot)/2;
   const SPHERE=new THREE.Sphere(new THREE.Vector3(0,yc,0),
                                 Math.hypot(rh,(yTop-yBot)/2)*1.02);
-  for(const m of [ground,water,cloudMesh,slag,sand,rivers])
+  for(const m of [ground,water,cloudMesh,slag,sand,rivers,deck])
     m.boundingSphere=SPHERE.clone();
   edgeGeo.boundingSphere=SPHERE.clone();
 }
@@ -1345,10 +1479,20 @@ function rebuild(){
     /* a stack grows visibly, but a single cloud still has to read as a
        cloud rather than as a wafer, so there is a floor under the height */
     const nc=clouds(i);
+    /* the deck: thickness carries how much vapour is standing here, and it
+       is scaled against an ABSOLUTE amount rather than against the column's
+       capacity. Scaled against capacity it was invisible -- vapour runs tens
+       of units where capacity below the dew line runs hundreds, so every
+       slab came out a hairline. Half a water tile saturates it. */
+    if(DECK && t.vap>1e-9 && capOf(i)>0){
+      const f=Math.min(1,t.vap/(LAYER*0.5));
+      place(deck,i,t.x,t.y,DEW*RISE,(DEW+0.1+0.7*f)*RISE);
+    } else hide(deck,i);
     if(nc) place(cloudMesh,i,t.x,t.y,zBot(CLOUD_Z)*RISE,
                  (zBot(CLOUD_Z)+Math.max(0.35,nc/SLAB))*RISE);
     else hide(cloudMesh,i);
   }
+  deck.instanceMatrix.needsUpdate=true;
   for(let k=ns;k<MAXSTUB;k++) hide(rivers,k);
   rivers.count=ns;
   rivers.instanceMatrix.needsUpdate=true;
@@ -1467,6 +1611,10 @@ function drawInfo(){
   h+=row('height',  U(t.h+t.pool)+' units', wet?'w':'');
   const nc=clouds(HOVER);
   h+=row('cloud', nc ? nc+' × '+U(RAINFALL)+' units/tick' : '—', nc?'w':'q');
+  const cp=capOf(HOVER);
+  h+=row('vapour', t.vap>1e-9
+    ? U(t.vap)+' of '+U(cp)+' units'
+    : (cp>0 ? '—' : 'above the dew line'), t.vap>1e-9?'w':'q');
   el.innerHTML=h;
 }
 function drawMenu(){
@@ -1532,6 +1680,43 @@ function drawEvap(){
 }
 evEl.oninput=drawEvap;
 
+/* THE DEW LINE, in elevations: where the air's capacity reaches zero and
+   anything still airborne has to fall. Below it a column holds one water
+   tile of vapour per elevation of headroom. */
+const dwEl=document.getElementById('dew'), dcap=document.getElementById('dcap');
+function drawDew(){
+  DEW=+dwEl.value;
+  dcap.textContent='dew line — elevation '+DEW;
+}
+dwEl.oninput=drawDew;
+
+/* WIND is one fixed direction, set by hand, exactly like the sun -- a global
+   constant rather than a field. The expensive version was wind that seeks
+   the nearest tall feature, which is a search over the whole board per hex
+   per tick and a rule about the board rather than about a hex and its six
+   neighbours. An arrow is one number and buys the same rain shadow. */
+/* how much of a load falls for each elevation it is forced to climb */
+const orEl=document.getElementById('oro'), ocap=document.getElementById('ocap');
+function drawOro(){
+  ORO=+orEl.value/100;
+  ocap.textContent='orographic lift — '+Math.round(ORO*100)+'% per elevation climbed';
+}
+orEl.oninput=drawOro;
+
+const WINDNAMES=['calm','E','NE','NW','W','SW','SE'];
+const gsEl=document.getElementById('gust'), gcap=document.getElementById('gcap');
+function drawWind(){
+  const g=+gsEl.value/100;
+  setWind(undefined,g);
+  gcap.textContent = WIND<0 ? 'wind — calm'
+    : 'wind — '+WINDNAMES[WIND+1]+', '+Math.round(g*100)+'% a tick';
+  document.getElementById('wind').innerHTML=WINDNAMES.map((nm,k)=>
+    '<button class="rt'+(k-1===WIND?' on':'')+'" data-k="'+(k-1)+'">'+nm+'</button>').join('');
+  document.querySelectorAll('#wind .rt').forEach(b=>b.onclick=()=>{
+    setWind(+b.dataset.k); drawWind(); rebuild(); });
+}
+gsEl.oninput=drawWind;
+
 function drawWear(){
   const u=+wearEl.value/100;
   WEATHER=u/420;
@@ -1570,6 +1755,7 @@ function drawAbrade(){
 abEl.oninput=drawAbrade;
 
 const ovDrain=document.getElementById('ovDrain');
+ovDeck.onclick=()=>{ DECK=!DECK; ovDeck.classList.toggle('on',DECK); rebuild(); };
 ovDrain.onclick=()=>{ DRAIN=!DRAIN; ovDrain.classList.toggle('on',DRAIN); rebuild(); };
 
 const ovRiver=document.getElementById('ovRiver');
@@ -1708,7 +1894,8 @@ function serialise(){
     pool:T.map(t=>round(t.pool)), flow:T.map(t=>round(t.flow)),
     sed:T.map(t=>round(t.sed)),   sand:T.map(t=>round(t.sand)),
     wear:T.map(t=>round(t.wear)), grit:T.map(t=>round(t.grit)), out,
-    knobs:{evap:EVAP, weather:WEATHER, shield:SHIELD, thresh:THRESH, cap:CAP,
+    vap:T.map(t=>round(t.vap)),
+    knobs:{evap:EVAP, dew:DEW, oro:ORO, wind:WIND, gust:GUST, weather:WEATHER, shield:SHIELD, thresh:THRESH, cap:CAP,
            attr:ATTR, mob:MOB, abrade:ABRADE}
   });
 }
@@ -1729,6 +1916,7 @@ function apply(d){
     T[i].pool=d.pool[i]||0; T[i].flow=d.flow[i]||0;
     T[i].sed =d.sed[i]||0;  T[i].sand=d.sand[i]||0;
     T[i].wear=d.wear[i]||0; T[i].grit=(d.grit&&d.grit[i])||0;
+    T[i].vap=(d.vap&&d.vap[i])||0;
     for(let k=0;k<6;k++) T[i].out[k]=(d.out&&d.out[i*6+k])||0;
   }
   if(d.knobs){ WEATHER=d.knobs.weather; THRESH=d.knobs.thresh; CAP=d.knobs.cap;
@@ -1737,6 +1925,11 @@ function apply(d){
                abEl.value=Math.round(ABRADE*100); drawAbrade();
                if(d.knobs.evap!==undefined) EVAP=d.knobs.evap;
                evEl.value=Math.round(EVAP*420/0.05); drawEvap();
+               if(d.knobs.dew!==undefined){ dwEl.value=d.knobs.dew; drawDew(); }
+               if(d.knobs.oro!==undefined){ orEl.value=Math.round(d.knobs.oro*100); drawOro(); }
+               if(d.knobs.gust!==undefined) gsEl.value=Math.round(d.knobs.gust*100);
+               if(d.knobs.wind!==undefined) setWind(d.knobs.wind);
+               drawWind();
                wearEl.value=Math.round(WEATHER*420*100);
                thEl.value=Math.round(THRESH*100); caEl.value=Math.round(CAP*1000);
                atEl.value=Math.round(ATTR*100);  mbEl.value=Math.round(MOB*10);
@@ -1799,7 +1992,7 @@ window.POT={T,at,use,tick,settle,rebuild,POWERS,scene,
 function frame(){ controls.update(); renderer.render(scene,cam);
   requestAnimationFrame(frame); }
 drawMenu(); drawBrush(); drawDepth(); drawPalette(); drawRates(); drawHist();
-drawEvap(); drawWear(); drawCarry(); drawSand(); drawAbrade(); setSun(0); settle(); rebuild(); resize(); drawInfo(); frame();
+drawEvap(); drawDew(); drawOro(); drawWind(); drawWear(); drawCarry(); drawSand(); drawAbrade(); setSun(0); settle(); rebuild(); resize(); drawInfo(); frame();
 /* a board parked on the way through a resize is picked up here */
 { const parked=sessionStorage.getItem('potLoad');
   if(parked){ sessionStorage.removeItem('potLoad');

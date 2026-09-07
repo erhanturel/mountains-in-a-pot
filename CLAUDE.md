@@ -470,6 +470,91 @@ the interesting part, and it will read as broken the first time it is seen.
 and is a second mechanic), and the vapour going anywhere (that is the cycle,
 and it stays in *the fever dream*).
 
+## The cycle — EXPERIMENTAL, on the `climate` branch
+
+What evaporates becomes **vapour** standing on the column: a third amount
+alongside water and slag, carried rather than routed, invisible until it
+falls. Three rules, and between them they are the whole of orographic
+rainfall:
+
+```
+1  EVAPORATION   every wet column hands EVAP units of water to its vapour
+2  ADVECTION     the wind carries GUST of every column's vapour to the
+                 neighbours it blows towards; vapour reaching an edge leaves
+3  LIFT          what has to CLIMB, sheds: ORO of a load per elevation of
+                 ascent falls as rain on arrival
+4  CONDENSATION  a column holds vapour in proportion to how far it is BELOW
+                 THE DEW LINE; anything over that falls
+```
+
+**Lift is not optional, and that was measured rather than assumed.** The
+first build had capacity only — rule 4 without rule 3 — and it rained on the
+**summit and nowhere else**: 100% of the rain on one crest hex, 0% on either
+flank, no shadow at all. Below the dew line there is always spare capacity
+and above it everything falls at once, so it is a step function rather than
+a gradient. Adding the upslope term costs nothing, because advection already
+walks those edges.
+
+With both, on a symmetric ridge six elevations high over six hexes a side,
+a sea to the west and the wind blowing east:
+
+```
+     q   ground   vapour     rain    share
+    -6     0.00       38        0    0.00%     the foot: air still loaded
+    -5     1.00       27    10718    0.82%  #######
+    -4     2.00       20     7569    0.58%  #####
+    -3     3.00       15     5529    0.42%  ####
+    -2     4.00        0    13313    1.02%  #########
+    -1     5.00        0     1709    0.13%  #
+     0     6.00        0      443    0.03%     the crest: nothing left
+     1     5.00        0      317    0.02%
+     3     3.00        0        0    0.00%     the lee: bone dry
+```
+
+**Windward 98.2%, lee 1.8%.** Rain peaks on the flank, not the top, which is
+what real orography does — the vapour is spent by the time it finishes
+climbing. The lee is dry because descending edges lift nothing *and* because
+there is nothing left to lift.
+
+**The cloud deck is drawn at the dew line, with a flat bottom.** That is not
+a rendering convenience: one altitude at which air gives up its water is
+exactly why real cumulus have flat bottoms, and drawing it any other way
+would hide the mechanic. Where the ground stands above the dew line the deck
+simply stops, which is the mountain poking through, for free. Thickness is
+scaled against an ABSOLUTE amount, not against the column's capacity — scaled
+against capacity every slab came out a hairline, because vapour runs tens of
+units where capacity runs hundreds.
+
+### What closing the cycle costs
+
+**Evaporation is no longer a sink.** It used to destroy water; now it only
+moves it to the sky, and the only way out is over the board edge. A sealed
+tarn under a high rim went from *dries to nothing in 7,750 ticks* to
+**permanent**:
+
+```
+  ticks after rain off      500    2000    5000   20000
+  before the cycle         1453    1153     553       0
+  with the cycle           1680    1680    1680    1680
+```
+
+Calm air over a sealed basin **saturates and evaporation stops**, which is
+real — it is the wind that has to take the vapour away. But with the wind on
+it still holds, because the rim is a four-elevation climb right beside the
+water: `ORO × 4` exceeds 1, so everything that blows at it rains straight
+back down and runs into the pit.
+
+That is not a bug, it is what a closed cycle *means*, and it undoes the one
+thing evaporation was introduced to fix. **It wants a decision, not a patch.**
+Either the cycle stays closed and water leaves only over the rim, or some
+fraction of vapour is lost to nothing — which is unphysical at this scale but
+restores drying.
+
+**The other thing to watch:** rain everywhere plus accumulation is exactly
+what killed rivers here twice. The cycle is meant to stay a *second, weaker*
+source with a placed cloud dominant. It has not been played enough to know
+whether it does.
+
 ## Weathering
 
 Rock breaks down into slag where it is exposed. **It moves nothing** — the
