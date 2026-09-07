@@ -707,6 +707,24 @@ flat board, 40 ticks              distinct depths per ring 1 1 2 2 3 3 4,
   the snapshot, and the snapshot is what keeps the board symmetric. Capping
   what a tile may RECEIVE would fix it and costs a second pass.
 
+### Parked: UI in three.js
+
+Technically easy — an orthographic overlay scene and the raycaster already
+used for hex picking. Argued against **for the panel**, because the panel is
+almost entirely text and the DOM is enormously better at text: layout, font
+fallback, kerning, subpixel AA, selection, clipboard, IME and browser zoom,
+all free. In WebGL that means a font atlas or another dependency and a build
+step, against the vendored no-build property. Two controls cannot move at all
+— a text field would mean implementing a caret and IME, and **load** must be a
+DOM file input because the browser will not open a file dialog for a canvas.
+
+Where it *would* earn its keep is anything **attached to the world**: labels
+over hexes, a flow-direction compass on a tile, height readouts pinned to a
+ridge, an in-world legend for the drainage overlay. Spatially bound to what it
+describes, rotating and scaling with the board, which a DOM overlay can only
+fake. That version is additive rather than a rewrite — annotations in the
+world, panel stays in the DOM.
+
 ### Parked: the panel looks different across browsers
 
 Firefox against a Chromium-based pane, and three causes, none of them bugs:
