@@ -13,9 +13,39 @@ anything, so the button simply looked dead.
 change starts a *new* world with a reload. That is why save came first.
 
 **Undo depth is a memory budget, not a count.** A snapshot is the cell stack
-plus twelve numbers a hex: 0.13 MB at radius 12, **3.4 MB at radius 64**,
-where sixty of them would be 206 MB. Sixty small boards or fourteen enormous
-ones — about 45 MB either way.
+plus twelve numbers a hex: **5.6 MB at radius 64**, where sixty of them would
+be 338 MB. Sixty small boards or eight enormous ones — about 45 MB either way.
+
+**Ground runs −24 to +24 elevations and the sky sits at 36.** Those twelve
+elevations between them are empty by construction — 73 cells a column that
+can only ever be air — and they are paid for in memory and in rebuild's
+per-column walk. Deliberate: it is the room the atmosphere tiers would need
+if *the fever dream* is ever built. Measured at radius 64, same board and
+same window:
+
+```
+  ZN         192  ->   378
+  CELL     2.29 MB -> 4.50 MB
+  snapshot 3.43 MB -> 5.64 MB      so undo depth 13 -> 8
+  rebuild   21.5 ms -> 24.5 ms
+  tick       4.30 ms -> 4.39 ms
+```
+
+The tick is untouched because `settle()` never walks a column; only
+`rebuild()` and `setTop()` do.
+
+**A save written before the world got taller cannot be loaded.** The file
+carries the radius but not the depth of the stack, so it decodes to a shorter
+cell array. It is detected and says so, rather than the old 'wrong board
+size', which sent people back to the size buttons.
+
+**The colour ramp lost half its resolution** and this is the real cost of the
+change, not the memory. `terrain()` spreads one two-colour ramp across
+`-H_MAX..H_MAX`, so an elevation step went from about 1.5% of the ramp to
+about 0.75%. Contour banding is `h % 2` and still reads a single step exactly
+as before, so relief is fine — but *absolute* height by colour is now
+guesswork, and banding is doing all the work. Left alone deliberately until
+it visibly bothers somebody.
 
 Costs at radius 64, measured: 12,481 hexes, **77 fps**, **4.4 ms a tick**,
 32 ms a rebuild. A step at 100× is 100 ticks plus one rebuild, so it was a
@@ -85,7 +115,7 @@ python -m http.server 8777
 ```
 
 then `http://localhost:8777/index.html`. There is a launch config at
-`.claude/launch.json` under the name `pot`, and `?r=8|10|12|14` picks the
+`.claude/launch.json` under the name `pot`, and `?r=8|10|12|14|24|36|48|64` picks the
 board size.
 
 **The page cannot be opened as a file.** It loads three.js as an ES module,
@@ -651,6 +681,18 @@ larger — without the allowance a radius-64 board came out 1% over the top.
 
 The result is scale-free: radius 12 and radius 64 both frame to the same clip
 extents, `0.95 × 0.71` orthographic and `0.81 × 0.81` perspective.
+
+**The camera frames the sky, not just the ground.** `yHi` used to be
+`H_MAX*RISE`, so the cloud band sat above the fitted extent and stayed on
+screen only on the 1.05 margin. At elevation 17 over a limit of 12 that held;
+at 36 over 24 it did not, and a placed cloud came out clipped against the top
+edge. `yHi` now comes from the top of the *stack*, which keeps working if
+either constant moves again.
+
+It costs a wider frame, and how much depends on the board, because the
+projection is dominated by the footprint rather than the height: about **4%
+of zoom at radius 64** and about **18% at radius 12**. Clouds you cannot see
+without orbiting are worse than a slightly smaller board.
 
 **The page fills the window and never scrolls.** It was capped at 1140px with
 a fixed 660px board, which on a wide screen left most of the display empty

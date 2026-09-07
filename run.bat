@@ -32,7 +32,7 @@ if not errorlevel 1 (
 
 echo Serving %CD%
 echo   http://localhost:8777/index.html
-echo   http://localhost:8777/index.html?r=14     ^(radius 8, 10, 12 or 14^)
+echo   http://localhost:8777/index.html?r=48     ^(8, 10, 12, 14, 24, 36, 48 or 64^)
 echo.
 echo Close this window to stop.
 echo.

@@ -198,7 +198,7 @@ globalThis.POT_R = Math.min(64, Math.max(8,
    outlet back and deletes that whole class of problem at once.
    ====================================================================== */
 /* radius 12 unless something set it first; headless tests get the default */
-const R=(globalThis.POT_R|0)||12, H_MAX=12;
+const R=(globalThis.POT_R|0)||12, H_MAX=24;
 const DIRS=[[1,0],[1,-1],[0,-1],[-1,0],[-1,1],[0,1]];   /* E NE NW W SW SE */
 /* the same six as unit vectors in world units, for reading the per-edge
    flow as a bearing. Off-board edges have a direction too, which is why
@@ -249,7 +249,24 @@ for(let q=-R;q<=R;q++){
    signed byte, which is the sort of thing that fails silently.
    --------------------------------------------------------------------- */
 const SLAB=6;                    /* slabs to an elevation step: 70 units each */
-const ZN=192, Z0=-78;            /* 32 elevations' worth, floor at elevation -13 */
+/* THE STACK: 63 elevations' worth, floor at elevation -25.
+
+   Z0 is -(H_MAX+1)*SLAB, so there is one elevation of reserve below the
+   lowest ground a player can dig to, and ZN reaches the top of the cloud
+   band. Ground runs -24..+24 and the sky sits at 36, which leaves elevation
+   24 to 36 EMPTY BY CONSTRUCTION -- 73 cells a column that can only ever be
+   air. That gap is paid for in memory and in rebuild's per-column walk, and
+   it is deliberate: it is the room the atmosphere tiers would need if the
+   fever dream is ever built.
+
+   Measured at radius 64, same board and same window:
+
+     ZN 192 -> 378, CELL 2.29 MB -> 4.50 MB, a snapshot 3.43 MB -> 5.64 MB
+     so undo depth 13 -> 8, rebuild 21.5 ms -> 24.5 ms, tick 4.30 -> 4.39.
+
+   The tick is untouched because settle never walks a column; only rebuild
+   and setTop do. */
+const ZN=378, Z0=-150;
 const zBot=z=>(Z0+z)/SLAB;       /* the elevation of the bottom of slab z */
 const zTop=z=>(Z0+z+1)/SLAB;
 /* WHAT A CELL CAN BE. Materials, not a single kind of "solid" -- this is
@@ -346,10 +363,14 @@ const LAYER=1/6;
 const gnd=i=>T[i].h+T[i].sed+T[i].sand;
 const RAINFALL=LAYER;            /* what one rain tile drops each tick */
 /* RAIN TILES STACK. The band starts well clear of the highest ground a
-   player can build -- elevation 17 against a limit of 12 -- and runs to the
+   player can build -- elevation 36 against a limit of 24 -- and runs to the
    top of the stack, so twelve is the tallest a cloud can get and that is
-   exactly the largest intensity. More clouds drop linearly more rain. */
-const CLOUD_Z=180;               /* elevation 17 */
+   exactly the largest intensity. More clouds drop linearly more rain.
+
+   The twelve elevations between the two are empty by construction, and the
+   camera has to be told to frame them or the sky ends up off the top of the
+   screen. See FITPTS. */
+const CLOUD_Z=366;               /* elevation 36 */
 const CLOUD_MAX=ZN-CLOUD_Z;      /* twelve slabs of headroom */
 const clouds=i=>{ let n=0; while(n<CLOUD_MAX && cell(i,CLOUD_Z+n)===CLOUD) n++; return n; };
 /* add n rain tiles to the band, and take n away again, returning how many
@@ -897,8 +918,19 @@ const FOV=38, VHALF=Math.tan(FOV*Math.PI/360);
    like a ball. So measure it: take the rim hexes at both ends of the height
    range, and project them onto the camera's own right and up axes. That is
    the real extent, and everything else is arithmetic. */
+/* THE SKY IS FRAMED TOO, not just the ground. yHi used to be H_MAX, so the
+   cloud band sat above the fitted extent and only stayed on screen on the
+   1.05 margin. With the ground at 24 and the sky at 36 that stopped working:
+   a cloud came out clipped against the top edge of the viewport. Taking yHi
+   from the top of the STACK rather than the top of the ground fixes it and
+   keeps fixing it if either constant moves.
+
+   The cost is a wider frame, and it depends on the board: the projection is
+   dominated by the footprint, so it is about 4% of zoom at radius 64 and
+   about 18% at radius 12. Clouds you cannot see without orbiting are worse
+   than a slightly smaller board. */
 const FITPTS=[];
-{ const yLo=BASE*RISE, yHi=H_MAX*RISE;
+{ const yLo=BASE*RISE, yHi=zTop(ZN-1)*RISE;
   for(const t of T){
     const d=Math.max(Math.abs(t.q),Math.abs(t.r),Math.abs(t.q+t.r));
     if(d<R) continue;
@@ -1628,7 +1660,14 @@ function serialise(){
 function apply(d){
   if(d.pot!==1) throw new Error('not a pot file');
   const bin=atob(d.cells);
-  if(bin.length!==CELL.length) throw new Error('wrong board size');
+  /* A save carries the radius but not the depth of the stack, so a file
+     written before the world grew from 12 elevations to 24 decodes to a
+     shorter cell array and cannot be rebuilt. Say which it is rather than
+     'wrong board size', which sent people back to the size buttons. */
+  if(bin.length!==CELL.length)
+    throw new Error(bin.length===T.length*192
+      ? 'saved before the world got taller (24 elevations now) - cannot load'
+      : 'wrong board size');
   for(let i=0;i<bin.length;i++) CELL[i]=bin.charCodeAt(i);
   for(let i=0;i<T.length;i++){
     retop(i);
