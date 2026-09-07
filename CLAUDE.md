@@ -207,10 +207,26 @@ world. Two corollaries worth keeping:
   over the edge. Measured: 0 ticks in 300 boards × 85 created any.
 
 `h` is not a plain field — it is an accessor over the **cell stack**, a
-`Uint8Array` of 469 × 32 cells (`AIR`, `ROCK`, `BASALT`, `CLOUD`) with a `TOP`
-cache. Setting `h` rewrites the run of solid cells. Clouds live in that same
-stack at `CLOUD_Z = 27`, which is height 14 — well clear of any ground, and
-the reason a cloud is a thing in the world you can see rather than a flag.
+`Uint8Array` of 469 × 192 cells (`AIR`, `ROCK`, `BASALT`, `CLOUD`) with a
+`TOP` cache. Clouds live in that same stack, which is why a cloud is a thing
+in the world you can see rather than a flag.
+
+**A cell is a slab of 70 units** — a sixth of an elevation step, the same
+quantum a water tile is drawn at. It used to be a whole elevation, which was
+fine while only the player moved ground; erosion moves it by fractions and a
+staircase of 420-unit steps cannot express that. Everything stays *integral*
+this way: no float ground, no continuous height to keep in step with a render
+cache. The stack is the representation, a material sits in a cell rather than
+being a number smeared over a column, and overhangs and caves stay reachable.
+
+Two traps in that change, both of which fail silently: `TOP` must be `Int16`,
+because 192 does not fit in a signed byte; and `MAXRUN` must be sized for a
+few caves per column rather than `ceil(ZN/2)`, which would now be 45,024
+instances and 6 MB of edge buffer for a board where every column is one run.
+
+**`solid(i,z)` is not `cell(i,z)`.** A rain tile lives in the same stack and
+is not air, so any loop walking a column for ground has to say which it means.
+The renderer did not, and drew a grey prism inside every cloud.
 
 ---
 

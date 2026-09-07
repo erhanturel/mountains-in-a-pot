@@ -162,16 +162,36 @@ for(let q=-R;q<=R;q++){
    check against what came before, so the storage changes here and NOTHING
    else, verified by running the same boards through both and diffing.
 
-   Cell z occupies the slab from height Z0+z to Z0+z+1, so a column whose
-   highest solid cell is z has its surface at Z0+z+1. TOP caches that
-   highest cell: h is read constantly, in every inner loop of soils() and
-   fillFrom(), and rescanning 32 cells each time was not affordable.
+   A CELL IS A SLAB OF 70 UNITS -- a sixth of an elevation step, the same
+   quantum a water tile is drawn at. It used to be a whole elevation, which
+   was fine while only the player moved ground: erosion moves it by
+   fractions, and a staircase of 420-unit steps cannot express that.
+
+   Everything stays INTEGRAL this way. No float ground, no continuous height
+   to keep in step with a render cache -- the stack is the representation,
+   and a material sits in a cell rather than being a number smeared over a
+   column. Overhangs and caves stay reachable for the same reason.
+
+   Cell z occupies the slab from zBot(z) to zTop(z), so a column whose
+   highest solid cell is z has its surface at zTop(z). TOP caches that
+   highest cell: h is read in every inner loop and rescanning the column
+   each time was not affordable. TOP is Int16 now -- 192 does not fit in a
+   signed byte, which is the sort of thing that fails silently.
    --------------------------------------------------------------------- */
-const ZN=32, Z0=-13;
+const SLAB=6;                    /* slabs to an elevation step: 70 units each */
+const ZN=192, Z0=-78;            /* 32 elevations' worth, floor at elevation -13 */
+const zBot=z=>(Z0+z)/SLAB;       /* the elevation of the bottom of slab z */
+const zTop=z=>(Z0+z+1)/SLAB;
 const AIR=0, ROCK=1, BASALT=2, CLOUD=3;
 const CELL=new Uint8Array(T.length*ZN);
-const TOP=new Int8Array(T.length).fill(-1);
+const TOP=new Int16Array(T.length).fill(-1);
 const cell=(i,z)=>(z<0||z>=ZN)?AIR:CELL[i*ZN+z];
+/* GROUND, as against anything at all. A rain tile lives in the same stack
+   and is not air, so every loop that walks the column for solid material
+   has to say which it means. The renderer did not, and drew a grey prism
+   inside every cloud -- 488 ground instances for 469 hexes with 19 rain
+   tiles placed, which is exactly the 19. */
+const solid=(i,z)=>{ const c=cell(i,z); return c!==AIR && c!==CLOUD; };
 /* after any direct edit to the cells, the cached surface has to be found again */
 function retop(i){
   const b=i*ZN;
@@ -183,7 +203,7 @@ function retop(i){
 /* fill a column solid up to this surface height, keeping the material it
    already had and clearing everything above */
 function setTop(i,h){
-  const b=i*ZN, t=Math.max(-1,Math.min(ZN-1,h-Z0-1));
+  const b=i*ZN, t=Math.max(-1,Math.min(ZN-1,h*SLAB-Z0-1));
   const m=(TOP[i]>=0 && CELL[b+TOP[i]]) || ROCK;
   for(let z=0;z<ZN;z++)
     if(CELL[b+z]!==CLOUD) CELL[b+z] = z<=t ? (CELL[b+z]||m) : AIR;
@@ -191,7 +211,7 @@ function setTop(i,h){
 }
 for(let i=0;i<T.length;i++){
   Object.defineProperty(T[i],'h',{
-    get(){ return Z0+TOP[i]+1; },
+    get(){ return (Z0+TOP[i]+1)/SLAB; },
     set(v){ setTop(i,v); },
     enumerable:true});
   Object.defineProperty(T[i],'vol',{
@@ -237,7 +257,7 @@ const at=(q,r)=>{const i=idx.get(q+','+r);return i===undefined?-1:i};
    where 420 reads 10. */
 const LAYER=1/6;
 const RAINFALL=LAYER;            /* what one rain tile drops each tick */
-const CLOUD_Z=ZN-5;              /* rain tiles ride up here, clear of the ground */
+const CLOUD_Z=ZN-30;             /* rain tiles ride up here, clear of the ground */
 
 /* ---------------------------------------------------------------------
    SETTLE - one step, and exactly those rules.
@@ -529,7 +549,11 @@ const prism=new THREE.CylinderGeometry(1,1,1,6);
    today so this draws exactly what it drew before — but a carved column has
    several, and the count has to be able to grow. Worst case is alternating
    cells, so half a stack per column. */
-const MAXRUN=T.length*Math.ceil(ZN/2);
+/* one prism per unbroken run of solid slabs. A column solid from the floor
+   is still ONE run however fine the slabs are, so this is sized for a few
+   caves per column rather than for 96 alternating ones -- at the old
+   ceil(ZN/2) it would now be 45,024 instances and 6MB of edge buffer. */
+const MAXRUN=T.length*4;
 const instHex=new Int16Array(MAXRUN).fill(-1);
 const ground=new THREE.InstancedMesh(
   prism, new THREE.MeshLambertMaterial(), MAXRUN);
@@ -746,13 +770,14 @@ function rebuild(){
     /* walk the column, one prism per unbroken run of solid cells */
     let z=0;
     while(z<ZN){
-      if(!cell(i,z)){ z++; continue; }
-      let e=z; while(e+1<ZN && cell(i,e+1)) e++;
-      place(ground,n,t.x,t.y,(Z0+z)*RISE,(Z0+e+1)*RISE);
+      if(!solid(i,z)){ z++; continue; }
+      let e=z; while(e+1<ZN && solid(i,e+1)) e++;
+      place(ground,n,t.x,t.y,zBot(z)*RISE,zTop(e)*RISE);
       ground.setColorAt(n,tint(t,i));
-      rim(n,t.x,t.y,(Z0+e+1)*RISE+0.004);
+      rim(n,t.x,t.y,zTop(e)*RISE+0.004);
       instHex[n]=i; n++;
       z=e+1;
+      if(n>=MAXRUN) break;       /* more runs than the buffer holds */
     }
     /* water draws in WHOLE LAYERS. Anything shallower than one layer is
        held but not shown — that remainder is what makes ground bloom into a
@@ -771,7 +796,9 @@ function rebuild(){
       }
     }
     if(cell(i,CLOUD_Z)===CLOUD)
-      place(cloudMesh,i,t.x,t.y,CLOUD_Z*RISE+Z0*RISE,(CLOUD_Z+1)*RISE+Z0*RISE);
+      /* drawn a whole elevation tall whatever the slab size, so the cloud
+         reads as a cloud rather than as a wafer */
+      place(cloudMesh,i,t.x,t.y,zBot(CLOUD_Z)*RISE,(zBot(CLOUD_Z)+1)*RISE);
     else hide(cloudMesh,i);
   }
   for(let k=ns;k<MAXSTUB;k++) hide(rivers,k);
@@ -948,7 +975,7 @@ ovProj.onclick=()=>{ ortho=!ortho;
    to drive the sim by hand now. */
 window.POT={T,at,use,tick,settle,rebuild,POWERS,scene,
   CLOUD,CLOUD_Z,LAYER,RAINFALL,
-  CELL,TOP,cell,retop,ZN,Z0,AIR,ROCK,BASALT,instHex,ground,
+  CELL,TOP,cell,solid,retop,ZN,Z0,SLAB,zBot,zTop,AIR,ROCK,BASALT,instHex,ground,
   camera:()=>cam, hover:i=>hover(i),
   get power(){ return POWER.k },
   set power(k){ POWER=POWERS.find(p=>p.k===k)||POWER; drawMenu(); }};
