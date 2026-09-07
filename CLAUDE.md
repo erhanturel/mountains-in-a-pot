@@ -707,6 +707,24 @@ flat board, 40 ticks              distinct depths per ring 1 1 2 2 3 3 4,
   the snapshot, and the snapshot is what keeps the board symmetric. Capping
   what a tile may RECEIVE would fix it and costs a second pass.
 
+### Parked: the panel looks different across browsers
+
+Firefox against a Chromium-based pane, and three causes, none of them bugs:
+
+- **The five sliders.** `<input type="range">` is drawn by each browser's own
+  widget code and the geometry differs a lot. `accent-color` colours them but
+  does not make them match. Fixable in about fifteen lines by styling
+  `::-webkit-slider-thumb` and `::-moz-range-thumb` explicitly.
+- **Text weight.** `-webkit-font-smoothing: antialiased` is WebKit/Blink only
+  and Firefox ignores it.
+- **The font itself.** The stack starts `ui-monospace`, which **Firefox has
+  not implemented**, so it falls through past two macOS faces to Consolas
+  while Chromium resolves it to the system monospace. At 8px with 1.6px
+  letter-spacing the difference shows.
+
+Pinning `Consolas` first would fix the third at the cost of looking worse on a
+Mac. The sliders are the only part worth doing.
+
 ### Parked: burying
 
 Slag is an *amount*, and amounts always ride on top of the stack — so placing
