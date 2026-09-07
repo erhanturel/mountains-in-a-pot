@@ -499,6 +499,31 @@ Measured:
 **Bloom** is the count of living hexes, shown at the bottom right of the
 board. It is the seed of the score and nothing more yet.
 
+**Life keeps its own clock.** Water and soil move every tick; life steps
+every `LIFE_EVERY` (10). Once the world ran on its own a seed that walked a
+hex a tick covered a shore in a breath; at one step in ten the same 12-hex
+rim greens over 56 ticks instead of 5 — about half a Season. `TICKS` is
+saved with the board so a loaded game keeps its phase.
+
+## Time: the world breathes
+
+The simulation never stops. `BASE_RATE` is two ticks a second at 1×, the
+speeds are 1, 3, 10 and 30, and pause is a courtesy nothing forces you to
+press. Actions cost nothing in time. A **Season** is 120 ticks, four to a
+**Year**, shown in a clock over the board; the number is calibrated so one
+cloud fills a seven-hex bowl two steps deep in about a Season. The tick
+loop runs on a 100 ms beat with a fractional accumulator and rebuilds once
+a beat, not once a tick.
+
+This replaced a world that stood still while you thought and moved one
+tick per click. Right for a bench, wrong for a game: the thing worth
+watching is the world answering you, and a world that only moves when
+poked is a board, not a place. Checked headless: 5 ticks in 2.6 s at 1×,
+40 more in 2.1 s at 10×, none while paused.
+
+Harvest, mana and the bar are not here yet — see `design/mechanics.xlsx`,
+which is the step-by-step plan and the record of what each step measured.
+
 ## Abrasion — tools and cover
 
 Weathering on its own is **water-blind**. Water's only role was to carry slag
@@ -669,6 +694,26 @@ is scoped to `#powers .pw`.
 ---
 
 ## Rendering notes
+
+**The look is one palette, one light, one camera and one post pass** — the
+Phase 0 beauty pass, all below the simulation. `PAL` holds every colour
+(warm limestone rock, cool basalt floor, ochre rubble, teal water, moss
+greens, a warm white cloud, a dusk background) and nothing is coloured from
+anywhere else. The sun is warm and filmic tone mapping (ACES, exposure
+1.32) lets it be bright without clipping. The orbit is a **diorama orbit**:
+pitch held between 40° and 62° from the vertical, yaw and zoom free,
+default elevation 35°. **Rain is drawn** as a slim translucent shaft from
+the ground to the cloud, because a world that runs on its own cannot have a
+cloud that visibly does nothing. **Wet ground** — water under the drawn
+tile, the film the water mesh never shows — darkens and blues the rock top
+by up to 45%, so a plain under rain no longer looks bone dry.
+
+The post pass is one full-screen `ShaderMaterial`, no library: the scene
+renders to a half-float MSAA target, then a 5×5 gaussian whose radius grows
+away from a focus band (tilt-shift), a warm grade, and a vignette. Tone
+mapping and the output colour space are applied in that pass, because
+three.js skips both when drawing to a render target. Toggled from View as
+*Diorama*. Bloom is left for the water shader.
 
 **Framing needs the aspect and the shape.** Both cameras used to size
 themselves from the height alone — ortho took `top = SPAN` and let `right`
