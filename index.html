@@ -45,6 +45,9 @@
     stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
   .pw.on{border-left-color:#c9a86a;color:#e5dcc8;background:#171510}
   .pw.on svg{stroke:#c9a86a}
+  .cap{padding:7px 11px 3px;font-size:8px;letter-spacing:1.6px;color:#4d5561;
+    text-transform:uppercase;border-top:1px solid #12161c}
+  .cap+.rates{border-top:none}
   .rates{display:flex;border-top:1px solid #12161c}
   .rt{flex:1;padding:7px 0;background:none;border:0;border-right:1px solid #12161c;
     color:#6f7681;font-family:inherit;font-size:11px;letter-spacing:.5px;cursor:pointer}
@@ -67,7 +70,12 @@
       <div class="menu">
         <h2>Powers</h2>
         <div id="powers"></div>
+        <div class="cap">brush</div>
         <div class="rates" id="brush"></div>
+        <div class="cap">slabs per click</div>
+        <div class="rates" id="depth"></div>
+        <div class="cap">material</div>
+        <div class="rates" id="palette"></div>
       </div>
       <div class="menu" style="margin-top:14px">
         <h2>View</h2>
@@ -400,8 +408,33 @@ function tick(){
   settle();
 }
 
-const legal=(i,p)=> p.d===0 ? true
-                  : p.d>0 ? T[i].h<H_MAX : T[i].h>-H_MAX;
+/* the highest and lowest slab a column may reach */
+const TOPMAX=H_MAX*SLAB-Z0-1, TOPMIN=-H_MAX*SLAB-Z0-1;
+
+/* add n slabs of m to the top of a column, and take n away again. Both work
+   in SLABS, not elevations -- that is what the finer stack is for, and it is
+   what lets a click lay down a seventy-unit course rather than a whole
+   four-hundred-and-twenty-unit step. Each returns how many it managed, so a
+   click that could do nothing at all is not counted as an action. */
+function raise(i,n,m){
+  const b=i*ZN; let t=TOP[i], did=0;
+  for(let k=0;k<n;k++){
+    const z=t+1;
+    if(z>TOPMAX || z>=ZN || CELL[b+z]===CLOUD) break;   /* not through a cloud */
+    CELL[b+z]=m; t=z; did++;
+  }
+  if(did) retop(i);
+  return did;
+}
+function lower(i,n){
+  const b=i*ZN; let did=0;
+  for(let k=0;k<n;k++){
+    const t=TOP[i];
+    if(t<0 || t<=TOPMIN) break;
+    CELL[b+t]=AIR; retop(i); did++;
+  }
+  return did;
+}
 
 /* every hex within rad of i, rad 0 being the hex itself */
 function within(i,rad){
@@ -417,19 +450,29 @@ function within(i,rad){
 /* THE BRUSH IS IN THE CORE, not in the UI, because a click has to stay ONE
    TICK however many hexes it moves. Applying use() per hex would run the
    weather 37 times for one press of a radius-3 brush. */
-function use(i,p,rad){
+/* n is a count of SLABS and m the material to lay down; both are ignored by
+   the powers they do not apply to. */
+function use(i,p,rad,n,m){
   if(i==null||i<0||!T[i]) return false;
   const cells=within(i,rad||0);
+  n=Math.max(1,n||1);
+  let did=0;
   if(p.k==='cloud'){
     /* the centre decides for the whole brush, so a stroke is all-on or
        all-off rather than a checkerboard of toggles */
     const on = cell(i,CLOUD_Z)!==CLOUD;
     for(const j of cells) CELL[j*ZN+CLOUD_Z] = on?CLOUD:AIR;
+    did=cells.length;
+  } else if(p.k==='subduct'){
+    for(const j of cells) did+=lower(j,n);
+  } else if(p.k==='place'){
+    for(const j of cells) did+=raise(j,n,m||ROCK);
   } else {
-    const move=cells.filter(j=>legal(j,p));
-    if(!move.length) return false;         /* every hex already at the limit */
-    for(const j of move) T[j].h+=p.d;
+    /* uplift extends whatever the column already has on top of it, which is
+       what makes it a different power from place rather than a duplicate */
+    for(const j of cells) did+=raise(j,n,T[j].mat||BEDROCK);
   }
+  if(!did) return false;        /* every hex already at its limit */
   tick();                       /* every action is a tick: the weather runs */
   return true;
 }
@@ -465,6 +508,7 @@ const BASE=-H_MAX-1;             /* every column is solid rock down to here */
 const POWERS=[
   {k:'uplift',  nm:'Uplift',  d: 1, ic:'<svg viewBox="0 0 18 18"><path d="M9 3l5 6H4z"/></svg>'},
   {k:'subduct', nm:'Subduct', d:-1, ic:'<svg viewBox="0 0 18 18"><path d="M9 15L4 9h10z"/></svg>'},
+  {k:'place',   nm:'Place',   d: 1, ic:'<svg viewBox="0 0 18 18"><rect x="4" y="7" width="10" height="6"/><path d="M4 7l5-3 5 3"/></svg>'},
   {k:'cloud',   nm:'Cloud',   d: 0, ic:'<svg viewBox="0 0 18 18"><ellipse cx="9" cy="8" rx="6" ry="3.4"/></svg>'},
 ];
 let POWER=POWERS[0];
@@ -472,6 +516,23 @@ let POWER=POWERS[0];
 /* BRUSH n covers radius n-1: 1, 7, 19 and 37 hexes. Size 2 is the one-hex
    radius; size 4 is the three-hex radius. */
 let BRUSH=1;
+
+/* SLABS PER CLICK, and WHICH MATERIAL. Both live here rather than in the
+   core: the core takes a count and a material and has no opinion about how
+   they were chosen. 6 slabs is one whole elevation step. */
+let DEPTH=1, MAT=ROCK;
+function drawDepth(){
+  document.getElementById('depth').innerHTML=[1,2,3,6,12].map(d=>
+    '<button class="rt'+(d===DEPTH?' on':'')+'" data-d="'+d+'">'+d+'</button>').join('');
+  document.querySelectorAll('#depth .rt').forEach(el=>el.onclick=()=>{
+    DEPTH=+el.dataset.d; drawDepth(); });
+}
+function drawPalette(){
+  document.getElementById('palette').innerHTML=[BEDROCK,ROCK].map(m=>
+    '<button class="rt'+(m===MAT?' on':'')+'" data-m="'+m+'">'+MATS[m]+'</button>').join('');
+  document.querySelectorAll('#palette .rt').forEach(el=>el.onclick=()=>{
+    MAT=+el.dataset.m; drawPalette(); hover(HOVER); });
+}
 function drawBrush(){
   document.getElementById('brush').innerHTML=[1,2,3,4].map(b=>
     '<button class="rt'+(b===BRUSH?' on':'')+'" data-b="'+b+'">'+b+'</button>').join('');
@@ -868,7 +929,10 @@ function hover(i){
   HOVER=i;
   for(const l of RINGS) l.visible=false;
   if(i>=0){
-    ringMat.color.set(POWER.k==='cloud'?0x5aafe1 : POWER.d>0?0xffffff : 0xc9a86a);
+    ringMat.color.set(
+      POWER.k==='cloud' ? 0x5aafe1 :
+      POWER.k==='place' ? (MAT===BEDROCK?0x8d97a6:0xd8cfc0) :
+      POWER.d>0 ? 0xffffff : 0xc9a86a);
     within(i,BRUSH-1).forEach((j,k)=>{
       if(k>=RINGS.length) return;
       const t=T[j];
@@ -891,7 +955,7 @@ renderer.domElement.addEventListener('click',e=>{
   downAt=null;
   if(moved>4) return;
   const i=pick(e);
-  if(use(i,POWER,BRUSH-1)){ rebuild(); hover(i); }
+  if(use(i,POWER,BRUSH-1,DEPTH,MAT)){ rebuild(); hover(i); }
 });
 
 function resize(){
@@ -1007,7 +1071,7 @@ window.POT={T,at,use,tick,settle,rebuild,POWERS,scene,
    now, and the two must never be confused. */
 function frame(){ controls.update(); renderer.render(scene,cam);
   requestAnimationFrame(frame); }
-drawMenu(); drawBrush(); drawRates(); setSun(0); settle(); rebuild(); resize(); drawInfo(); frame();
+drawMenu(); drawBrush(); drawDepth(); drawPalette(); drawRates(); setSun(0); settle(); rebuild(); resize(); drawInfo(); frame();
 </script>
 </body>
 </html>
