@@ -146,7 +146,7 @@ renderer gets driven by hand.
 
 ---
 
-## The five rules
+## The six rules
 
 This is the whole simulation. If a change cannot be stated as one of these,
 it is a new rule and wants deciding rather than drifting into.
@@ -159,6 +159,7 @@ it is a new rule and wants deciding rather than drifting into.
 4  a tile with water pours into whichever neighbours stand lower, until
    it and all of them are at ONE HEIGHT
 5  off the board is lower than anything, and that share is gone
+6  every wet tile loses the same flat amount each tick, clamped at zero
 ```
 
 **A tick is one STEP, not a solve.** Water moves one hex per tick and no
@@ -166,6 +167,9 @@ further, so a basin far from the rain fills slowly as the water walks to it.
 An earlier build solved instead — escape levels, basins filled to a level in
 a single pass, a film of water held against gravity — and all of that is
 gone.
+
+Rule 6 came last and is the only one that is not about where water goes. It
+is written up in full under *Evaporation, and temperature*.
 
 Rule 2 is a **display quantum only**. A tile draws `floor(water/70)` water
 tiles stacked on it, so anything under 70 units is held but not drawn, and a
@@ -386,8 +390,10 @@ world. Two corollaries worth keeping:
 
 - **The board is still when idle.** Take the clouds away and nothing moves.
   Measured: 0 of 300 boards drift.
-- **Water is conserved exactly.** It is created only by clouds and lost only
-  over the edge. Measured: 0 ticks in 300 boards × 85 created any.
+- **Nothing creates water.** It comes only from clouds and leaves by two
+  sinks — over the edge, and into the air. Measured: 0 ticks in 800 gained
+  more than the rain that fell. It is no longer *conserved*, which it was
+  before evaporation; the half worth testing is that nothing makes it.
 
 `h` is not a plain field — it is an accessor over the **cell stack**, a
 `Uint8Array` of 469 × 192 cells with a `TOP` cache. A cell is one of:
@@ -403,6 +409,66 @@ CLOUD    a rain tile, which lives in the same stack
 *amount* per column like water — `t.sed` — drawn in the same 70-unit courses.
 Cells are for structure, amounts are for what flows. `gnd(i)` is `h + sed`,
 and everything that used to compare `h` compares that.
+
+## Evaporation, and temperature
+
+Every wet column loses the same flat amount of water each tick, clamped at
+zero. That is the whole rule.
+
+**Temperature is the name of the dial, not a second quantity.** One number
+with two names: unless temperature does something evaporation does not, a
+second knob is only arithmetic handed to the player. The slider steps in
+twentieths of a unit because the interesting range is all below one a tick.
+
+**Flat per column, not per unit of water.** Evaporation is a surface process
+and every wet column has the same surface — one hex — so a puddle and a lake
+lose exactly the same amount. Puddles vanish and lakes shrug, and that falls
+out of the rule rather than being a rule:
+
+```
+  400 ticks at 0.20 units/tick
+     puddle    70 units  ->  0      (gone by tick 350)
+     lake    5000 units  ->  4920
+```
+
+**It runs last in the tick** — rain, settle, weather, carry, evaporate — so
+water gets to move before it dries and a channel is not drained out from
+under the erosion that reads it.
+
+**What it is for.** Without it the board only ever gets wetter until the water
+finds a rim, so a lake has a level but no *size*. With it, rain in equals
+evaporation plus outflow, and the wetted area settles at about `rain/EVAP`
+hexes whatever the terrain. One cloud on a flat radius-24 board:
+
+```
+  rate    predicted   measured   water on board
+   0.1          700        619            2862
+   0.2          350        349            1508
+   0.5          140        127             682
+   1.0           70         55             390
+```
+
+The prediction holds while water can walk faster than it dries and
+**undershoots as the rate climbs** — at 1.0 the rain is drying before it gets
+anywhere. That is the board being ARID, and it is the first thing here that
+makes *where* a cloud goes matter over distance.
+
+**A sealed tarn can now go away**, which nothing could do before. A pit ringed
+by a four-elevation wall, filled, then the rain taken off:
+
+```
+  ticks after rain off      500    2000    5000   20000
+  rate 0.0                 1550    1550    1550    1550     forever
+  rate 0.2                 1453    1153     553       0     dry by ~7,750
+```
+
+**Known and expected:** at a high rate a rim column dries faster than water
+walks to it, so a distant basin never fills at all. That is correct, it is
+the interesting part, and it will read as broken the first time it is seen.
+
+**Deliberately not done:** temperature driving weathering (freeze-thaw is real
+and is a second mechanic), and the vapour going anywhere (that is the cycle,
+and it stays in *the fever dream*).
 
 ## Weathering
 

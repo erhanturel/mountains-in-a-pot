@@ -143,6 +143,11 @@
         <div class="rates" id="sun"></div>
       </div>
       <div class="menu">
+        <h2>Climate</h2>
+        <div class="cap" id="ecap">temperature</div>
+        <input id="evap" type="range" min="0" max="100" step="1" value="4">
+      </div>
+      <div class="menu">
         <h2>Erosion</h2>
         <div class="cap" id="wcap">weathering</div>
         <input id="wear" type="range" min="0" max="70" step="1" value="7">
@@ -673,6 +678,42 @@ function carry(){
 }
 
 /* the rain tiles rain, and then everything sheds once */
+/* ---------------------------------------------------------------------
+   EVAPORATION, and TEMPERATURE is the name of the dial that sets it. One
+   number with two names rather than two knobs: unless temperature does
+   something evaporation does not, a second dial is only arithmetic handed to
+   the player.
+
+   FLAT PER COLUMN, not per unit of water. Evaporation is a surface process
+   and every wet column has the same surface -- one hex -- so a 70-unit
+   puddle and a 5,000-unit lake lose exactly the same amount each tick. That
+   is why puddles vanish and lakes barely notice, and it falls out of the
+   rule rather than being a rule of its own.
+
+   WHAT IT IS FOR. Without it the board only ever gets wetter until the water
+   finds a rim, so a lake has a level but no size. With it, rain in equals
+   evaporation plus outflow, so the wetted area settles at roughly
+   rain/EVAP hexes whatever the terrain -- and a board can be ARID, its rain
+   drying on the way to anywhere. It is the first thing here that makes WHERE
+   a cloud goes matter over distance.
+
+   IT ENDS EXACT CONSERVATION. Water used to be created only by clouds and
+   lost only over the edge. There are two sinks now. Nothing still creates
+   water, and that is the half worth testing.
+
+   Deliberately not done: temperature driving weathering (freeze-thaw is a
+   real thing and a second mechanic), and the vapour going anywhere at all
+   (that is the cycle, and it stays in the fever dream).
+   --------------------------------------------------------------------- */
+let EVAP=0.2/420;                /* units of water off every wet column a tick */
+function evaporate(){
+  if(EVAP<=0) return;
+  for(let i=0;i<T.length;i++){
+    const p=T[i].pool;
+    if(p>0) T[i].pool = p>EVAP ? p-EVAP : 0;
+  }
+}
+
 function tick(){
   for(let i=0;i<T.length;i++){
     const n=clouds(i);
@@ -681,6 +722,9 @@ function tick(){
   settle();
   weather();
   carry();                      /* slag last, so what just broke loose can move */
+  /* LAST, so water gets to move before it dries and a channel is not drained
+     out from under the erosion that reads it. */
+  evaporate();
 }
 
 /* ERASE is the mirror of PLACE, and like Place it is driven by the palette:
@@ -1477,6 +1521,17 @@ function drawRates(){
    slider rather than a constant because there is no calibration for it yet
    and the only way to find one is to watch a board at several settings. */
 const wearEl=document.getElementById('wear'), wcap=document.getElementById('wcap');
+/* TEMPERATURE, which is the evaporation rate wearing the name of its cause.
+   The interesting range is all below one unit a tick, so the slider steps in
+   twentieths rather than whole units. */
+const evEl=document.getElementById('evap'), ecap=document.getElementById('ecap');
+function drawEvap(){
+  const u=+evEl.value*0.05;
+  EVAP=u/420;
+  ecap.textContent='temperature — '+u.toFixed(2)+' units/tick evaporated';
+}
+evEl.oninput=drawEvap;
+
 function drawWear(){
   const u=+wearEl.value/100;
   WEATHER=u/420;
@@ -1653,7 +1708,7 @@ function serialise(){
     pool:T.map(t=>round(t.pool)), flow:T.map(t=>round(t.flow)),
     sed:T.map(t=>round(t.sed)),   sand:T.map(t=>round(t.sand)),
     wear:T.map(t=>round(t.wear)), grit:T.map(t=>round(t.grit)), out,
-    knobs:{weather:WEATHER, shield:SHIELD, thresh:THRESH, cap:CAP,
+    knobs:{evap:EVAP, weather:WEATHER, shield:SHIELD, thresh:THRESH, cap:CAP,
            attr:ATTR, mob:MOB, abrade:ABRADE}
   });
 }
@@ -1680,6 +1735,8 @@ function apply(d){
                ATTR=d.knobs.attr; MOB=d.knobs.mob;
                if(d.knobs.abrade!==undefined) ABRADE=d.knobs.abrade;
                abEl.value=Math.round(ABRADE*100); drawAbrade();
+               if(d.knobs.evap!==undefined) EVAP=d.knobs.evap;
+               evEl.value=Math.round(EVAP*420/0.05); drawEvap();
                wearEl.value=Math.round(WEATHER*420*100);
                thEl.value=Math.round(THRESH*100); caEl.value=Math.round(CAP*1000);
                atEl.value=Math.round(ATTR*100);  mbEl.value=Math.round(MOB*10);
@@ -1742,7 +1799,7 @@ window.POT={T,at,use,tick,settle,rebuild,POWERS,scene,
 function frame(){ controls.update(); renderer.render(scene,cam);
   requestAnimationFrame(frame); }
 drawMenu(); drawBrush(); drawDepth(); drawPalette(); drawRates(); drawHist();
-drawWear(); drawCarry(); drawSand(); drawAbrade(); setSun(0); settle(); rebuild(); resize(); drawInfo(); frame();
+drawEvap(); drawWear(); drawCarry(); drawSand(); drawAbrade(); setSun(0); settle(); rebuild(); resize(); drawInfo(); frame();
 /* a board parked on the way through a resize is picked up here */
 { const parked=sessionStorage.getItem('potLoad');
   if(parked){ sessionStorage.removeItem('potLoad');
