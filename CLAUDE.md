@@ -65,11 +65,29 @@ oversight — see *What was taken out* below before putting any of it back.
 ## Running it
 
 ```
-python -m http.server 8777      # three.js is vendored; ESM needs a server
+run.bat                         # serves and opens a tab
 ```
 
-Then open `http://localhost:8777/index.html`. There is a launch config at
-`.claude/launch.json` under the name `pot`.
+or by hand:
+
+```
+python -m http.server 8777
+```
+
+then `http://localhost:8777/index.html`. There is a launch config at
+`.claude/launch.json` under the name `pot`, and `?r=8|10|12|14` picks the
+board size.
+
+**The page cannot be opened as a file.** It loads three.js as an ES module,
+module scripts are subject to CORS, and a `file://` page has an opaque origin
+— so the import is refused and the viewport comes up blank with nothing but a
+CORS error behind it. three.js r185 ships ESM only, so there is no classic
+script to drop in instead. It wants a server, and that is not going to change
+without a build step.
+
+**`confirm`, `alert` and `prompt` are unreliable in embedded browsers** —
+`confirm` returns false without ever showing anything, which once made the
+size buttons look dead. Ask in the page instead.
 
 The simulation can be pulled out of the HTML and run headless in Node:
 
