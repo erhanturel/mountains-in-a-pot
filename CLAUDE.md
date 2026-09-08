@@ -572,6 +572,64 @@ refused; the Whim fired on the first Lake and gave Monsoon; Year 1 cleared
 with 5 Dew, Monsoon bought, Year 2 opened with 10 mana and a fresh hand;
 an idle pot rests at Year 1 with Bloom 0.
 
+## The timescales, spread apart
+
+The pacing complaint — *"either it crawls or a Season ends while I look
+away"* — was not the speed buttons. Measured headless out of the CORE that
+ships, on the build before this one:
+
+```
+  process                      ticks   in Seasons
+  a bowl fills                    85       0.71
+  life covers a lake rim          61       0.51
+  one slab of rock weathers      100       0.83
+  ONE SEASON                     120       1.00
+                                          ------
+  slowest / fastest                        1.64x
+```
+
+**There was only one timescale in the game.** Everything happened within a
+factor of 1.64, and all of it took about a Season — so every speed setting
+made *everything* fast or *everything* slow. At 1× you waited a minute for a
+puddle; at 10× the Season was over before you looked up.
+
+Good pacing is **nested** scales: something moves every few seconds,
+something turns every minute, something changes over the whole run. Then
+whichever speed you pick, something is moving and something is holding still.
+
+So the Season is four times longer in ticks, the clock runs three times
+faster in real time, life steps a quarter as often, and weathering is
+fourteen times slower. **Water is untouched** — it was already the fast thing
+and it was already right.
+
+```
+                          before            after
+                     ticks  Seasons   ticks  Seasons   sec at 1x
+  a bowl fills          85    0.71       85    0.18       14
+  life covers a rim     61    0.51      241    0.50       40
+  one slab weathers    100    0.83     1400    2.92      233
+  ONE SEASON           120    1.00      480    1.00       80
+                            ------           -------
+  spread                     1.64x           16.47x
+```
+
+**Life is unchanged in Seasons** — 0.51 before, 0.50 after — so Bloom per
+Year does not move and the target curve stays valid. That was the point of
+tuning in Seasons rather than in ticks.
+
+**Weathering is the one that really slows.** Soil is now something the land
+does over a Year rather than over a Season, which is what makes **Moss the
+early game and Grass the reward for lasting**: moss needs no soil and takes
+from the first tick, grass needs a course and now waits about three Seasons
+for it.
+
+A Year is 1920 ticks, 5.3 minutes at 1×; eight Years is about 43 minutes.
+
+The speeds are **1, 2, 4, 8**. They were 1, 3, 10, 30 — three-fold jumps,
+which is why there was never a setting between *too slow* and *the Season
+just ended* — and they are labelled with the number now instead of one, two
+or three play glyphs.
+
 ## Three things the first full run put on trial
 
 The run was liked and the diagnosis was that it is **front-loaded**. Two of

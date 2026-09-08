@@ -50,13 +50,16 @@ Köppen (needs latitude and an ocean; a pot has neither), the marine ladder
 
 The current build actively annoys. None of this is a new system.
 
-- [ ] **A1 · Separate the timescales.** Everything now happens within a
-  factor of two: a bowl fills in 120 ticks, a rim greens in 56, a slab
-  weathers in 100, and a Season is 120. So every speed makes *everything*
-  fast or *everything* slow. Target: water in seconds, life in a Season,
-  erosion and soil in Years.
-- [ ] **A2 · Speeds 1/2/4/8**, not 1/3/10/30. Three-fold jumps are why there
-  is no setting between "too slow" and "a Season just ended".
+- [x] **A1 · Separate the timescales.** Measured before: bowl 0.71 Season,
+  life 0.51, a slab of rock 0.83 — a spread of **1.64×**, one timescale for
+  the whole game. After: **0.18 / 0.50 / 2.92**, spread **16.47×**. Water
+  43s → **14s** at 1×; life unchanged *in Seasons* so the Bloom targets stay
+  valid; soil is now a Year-scale process, which makes Moss the early game
+  and Grass what waiting buys. Season 120 → 480 ticks, BASE_RATE 2 → 6,
+  LIFE_EVERY 10 → 40, player weathering 0.7 → 0.05. A Year is 5.3 min at 1×,
+  a run about 43.
+- [x] **A2 · Speeds 1/2/4/8**, labelled with the number. Verified in the
+  browser at 5.97 ticks/s against an expected 6.
 - [ ] **A3 · The Whim becomes a token, not an interrupt.** Twelve milestones
   on a 500 ms check means three Wonders forming together fire three modals
   back to back. A glowing token that waits until you press it fixes the

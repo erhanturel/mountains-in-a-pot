@@ -2957,7 +2957,7 @@ function grow(){
    about fifty hexes from one seed. Three clocks -- water fast, soil slow,
    life slower -- are what make the world read as a world. TICKS is stored
    with the board so a saved game keeps its phase. */
-let LIFE_EVERY=10, TICKS=0;
+let LIFE_EVERY=40, TICKS=0;   /* see THE TIMESCALES, below */
 /* how many hexes are alive, and what they are worth: the seed of the score */
 const alive=()=>{ let n=0; for(const t of T) if(t.life) n++; return n; };
 const worth=()=>{ let w=0; for(const t of T) if(t.life) w+=WORTH[t.life]; return w; };
@@ -3959,10 +3959,44 @@ function drawMenu(){
    The tick loop runs on a fixed 100 ms beat and carries a fractional
    accumulator, so 1x is one tick every half second and 10x is two ticks a
    beat; the board is rebuilt once per beat, not once per tick. */
-const BASE_RATE=2;               /* ticks a second at 1x */
-const SEASON_TICKS=120, SEASONS=['Spring','Summer','Autumn','Winter'];
+/* THE TIMESCALES, AND WHY THEY ARE SPREAD APART.
+
+   Measured on the build before this one, headless, out of the CORE that
+   ships:
+
+     a bowl fills                 85 ticks    0.71 of a Season
+     life covers a lake rim       61          0.51
+     one slab of rock weathers   100          0.83
+     ONE SEASON                  120          1.00
+                                             ------
+     slowest / fastest                        1.64x
+
+   Everything in the game happened at the same speed, within a factor of
+   1.64, and all of it took about one Season. So every speed setting made
+   EVERYTHING fast or EVERYTHING slow: at 1x you waited a minute for a
+   puddle, and at 10x a Season ended before you looked up. That is the whole
+   of the pacing complaint, and it is not the speed buttons -- it is that
+   there is only one timescale in the game.
+
+   Good pacing is NESTED scales: something moves every few seconds, something
+   turns every minute, something changes over the whole run. Then whatever
+   speed you pick, something is moving and something is holding still.
+
+   So: the Season is four times longer in ticks, the clock runs three times
+   faster in real time, life steps a quarter as often, and weathering is
+   fourteen times slower. Water is untouched -- it is the fast thing, and it
+   was already right.
+
+   Life is unchanged IN SEASONS (0.51 before, 0.51 after), so Bloom per Year
+   does not move. Weathering is the one that really slows: soil is now a
+   thing the land does over a Year, not over a Season, which is what makes
+   Moss the early game and Grass the reward for lasting. */
+const BASE_RATE=6;               /* ticks a second at 1x */
+const SEASON_TICKS=480, SEASONS=['Spring','Summer','Autumn','Winter'];
 let STEP=1, PAUSED=false, acc=0;
-const RATES=[1,3,10,30];
+/* 1, 3, 10, 30 were three-fold jumps, which is why there was never a
+   setting between 'too slow' and 'the Season just ended'. */
+const RATES=[1,2,4,8];
 /* RUN is a const declared much further down, and `typeof RUN` does NOT
    return 'undefined' while it is in its temporal dead zone -- it THROWS.
    These guards only ever worked because the module finished evaluating
@@ -4356,7 +4390,7 @@ function drawSpeed(){
   const el=document.getElementById('speed');
   el.classList.toggle('unlocked',UNLOCK.speed);
   el.innerHTML='<button data-p="1" class="'+(PAUSED?'on':'')+'">❚❚</button>'+
-    [1,3,10].map(r=>'<button data-r="'+r+'" class="'+(!PAUSED&&r===STEP?'on':'')+'">'+'▶'.repeat(r===1?1:r===3?2:3)+'</button>').join('');
+    RATES.map(r=>'<button data-r="'+r+'" class="'+(!PAUSED&&r===STEP?'on':'')+'">'+r+'×</button>').join('');
   el.querySelectorAll('button').forEach(b=>b.onclick=()=>{
     if(b.dataset.p) setPause(!PAUSED); else { STEP=+b.dataset.r; setPause(false); }
     drawSpeed(); });
@@ -4465,7 +4499,10 @@ manaBtn.onclick=()=>{ FREE_MANA=!FREE_MANA; drawManaBtn(); drawMana(); drawDock(
 function freshPot(){
   for(let i=0;i<T.length;i++) raise(i,SLAB,ROCK);
   START_H=1;
-  wearEl.value=70; drawWear();
+  wearEl.value=5; drawWear();     /* 0.05 units/tick: one course of soil
+                                     in about three Seasons. Moss needs
+                                     none of it and carries the early
+                                     game; Grass is what waiting buys. */
   settle(); rebuild();
   startYear();
 }
