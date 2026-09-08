@@ -505,7 +505,7 @@ Measured:
 - 0 of 300 ticks created water with life on.
 
 **Bloom** is the count of living hexes, shown at the bottom right of the
-board. It is the seed of the score and nothing more yet.
+board — the seed of the score; see *Harvest* and *The run*.
 
 **Life keeps its own clock.** Water and soil move every tick; life steps
 every `LIFE_EVERY` (10). Once the world ran on its own a seed that walked a
@@ -537,6 +537,40 @@ the pot out line by line, lights the Wonders standing in the **Codex**
 a click. The bench has a *harvest* button to read the arithmetic at any
 moment. Measured: the seeded bowl scores Lake + Ring of Life + Grove,
 12 × 2.75 = 33.
+
+## The run: mana, the bar, Spring, and Gaia's Whim
+
+The first playable, built as one block because none of its parts is fun
+alone. **Eight Years in one pot.** Each Year grants **10 mana**; Dig and
+Raise cost 2, Rain 3, Sow 1, and clicking Rain on a cloud takes it away
+for nothing. At the turn of the Year the Harvest is read against the
+Year's **target** — 8, 15, 25, 40, 60, 90, 130, 180 — and a miss ends the
+run on the **Behold** screen, gently. Clearing it earns **Dew** (2 plus
+surplus over five, cap 10, plus interest), and **Spring** offers three
+**Boons** and two **seed cards** from the run seed; reroll costs 2, five
+Boons at most. The first six Boons are Monsoon, Wellspring, Long Summer,
+Deep Roots, Basalt Heart and Lake Heart; each reaches the simulation only
+through a lever it already has (`RAIN_MULT`, `FLOOD_TOL`, `BONUS`).
+
+**Life has three kinds**, each one clause on rule 6: Grass is the rule as
+stated; **Moss** roots on bare rock with no soil and is worth half; **Reed**
+stands one water tile deep. `life` holds the kind, so patches stay what
+they are and spread as what they are (GGGGmGmmmmmm on a half-soiled rim).
+The deck starts Grass, Grass, Moss; the hand is the deck each Year; sowing
+spends a card. Bloom counts *worth*, not hexes.
+
+**Gaia's Whim** is earned, never scheduled: the first Lake, the first
+River and the first Ring of Life each turn the wheel once. The wheel picks
+a force from the run seed — Meteor (aimed: a crater two steps deep with a
+ring of slag), Megatime (a hundred ticks in a breath), Monsoon (twice the
+rain for a Season) — and the player aims it. It never scores. The Harvest
+has the floor at the turn of the Year, so the wheel waits.
+
+The run seed is `?seed=`; it fixes the shop and the wheel, nothing else.
+Checked in the browser: dig + rain 10 → 5 mana, sow → 4, a fifth click
+refused; the Whim fired on the first Lake and gave Monsoon; Year 1 cleared
+with 5 Dew, Monsoon bought, Year 2 opened with 10 mana and a fresh hand;
+an idle pot rests at Year 1 with Bloom 0.
 
 ## Player mode: powers are earned
 
