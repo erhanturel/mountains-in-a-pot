@@ -163,7 +163,11 @@
   #harvest{position:absolute;inset:0;z-index:6;display:none;align-items:center;justify-content:center;
     background:rgba(10,11,16,.55);backdrop-filter:blur(2px)}
   #harvest.show{display:flex}
-  #harvest .card{width:420px;max-width:92%;background:linear-gradient(180deg,#23252f,#171921);
+  /* the Codex grid carries twelve recipes now, so a short screen with a Year
+     full of Wonders can outgrow the card. It scrolls itself rather than the
+     page, which never scrolls. */
+  #harvest .card{width:420px;max-width:92%;max-height:90vh;overflow-y:auto;
+    background:linear-gradient(180deg,#23252f,#171921);
     border:1px solid rgba(232,194,116,.45);border-radius:22px;padding:26px 30px 24px;
     box-shadow:0 30px 80px rgba(0,0,0,.6);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:#e9e2d2}
   #harvest h3{margin:0;font-family:Georgia,"Times New Roman",serif;font-weight:400;font-size:26px;color:#f4ecd8}
@@ -175,10 +179,18 @@
   #harvest .row.total{border-bottom:none;font-size:22px;padding-top:12px;font-family:Georgia,serif}
   #harvest .row.total span:last-child{color:#a6d96a}
   #harvest .best{color:#8b929c;font-size:12px;margin-top:2px}
-  #harvest .codex{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:16px 0 18px}
-  #harvest .codex div{font-size:10.5px;text-align:center;padding:7px 4px;border-radius:9px;border:1px solid rgba(255,255,255,.08);color:#4d5561;background:rgba(255,255,255,.02)}
-  #harvest .codex div.found{color:#e8c274;border-color:rgba(232,194,116,.5);background:rgba(232,194,116,.08)}
-  #harvest .codex div.now{color:#fff;background:rgba(166,217,106,.18);border-color:#a6d96a}
+  #harvest .codex{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:16px 0 18px}
+  #harvest .codex div{font-size:10.5px;text-align:left;padding:7px 9px;border-radius:9px;
+    border:1px solid rgba(255,255,255,.08);color:#4d5561;background:rgba(255,255,255,.02);position:relative}
+  #harvest .codex div b{display:block;font-size:11.5px;font-weight:600;color:#7c8492;letter-spacing:.01em}
+  #harvest .codex div u{position:absolute;top:7px;right:9px;text-decoration:none;font-size:10px;color:#4d5561}
+  #harvest .codex div i{display:block;font-style:normal;margin-top:3px;line-height:1.4;color:#5c636e}
+  #harvest .codex div.found{border-color:rgba(232,194,116,.45);background:rgba(232,194,116,.07)}
+  #harvest .codex div.found b,#harvest .codex div.found u{color:#e8c274}
+  #harvest .codex div.found i{color:#8a8064}
+  #harvest .codex div.now{background:rgba(166,217,106,.16);border-color:#a6d96a}
+  #harvest .codex div.now b{color:#fff} #harvest .codex div.now u{color:#a6d96a}
+  #harvest .codex div.now i{color:#9aa88a}
   #harvest button{width:100%;padding:13px;border-radius:14px;border:1px solid #e8c274;background:linear-gradient(180deg,#4a3d22,#2e2716);
     color:#fff;font-family:inherit;font-size:16px;cursor:pointer}
   /* THE PANEL SAYS WHAT YOU HOLD. It was a row of 15px dots and a seed
@@ -233,6 +245,7 @@
   #corner button{border:1px solid #2a2d38;background:rgba(18,20,28,.6);color:#6f7681;
     font-family:system-ui,sans-serif;font-size:11px;padding:5px 9px;border-radius:10px;cursor:pointer}
   #corner button:hover{color:#c9c1ae}
+  #codexBtn{display:none} body.play #codexBtn{display:block}
   #size,#palette{flex-wrap:wrap}
   #size .rt{flex:1 0 25%}
   #palette .rt{flex:1 0 33%}
@@ -249,7 +262,7 @@
     <div class="board-col">
       <div id="board"><div id="info"></div><div id="time"></div><div id="clock"></div><div id="bloom"></div>
         <div id="hintline"></div><div id="dock"></div><div id="hand"></div><div id="speed"></div><div id="tip"></div><div id="mana"></div>
-        <div id="corner"><button id="benchBtn"></button></div>
+        <div id="corner"><button id="benchBtn"></button><button id="codexBtn">✦ Codex</button></div>
         <div id="flash"></div><div id="strikeCap"></div>
         <div id="harvest"><div class="card"></div></div></div>
       <div class="hint"><b>click a hex</b> — drag to orbit, scroll to zoom.
@@ -2943,6 +2956,23 @@ const BONUS={lake:0.5,great:1.0,river:0.5,fall:0.5,fork:0.25,delta:0.75,
 const WONDER_NAMES={lake:'The Lake',great:'The Great Lake',river:'The River',fall:'The Waterfall',
   fork:'The Fork',delta:'The Delta',island:'The Island',ring:'The Ring of Life',grove:'The Grove',
   terrace:'The Terrace',meadow:'The Highland Meadow',shed:'The Watershed'};
+/* HOW EACH ONE IS MADE, in the player's words. A playtester asked "how is a
+   Wonder made? I don't know how we would get one" -- and they were right to:
+   the Codex lit up names and never said what a name meant. Each line is a
+   restatement of the detector above it and has to be kept true to it. */
+const WONDER_HOW={
+  lake:   'Three hexes of still water side by side.',
+  great:  'A lake of twelve hexes or more.',
+  river:  'Four hexes in a row that water runs through.',
+  fall:   'A river pouring onto ground two steps below.',
+  fork:   'One river hex sending water out two ways.',
+  delta:  'A fork within two hexes of two separate ways off the board.',
+  island: 'Dry ground ringed all the way round by water.',
+  ring:   'A lake with life or water on every hex around it.',
+  grove:  'Seven living hexes joined together.',
+  terrace:'Five living hexes, each with higher ground one side and lower the other.',
+  meadow: 'Three living hexes at three steps up or higher.',
+  shed:   'One cloud whose water reaches two far-apart edges of the board.'};
 /* connected groups of hexes satisfying pred, as arrays of indices */
 function components(pred){
   const n=T.length, seen=new Uint8Array(n), out=[];
@@ -4336,6 +4366,7 @@ function setPlay(on){
   resize();
 }
 document.getElementById('benchBtn').onclick=()=>setPlay(!PLAY);
+document.getElementById('codexBtn').onclick=()=>showCodex();
 /* a fresh pot for a player: a step of rock on the bedrock, and weathering
    that shows within a Season */
 function freshPot(){
@@ -4433,7 +4464,21 @@ function harvestRows(h,now){
   rows+='<div class="row total"><span>Bloom</span><span>'+h.bloom+'</span></div>';
   return rows;
 }
-const codexGrid=now=>'<div class="codex">'+Object.keys(BONUS).map(k=>'<div class="'+(now.has(k)?'now':CODEX.has(k)?'found':'')+'">'+WONDER_NAMES[k].replace(/^The /,'')+'</div>').join('')+'</div>';
+/* The grid says how, not just what. Anything already found keeps its recipe;
+   so does anything not found -- the Codex is a list of things to aim at, and
+   hiding the aim was the whole complaint. */
+const codexGrid=now=>'<div class="codex">'+Object.keys(BONUS).map(k=>
+  '<div class="'+(now.has(k)?'now':CODEX.has(k)?'found':'')+'"><b>'+WONDER_NAMES[k].replace(/^The /,'')+
+  '</b><u>+'+BONUS[k]+'</u><i>'+WONDER_HOW[k]+'</i></div>').join('')+'</div>';
+/* and it can be read at any time, not only when the Year turns */
+function showCodex(){
+  const now=new Set(Object.keys(wonders())), el=card();
+  el.innerHTML='<h3>The Codex</h3><div class="sub">Twelve shapes the water can make. '+
+    'Green stands in the pot now; gold you have found before.</div>'+
+    codexGrid(now)+'<button>Back</button>';
+  el.querySelector('button').onclick=()=>close();
+  open();
+}
 function showHarvest(atYearEnd){
   const h=harvest(), now=new Set(Object.keys(h.wonders));
   for(const k of now) CODEX.add(k);
@@ -4704,7 +4749,7 @@ window.POT={T,at,use,tick,settle,rebuild,POWERS,scene,
   wonders, harvest, BONUS, WONDER_NAMES, showHarvest, MOSS, REED, KINDS, WORTH, worth,
   RUN, TARGETS, BOONS, showSpring, showBehold, showWhim, takeForce, startYear, playClick, drawMana,
   strike, landForce, fx, AIMED, SPELLS, FORCES, MILESTONES, offerFor, checkWhim,
-  surfaceOf, wouldTake, drawTip, SEEDCARDS,
+  surfaceOf, wouldTake, drawTip, SEEDCARDS, showCodex, WONDER_HOW,
   get striking(){ return !!STRIKE },
   get rainMult(){ return RAIN_MULT }, set rainMult(v){ RAIN_MULT=v }, get floodTol(){ return FLOOD_TOL }, set floodTol(v){ FLOOD_TOL=v },
   get unlock(){ return UNLOCK }, get hint(){ return HINT }, get play(){ return PLAY }, setPlay, selectTool, checkUnlocks,
