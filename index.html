@@ -205,6 +205,7 @@
     font-variant-numeric:tabular-nums}
   #mana .num u{text-decoration:none;font-size:14px;color:#7d8390;font-weight:400}
   #mana .num.low{color:#d08a6a}
+  #mana .num.free{color:#9ed46a}
   #mana .pips{letter-spacing:3px;font-size:15px;color:#e8c274;margin-top:-1px}
   #mana .pips i{font-style:normal;color:#3a3d4a}
   #mana .dew{color:#8fd0e8;margin-top:3px}
@@ -253,7 +254,8 @@
   #corner button{border:1px solid #2a2d38;background:rgba(18,20,28,.6);color:#6f7681;
     font-family:system-ui,sans-serif;font-size:11px;padding:5px 9px;border-radius:10px;cursor:pointer}
   #corner button:hover{color:#c9c1ae}
-  #codexBtn{display:none} body.play #codexBtn{display:block}
+  #codexBtn,#manaBtn{display:none} body.play #codexBtn,body.play #manaBtn{display:block}
+  #manaBtn.on{color:#9ed46a;border-color:#3d5a30}
   #size,#palette{flex-wrap:wrap}
   #size .rt{flex:1 0 25%}
   #palette .rt{flex:1 0 33%}
@@ -270,7 +272,8 @@
     <div class="board-col">
       <div id="board"><div id="info"></div><div id="time"></div><div id="clock"></div><div id="bloom"></div>
         <div id="hintline"></div><div id="dock"></div><div id="hand"></div><div id="speed"></div><div id="tip"></div><div id="mana"></div>
-        <div id="corner"><button id="benchBtn"></button><button id="codexBtn">✦ Codex</button></div>
+        <div id="corner"><button id="benchBtn"></button><button id="codexBtn">✦ Codex</button>
+          <button id="manaBtn"></button></div>
         <div id="flash"></div><div id="strikeCap"></div>
         <div id="harvest"><div class="card"></div></div></div>
       <div class="hint"><b>click a hex</b> — drag to orbit, scroll to zoom.
@@ -1860,11 +1863,11 @@ function playClick(i){
   if(RUN.aim){ strike(i,RUN.aim); drawMana(); return; }
   if(TOOL==='rain' && clouds(i)){ const b=snap(); if(use(i,POWERS.find(p=>p.k==='erase'),0,1,CLOUD)){ push(b); rebuild(); hover(i); } return; }
   const cost=costOf(TOOL);
-  if(RUN.mana<cost) return;
+  if(!FREE_MANA && RUN.mana<cost) return;
   if(TOOL==='sow' && !RUN.hand.includes(MAT)) return;
   const before=snap();
   if(use(i,POWER,BRUSH-1,DEPTH,MAT)){
-    RUN.mana-=cost;
+    if(!FREE_MANA) RUN.mana-=cost;
     if(TOOL==='sow'){ RUN.hand.splice(RUN.hand.indexOf(MAT),1); if(!RUN.hand.includes(MAT)) MAT=RUN.hand[0]||MAT; }
     push(before); rebuild(); hover(i); drawMana(); drawDock();
   }
@@ -1963,24 +1966,31 @@ const BASE_RATE=2;               /* ticks a second at 1x */
 const SEASON_TICKS=120, SEASONS=['Spring','Summer','Autumn','Winter'];
 let STEP=1, PAUSED=false, acc=0;
 const RATES=[1,3,10,30];
+/* RUN is a const declared much further down, and `typeof RUN` does NOT
+   return 'undefined' while it is in its temporal dead zone -- it THROWS.
+   These guards only ever worked because the module finished evaluating
+   before the first interval fired; the moment anything below threw during
+   evaluation, this interval spewed the same ReferenceError ten times a
+   second and buried the real error. A hoisted `var` cannot dead-zone. */
+var RUNREADY;
 const advance=n=>{ for(let k=0;k<n;k++) tick(); rebuild(); hover(HOVER); drawClock();
-  if(typeof RUN!=='undefined' && PLAY && Object.keys(RUN.until).length) drawMana();
+  if(RUNREADY && PLAY && Object.keys(RUN.until).length) drawMana();
   yearTurn(); };
 setInterval(()=>{
   if(PAUSED) return;
   acc+=BASE_RATE*STEP*0.1;
   let n=Math.floor(acc); acc-=n;
-  if(typeof RUN!=='undefined' && RUN.megatime>0){ const m=Math.min(4,RUN.megatime); RUN.megatime-=m; n+=m; }
+  if(RUNREADY && RUN.megatime>0){ const m=Math.min(4,RUN.megatime); RUN.megatime-=m; n+=m; }
   /* a Season-long force ends itself. Data, not a stored closure, so a
      saved board could carry it. */
-  if(typeof RUN!=='undefined') for(const k in RUN.until)
+  if(RUNREADY) for(const k in RUN.until)
     if(TICKS>=RUN.until[k]){ delete RUN.until[k]; SPELLS[k].off(); drawMana(); }
   if(n) advance(n);
 },100);
 function setPause(on){ PAUSED=on; drawRates(); }
 function drawClock(){
   const el=document.getElementById('clock');
-  if(typeof RUN!=='undefined' && PLAY){
+  if(RUNREADY && PLAY){
     const t=TICKS-RUN.yearStart, season=Math.floor(t/SEASON_TICKS);
     const names=has('summer')?[...SEASONS,'Long Summer']:SEASONS;
     el.innerHTML='<b>Year '+RUN.year+'</b> · '+(names[Math.min(season,names.length-1)]||'')+
@@ -2316,7 +2326,7 @@ function drawDock(){
   const el=document.getElementById('dock');
   const want=ORDER.filter(k=>UNLOCK[k]);
   const had=[...el.querySelectorAll('button')].map(b=>b.dataset.k);
-  const off=k=>RUN.mana<costOf(k) || (k==='sow' && !RUN.hand.length);
+  const off=k=>(!FREE_MANA && RUN.mana<costOf(k)) || (k==='sow' && !RUN.hand.length);
   el.innerHTML=want.map(k=>'<button data-k="'+k+'" class="'+(k===TOOL?'on':'')+(had.includes(k)?'':' new')+(off(k)?' off':'')+'">'+
     '<span class="cost">'+costOf(k)+'</span>'+ICON[k]+'<span>'+t_(k)+'</span></button>').join('');
   el.querySelectorAll('button').forEach(b=>b.onclick=()=>selectTool(b.dataset.k));
@@ -2417,11 +2427,19 @@ renderer.domElement.addEventListener('pointerleave',()=>tipEl.classList.remove('
 function setPlay(on){
   PLAY=on; document.body.classList.toggle('play',on);
   document.getElementById('benchBtn').textContent=on?'⚙ '+t_('bench'):'▶ '+t_('play');
+  drawManaBtn();
   if(on){ selectTool(TOOL); drawDock(); drawSpeed(); drawHint(); drawMana(); }
   resize();
 }
 document.getElementById('benchBtn').onclick=()=>setPlay(!PLAY);
 document.getElementById('codexBtn').onclick=()=>showCodex();
+const manaBtn=document.getElementById('manaBtn');
+function drawManaBtn(){ manaBtn.textContent=FREE_MANA?'∞ free mana':'◇ mana on';
+  manaBtn.classList.toggle('on',FREE_MANA); }
+manaBtn.onclick=()=>{ FREE_MANA=!FREE_MANA; drawManaBtn(); drawMana(); drawDock(); };
+/* not drawn here: FREE_MANA is declared with the run, further down, so
+   reading it at this point is a temporal dead zone. setPlay() runs at the
+   very end of the file and draws it there. */
 /* a fresh pot for a player: a step of rock on the bedrock, and weathering
    that shows within a Season */
 function freshPot(){
@@ -2453,10 +2471,28 @@ const BOONS={
 const SEEDCARDS={[SEED]:{nm:'Grass',d:'Soil, a shore or a bank. Worth 1.',dew:2},
                  [MOSS]:{nm:'Moss', d:'Roots on bare rock. Worth ½.',dew:2},
                  [REED]:{nm:'Reed', d:'Stands one tile deep: a wetland.',dew:3}};
+/* FREE MANA is an experiment, not a difficulty setting. The claim being
+   tested is that mana solves a problem this simulation does not have: the
+   world already limits you by how fast it answers -- a lake takes a Season
+   to fill however many times you click -- and a budget on top of that is a
+   second, artificial scarcity. Yearly it allows about five or six actions
+   against 480 ticks, which is one decision every forty seconds at 1x, and
+   the rest of the Year is spent watching at 10x.
+
+   So: turn it off, play a run, and ask whether you are still thinking. If
+   you are, the real constraint was time and the budget was in the way. If
+   you start clicking at random, mana was right and this comes out again.
+
+   The seed deck is a SEPARATE limit and is deliberately left alone -- three
+   sows a Year is a different mechanic, and mixing the two would muddy the
+   experiment. */
+let FREE_MANA=new URLSearchParams(location.search).get('mana')==='free';
 const RUNSEED=(+new URLSearchParams(location.search).get('seed'))||((Date.now()/1000|0)%100000);
 const mulberry=a=>()=>{ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; };
+/* eslint-disable-next-line no-var-assign */
 const RUN={year:1, mana:10, dew:0, boons:[], deck:[SEED,SEED,MOSS], hand:[], over:false,
            yearStart:0, nextYearAt:0, blooms:[], whims:{}, aim:null, megatime:0, until:{}, omen:null, screen:false};
+RUNREADY=true;
 let LAST_YEAR=0, BEST=+(localStorage.getItem('potBest')||0);
 const CODEX=new Set(JSON.parse(localStorage.getItem('potCodex')||'[]'));
 const has=k=>RUN.boons.includes(k);
@@ -2474,8 +2510,10 @@ function drawMana(){
   const cheapest=Math.min(...ORDER.filter(k=>UNLOCK[k]).map(costOf));
   const spent=RUN.mana<cheapest;
   let h='<b>Year '+RUN.year+'</b> · target '+TARGETS[RUN.year-1]+
-    '<div class="num'+(spent?' low':'')+'">'+RUN.mana+'<u> / '+m+' mana</u></div>'+
-    '<div class="pips">'+pips+'</div>'+
+    (FREE_MANA
+      ? '<div class="num free">&infin;<u> mana &middot; shape freely</u></div>'
+      : '<div class="num'+(spent?' low':'')+'">'+RUN.mana+'<u> / '+m+' mana</u></div>'+
+        '<div class="pips">'+pips+'</div>')+
     '<div class="dew">'+RUN.dew+' dew</div>';
   /* WHAT YOU HOLD. Boons are permanent, a Whim's spell is running now and
      says how long it has left, and the deck is what you can still sow. */
@@ -2867,6 +2905,7 @@ window.POT={T,at,use,tick,settle,rebuild,POWERS,scene,
   RUN, TARGETS, BOONS, showSpring, showBehold, showWhim, takeForce, startYear, playClick, drawMana,
   strike, landForce, fx, AIMED, SPELLS, FORCES, MILESTONES, offerFor, checkWhim,
   OMENS, omenPool, omensFor, showOmens,
+  get freeMana(){ return FREE_MANA }, set freeMana(v){ FREE_MANA=v; drawManaBtn(); drawMana(); drawDock(); },
   surfaceOf, wouldTake, drawTip, SEEDCARDS, showCodex, WONDER_HOW,
   /* the POST block is declared below this object, so these have to be
      getters or they read a const in its temporal dead zone */
