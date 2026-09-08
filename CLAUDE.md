@@ -572,6 +572,60 @@ refused; the Whim fired on the first Lake and gave Monsoon; Year 1 cleared
 with 5 Dew, Monsoon bought, Year 2 opened with 10 mana and a fresh hand;
 an idle pot rests at Year 1 with Bloom 0.
 
+## Tilt-shift, and this time you can see it
+
+A playtester asked for tilt-shift on a build that already had one. They were
+right to: it was a 5x5 kernel with a radius of at most **1.8 pixels**, ramping
+in only past `|uv.y - focus| > 0.15` and reaching full strength at the very
+top edge of the screen. It cost a pass and did almost nothing.
+
+**The fix is not a bigger single kernel.** Blur is separable, so N + N taps
+buy what N x N would: at a radius that reads, one pass wants 9x9 = 81 texture
+fetches a pixel and two passes want 18. So the scene now goes
+
+```
+  scene  ->  rtA  --horizontal-->  rtB  --vertical + grade-->  screen
+```
+
+Nine taps each way, `exp(-k*k/8)` weights — wide enough that the outermost tap
+still carries weight, so there is no ring. The grade, the vignette and the
+tone mapping stay in the last pass, where they have to be.
+
+**The mask is a band in SCREEN space, not in depth**, and that is the right
+model here rather than a shortcut: the board is a flat hexagon seen at a
+slant, so screen height and distance are very nearly the same thing. A screen
+band needs no depth buffer and no second render of the scene.
+
+Measured on a board with a lake, two ridges and a crater, by the mean
+absolute horizontal gradient of the final framebuffer over a band — detail
+survives blur as gradient, so a blurred band scores lower than the same band
+sharp:
+
+```
+                       bottom band   focus band
+  off                      1.647        1.201
+  the shader as it was     1.384        1.201
+  now, default (7 px)      1.156        1.189
+  strong (12 px)           0.965        1.182
+
+  detail lost at the bottom of the frame
+    as it was   16.0%
+    default     29.8%      <- nearly double
+    strong      41.4%
+
+  detail lost inside the focus band
+    as it was    0.0%      default 1.0%      strong 1.6%
+```
+
+So the near skirt of the pot loses a third of its detail while the middle of
+the board loses one percent. That is what a tilt-shift is for.
+
+**On a slider, not a constant**, the same reasoning as `WEATHER`: there is no
+calibration for it and the only way to find one is to look at a board at
+several settings. `tilt-shift` runs 0 to 16 px (0 is off) and `focus band` moves
+the sharp strip up and down the frame, both in View beside the Diorama toggle.
+`POT.setTilt(k,v)` is the console handle.
+
 ## The play screen says what is going on
 
 Four things a playtester could not find out by looking, and the fix for each.

@@ -311,6 +311,10 @@
           <path d="M3 3v4l6 4v4"/><path d="M15 3v4l-6 4"/></svg>
           <span>Drainage</span></button>
         <div class="rates" id="sun"></div>
+        <div class="cap" id="tscap">tilt-shift</div>
+        <input id="tilt" type="range" min="0" max="16" step="0.5" value="7">
+        <div class="cap" id="tfcap">focus band</div>
+        <input id="tfocus" type="range" min="30" max="75" step="1" value="54">
       </div>
       <div class="menu">
         <h2>Erosion</h2>
@@ -2034,6 +2038,16 @@ function drawAbrade(){
 }
 abEl.oninput=drawAbrade;
 
+/* the tilt-shift, on a slider, because there is no calibration for it and
+   the only way to find one is to look at a board at several settings */
+const tsEl=document.getElementById('tilt'), tscap=document.getElementById('tscap');
+const tfEl=document.getElementById('tfocus'), tfcap=document.getElementById('tfcap');
+function drawTilt(){ setTilt('blur',+tsEl.value);
+  tscap.textContent='tilt-shift — '+(+tsEl.value).toFixed(1)+' px'+(+tsEl.value?'':' (off)'); }
+function drawFocus(){ setTilt('focus',+tfEl.value/100);
+  tfcap.textContent='focus band — '+(+tfEl.value)+'% down the frame'; }
+tsEl.oninput=drawTilt; tfEl.oninput=drawFocus;
+
 const ovDrain=document.getElementById('ovDrain');
 ovDrain.onclick=()=>{ DRAIN=!DRAIN; ovDrain.classList.toggle('on',DRAIN); rebuild(); };
 
@@ -2783,6 +2797,13 @@ window.POT={T,at,use,tick,settle,rebuild,POWERS,scene,
   RUN, TARGETS, BOONS, showSpring, showBehold, showWhim, takeForce, startYear, playClick, drawMana,
   strike, landForce, fx, AIMED, SPELLS, FORCES, MILESTONES, offerFor, checkWhim,
   surfaceOf, wouldTake, drawTip, SEEDCARDS, showCodex, WONDER_HOW,
+  /* the POST block is declared below this object, so these have to be
+     getters or they read a const in its temporal dead zone */
+  get TILT(){ return TILT }, get setTilt(){ return setTilt },
+  get renderer(){ return renderer }, get rtB(){ return rtB },
+  get blurScene(){ return blurScene }, get postScene(){ return postScene },
+  get postCam(){ return postCam }, get rtA(){ return rt },
+  get post(){ return POST }, set post(v){ POST=v },
   get striking(){ return !!STRIKE },
   get rainMult(){ return RAIN_MULT }, set rainMult(v){ RAIN_MULT=v }, get floodTol(){ return FLOOD_TOL }, set floodTol(v){ FLOOD_TOL=v },
   get unlock(){ return UNLOCK }, get hint(){ return HINT }, get play(){ return PLAY }, setPlay, selectTool, checkUnlocks,
@@ -2792,11 +2813,12 @@ window.POT={T,at,use,tick,settle,rebuild,POWERS,scene,
   set power(k){ POWER=POWERS.find(p=>p.k===k)||POWER; drawMenu(); }};
 
 /* ---------------------------------------------------------------------
-   POST. One full-screen pass written here, no library: the scene is drawn
-   to a texture and that texture is drawn to the screen through a shader
-   that does three things. A TILT-SHIFT blur that grows away from a focus
-   band across the middle of the screen, which is what makes a small world
-   read as a miniature; a warm GRADE; and a soft VIGNETTE. Bloom is left
+   POST. Two full-screen passes written here, no library: the scene is drawn
+   to a texture, that texture is blurred horizontally into a second, and the
+   second is drawn to the screen. Between them they do three things. A
+   TILT-SHIFT blur that grows away from a focus band across the middle of the
+   screen, which is what makes a small world read as a miniature; a warm
+   GRADE; and a soft VIGNETTE. Bloom is left
    for the water shader. Toggled from View so the bench can compare.
 
    Tone mapping and the output colour space are applied here rather than
@@ -2804,23 +2826,61 @@ window.POT={T,at,use,tick,settle,rebuild,POWERS,scene,
    target -- the scene texture is linear light, and this pass is what
    turns it into pixels. */
 let POST=true;
-const rt=new THREE.WebGLRenderTarget(1,1,{type:THREE.HalfFloatType,samples:4,stencilBuffer:false});
-const postMat=new THREE.ShaderMaterial({
-  uniforms:{ tex:{value:rt.texture}, res:{value:new THREE.Vector2(1,1)},
-             focus:{value:0.52}, blur:{value:1.8} },
-  vertexShader:'varying vec2 vUv; void main(){ vUv=uv; gl_Position=vec4(position.xy,0.0,1.0); }',
+/* TILT-SHIFT, and this time you can see it. There was one already -- a 5x5
+   kernel with a radius of at most 1.8 pixels, ramping in only past
+   |uv.y-focus| > 0.15 and reaching full strength at the very top edge of the
+   screen. It cost a pass and did almost nothing: a playtester asked for
+   tilt-shift on a build that already had it.
+
+   The fix is not a bigger single kernel. Blur is separable, so N+N taps buy
+   what N*N would: at a radius that reads, one pass would want 9x9 = 81
+   fetches a pixel, and two passes want 18. So the scene now goes
+   scene -> rtA -> (horizontal) rtB -> (vertical + grade) screen.
+
+   The mask is a band in SCREEN space, not in depth. That is the right model
+   here: the board is a flat hexagon seen at a slant, so screen height and
+   distance are very nearly the same thing, and a screen band needs no depth
+   buffer and no second render of the scene. */
+const TILT={focus:0.54, inner:0.09, outer:0.42, blur:7.0};
+const rt =new THREE.WebGLRenderTarget(1,1,{type:THREE.HalfFloatType,samples:4,stencilBuffer:false});
+const rtB=new THREE.WebGLRenderTarget(1,1,{type:THREE.HalfFloatType,stencilBuffer:false});
+/* the same mask in both passes, so the two agree on how blurred a row is */
+const MASK=`
+    uniform float focus, inner, outer, blur;
+    float radius(float y){ return smoothstep(inner,outer,abs(y-focus))*blur; }`;
+/* nine taps, spread over the whole radius. exp(-k*k/8) is a Gaussian wide
+   enough that the outermost tap still carries weight, so there is no ring. */
+const TAPS=`
+    vec3 sweep(sampler2D t, vec2 uv, vec2 step){
+      vec3 c=vec3(0.0); float w=0.0;
+      for(int k=-4;k<=4;k++){
+        float f=float(k), g=exp(-f*f/8.0);
+        c+=texture2D(t,uv+step*f).rgb*g; w+=g; }
+      return c/w; }`;
+const VERT='varying vec2 vUv; void main(){ vUv=uv; gl_Position=vec4(position.xy,0.0,1.0); }';
+const tiltU=()=>({ focus:{value:TILT.focus}, inner:{value:TILT.inner},
+                   outer:{value:TILT.outer}, blur:{value:TILT.blur} });
+const blurMat=new THREE.ShaderMaterial({
+  uniforms:Object.assign({ tex:{value:rt.texture}, res:{value:new THREE.Vector2(1,1)} },tiltU()),
+  vertexShader:VERT,
   fragmentShader:`
-    uniform sampler2D tex; uniform vec2 res; uniform float focus, blur;
-    varying vec2 vUv;
+    uniform sampler2D tex; uniform vec2 res;
+    varying vec2 vUv;`+MASK+TAPS+`
+    void main(){
+      float r=radius(vUv.y)/4.0;
+      gl_FragColor=vec4(sweep(tex,vUv,vec2(r/res.x,0.0)),1.0);
+    }`,
+  depthTest:false, depthWrite:false });
+const postMat=new THREE.ShaderMaterial({
+  uniforms:Object.assign({ tex:{value:rtB.texture}, res:{value:new THREE.Vector2(1,1)} },tiltU()),
+  vertexShader:VERT,
+  fragmentShader:`
+    uniform sampler2D tex; uniform vec2 res;
+    varying vec2 vUv;`+MASK+TAPS+`
     void main(){
       vec2 uv=vUv;
-      float d=abs(uv.y-focus)*2.0;
-      float r=smoothstep(0.3,1.0,d)*blur;
-      vec3 c=vec3(0.0); float w=0.0;
-      for(int i=-2;i<=2;i++) for(int j=-2;j<=2;j++){
-        vec2 o=vec2(float(i),float(j)); float g=exp(-dot(o,o)/3.0);
-        c+=texture2D(tex,uv+o*r/res).rgb*g; w+=g; }
-      c/=w;
+      float r=radius(uv.y)/4.0;
+      vec3 c=sweep(tex,uv,vec2(0.0,r/res.y));
       c=c*vec3(1.05,1.0,0.93)+vec3(0.004,0.003,0.0);
       float l=dot(c,vec3(0.3,0.59,0.11)); c=mix(vec3(l),c,1.08);
       float v=smoothstep(0.5,1.2,length((uv-0.5)*vec2(res.x/res.y,1.0)*1.15));
@@ -2832,11 +2892,17 @@ const postMat=new THREE.ShaderMaterial({
   depthTest:false, depthWrite:false });
 const postScene=new THREE.Scene();
 postScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2,2),postMat));
+const blurScene=new THREE.Scene();
+blurScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2,2),blurMat));
 const postCam=new THREE.OrthographicCamera(-1,1,1,-1,0,1);
+function setTilt(k,v){ TILT[k]=v;
+  for(const m of [blurMat,postMat]) if(m.uniforms[k]) m.uniforms[k].value=v; }
 function sizePost(){
   const pr=renderer.getPixelRatio(), w=board.clientWidth||900, h=board.clientHeight||660;
-  rt.setSize(Math.round(w*pr),Math.round(h*pr));
-  postMat.uniforms.res.value.set(w*pr,h*pr);
+  const W=Math.round(w*pr), H=Math.round(h*pr);
+  rt.setSize(W,H); rtB.setSize(W,H);
+  blurMat.uniforms.res.value.set(W,H);
+  postMat.uniforms.res.value.set(W,H);
 }
 const ovPost=document.getElementById('ovPost');
 ovPost.onclick=()=>{ POST=!POST; ovPost.classList.toggle('on',POST); };
@@ -2849,13 +2915,14 @@ function frame(){
   fx(dt);
   controls.update();
   if(POST){
-    renderer.setRenderTarget(rt); renderer.render(scene,cam);
+    renderer.setRenderTarget(rt);  renderer.render(scene,cam);
+    renderer.setRenderTarget(rtB); renderer.render(blurScene,postCam);
     renderer.setRenderTarget(null); renderer.render(postScene,postCam);
   } else renderer.render(scene,cam);
   requestAnimationFrame(frame);
 }
 drawMenu(); drawBrush(); drawDepth(); drawPalette(); drawRates(); drawHist();
-drawWear(); drawCarry(); drawSand(); drawAbrade(); setSun(0); settle(); rebuild(); resize(); drawInfo(); drawClock(); frame();
+drawWear(); drawCarry(); drawSand(); drawAbrade(); drawTilt(); drawFocus(); setSun(0); settle(); rebuild(); resize(); drawInfo(); drawClock(); frame();
 /* a board parked on the way through a resize is picked up here; otherwise a
    player gets a fresh pot of rock */
 { const parked=sessionStorage.getItem('potLoad');
