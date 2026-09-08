@@ -513,6 +513,31 @@ hex a tick covered a shore in a breath; at one step in ten the same 12-hex
 rim greens over 56 ticks instead of 5 — about half a Season. `TICKS` is
 saved with the board so a loaded game keeps its phase.
 
+## Harvest: Bloom and the Wonders
+
+The score reads the world and nothing else. **Bloom = living hexes × (1 +
+the sum of the Wonders standing)**, where a Wonder is a *shape* the water
+has made, detected from what the board already stores or derives: Lake,
+Great Lake, River, Waterfall, Fork, Delta, Island, Ring of Life, Grove,
+Terrace, Highland Meadow, Watershed. Life is the count; the world is the
+multiplier; keeping them apart is what stops "cover everything in moss"
+being the best play. Every detector is a pure read and runs only at
+Harvest or on request — 14 ms at radius 64.
+
+**Rivers pulse.** In a channel one hex wide the snapshot has alternate
+tiles pouring on alternate ticks — 65, 13, 65, 13 along a trench — so a
+river chain that demanded every tile clear `RIVER_MIN` every tick never
+found one. The walk follows the strongest outflow and lets one quiet tile
+sit between two loud ones. The drawn stubs pulse the same way; smoothing
+that is the renderer's business, not the rule's.
+
+At the turn of every Year the clock stops and the **Harvest** screen reads
+the pot out line by line, lights the Wonders standing in the **Codex**
+(everything ever found in this browser, in `localStorage`), and waits for
+a click. The bench has a *harvest* button to read the arithmetic at any
+moment. Measured: the seeded bowl scores Lake + Ring of Life + Grove,
+12 × 2.75 = 33.
+
 ## Player mode: powers are earned
 
 The first playtest stalled at the first click — "what do we do now?" — and
