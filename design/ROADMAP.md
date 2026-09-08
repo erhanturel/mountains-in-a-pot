@@ -60,12 +60,13 @@ The current build actively annoys. None of this is a new system.
   a run about 43.
 - [x] **A2 · Speeds 1/2/4/8**, labelled with the number. Verified in the
   browser at 5.97 ticks/s against an expected 6.
-- [ ] **A3 · The Whim becomes a token, not an interrupt.** Twelve milestones
-  on a 500 ms check means three Wonders forming together fire three modals
-  back to back. A glowing token that waits until you press it fixes the
-  interruption, queues the extras, and lets a force be saved for the right
-  moment — which makes it a better prize than a modal ever was. At most one
-  a Season.
+- [x] **A3 · The Whim is a token, not an interrupt.** Measured on the exact
+  case that broke — a settled basin with a green rim, giving Lake + Ring of
+  Life + Grove in one breath: **0 modals** (was 3, back to back) and **3
+  tokens banked**, reading *"The first Lake · +2 waiting"*. Spending one
+  opens the wheel and leaves 2; the next is held for a full Season (not ready
+  at 470 ticks, ready at 490). Also held over any screen, while aiming, during
+  a strike, and in the last tick before a Harvest.
 - [ ] **A4 · Camera.** WASD pan, Q/E rotate, Space pause, rotation lock.
 - [ ] **A5 · Draw the waterfall.** River stubs are drawn flat at water height
   and never sloped, so water reaching a cliff simply vanishes. The data is

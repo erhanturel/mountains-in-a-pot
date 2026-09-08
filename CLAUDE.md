@@ -572,6 +572,47 @@ refused; the Whim fired on the first Lake and gave Monsoon; Year 1 cleared
 with 5 Dew, Monsoon bought, Year 2 opened with 10 mana and a fresh hand;
 an idle pot rests at Year 1 with Bloom 0.
 
+## The Whim is banked, not fired at you
+
+Opening the wheel the moment a Wonder appeared was the mistake. With twelve
+milestones on a half-second check, three Wonders forming in the same breath —
+which is exactly what happens when a lake finally settles and its rim is
+already green — opened **three modals back to back**, and you could not act on
+the first before the second arrived. The playtest hated it enough to consider
+cutting the wheel.
+
+Cutting it would have been the wrong fix. **The wheel was never the problem;
+being interrupted by a gift was.** A Wonder now lights a token, the token
+waits, and you turn the wheel when you want it. Three things fall out at once:
+
+- the interruption goes;
+- extras **queue** instead of colliding;
+- a force can be **saved for the moment it is worth most**, which makes it a
+  better prize than a modal ever was.
+
+On top of that, **one a Season**, so a run cannot be handed twelve forces in
+the first Year just because the board got busy.
+
+Measured on the exact case that used to break — a filled basin with a soiled
+green rim, giving Lake, Ring of Life and Grove together:
+
+```
+  wonders standing        {lake:1, ring:1, grove:1}
+  modals opened            0        (was 3, back to back)
+  tokens banked            3
+  the token reads          "Gaia's Whim - The first Lake - +2 waiting"
+
+  click it                 wheel opens, 2 left
+  immediately after        not ready, "the world is still settling"
+  470 ticks later          not ready
+  490 ticks later          ready, "The first Ring of Life - +1 waiting"
+```
+
+It sits on the left under the panel, where it is visible without covering the
+board and without being under a click. `tokenReady()` also holds it back over
+any screen, while a force is being aimed, during a strike, and in the last
+tick before a Harvest — the Harvest keeps the floor it always had.
+
 ## The timescales, spread apart
 
 The pacing complaint — *"either it crawls or a Season ends while I look

@@ -257,6 +257,22 @@
     font-family:system-ui,sans-serif;font-size:10.5px;color:#7fb4cc;opacity:0;transition:opacity .2s;
     pointer-events:none;text-shadow:0 2px 12px rgba(0,0,0,.9)}
   #lens .cap.show{opacity:1}
+  /* the banked Whim. It waits on the left, under the panel, where it can be
+     seen without covering the board and without being in the way of a click. */
+  #token{position:absolute;left:14px;top:50%;transform:translateY(-50%);display:none;z-index:3}
+  body.play #token.show{display:block}
+  #token button{display:flex;flex-direction:column;gap:3px;text-align:left;cursor:pointer;
+    width:172px;padding:11px 14px;border-radius:16px;font-family:system-ui,sans-serif;
+    border:1px solid rgba(232,194,116,.3);background:rgba(24,21,15,.85);color:#8b8272}
+  #token button b{font-family:Georgia,serif;font-weight:400;font-size:15px;color:#9a8f79}
+  #token button span{font-size:10.5px;line-height:1.35}
+  #token button[disabled]{cursor:default;opacity:.6}
+  #token.ready button{border-color:#e8c274;background:linear-gradient(180deg,#4a3d22,#2a2214);
+    color:#e2c896;box-shadow:0 0 0 0 rgba(232,194,116,.5);animation:tok 2.4s ease-out infinite}
+  #token.ready button b{color:#ffd98a}
+  @keyframes tok{0%{box-shadow:0 0 0 0 rgba(232,194,116,.45)}
+                 70%{box-shadow:0 0 0 16px rgba(232,194,116,0)}
+                 100%{box-shadow:0 0 0 0 rgba(232,194,116,0)}}
   #hand{position:absolute;left:50%;bottom:122px;transform:translateX(-50%);display:none;gap:8px;z-index:3}
   body.play #hand.show{display:flex}
   #hand button{border:1px solid #3a3d4a;background:#1b1d26;color:#c9c1ae;border-radius:14px;padding:6px 12px;
@@ -301,7 +317,8 @@
   <div class="main">
     <div class="board-col">
       <div id="board"><div id="info"></div><div id="time"></div><div id="clock"></div><div id="bloom"></div>
-        <div id="hintline"></div><div id="dock"></div><div id="lens"></div><div id="hand"></div><div id="speed"></div><div id="tip"></div><div id="mana"></div>
+        <div id="hintline"></div><div id="dock"></div><div id="lens"></div><div id="hand"></div>
+        <div id="token" class="token"></div><div id="speed"></div><div id="tip"></div><div id="mana"></div>
         <div id="corner"><button id="benchBtn"></button><button id="codexBtn">✦ Codex</button>
           <button id="manaBtn"></button></div>
         <div id="flash"></div><div id="strikeCap"></div>
@@ -2039,6 +2056,7 @@ const RATES=[1,2,4,8];
 var RUNREADY;
 const advance=n=>{ for(let k=0;k<n;k++) tick(); rebuild(); hover(HOVER); drawClock();
   if(RUNREADY && PLAY && Object.keys(RUN.until).length) drawMana();
+  if(RUNREADY && PLAY && RUN.tokens.length) drawToken();
   yearTurn(); };
 setInterval(()=>{
   if(PAUSED) return;
@@ -2515,7 +2533,8 @@ function setPlay(on){
   PLAY=on; document.body.classList.toggle('play',on);
   document.getElementById('benchBtn').textContent=on?'⚙ '+t_('bench'):'▶ '+t_('play');
   drawManaBtn(); drawLens();
-  if(on){ selectTool(TOOL); drawDock(); drawSpeed(); drawHint(); drawMana(); }
+  if(on){ selectTool(TOOL); drawDock(); drawSpeed(); drawHint(); drawMana(); drawToken(); }
+  else document.getElementById('token').classList.remove('show');
   resize();
 }
 document.getElementById('benchBtn').onclick=()=>setPlay(!PLAY);
@@ -2592,7 +2611,7 @@ const mulberry=a=>()=>{ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t
 /* eslint-disable-next-line no-var-assign */
 const RUN={year:1, mana:10, dew:0, boons:[], deck:[SEED,SEED,MOSS], hand:[], over:false,
            yearStart:0, nextYearAt:0, blooms:[], whims:{}, aim:null, megatime:0, until:{}, omen:null,
-           omens:[], screen:false};
+           omens:[], tokens:[], lastWhim:-1e9, screen:false};
 RUNREADY=true;
 let LAST_YEAR=0, BEST=+(localStorage.getItem('potBest')||0);
 const CODEX=new Set(JSON.parse(localStorage.getItem('potCodex')||'[]'));
@@ -2602,7 +2621,8 @@ const yearLen=()=>SEASON_TICKS*(SEASONS.length+(has('summer')?1:0));
 const costOf=k=>k==='sow'?COST.sow:(k==='dig'||k==='raise')&&has('basalt')?1:COST[k];
 const card=()=>document.querySelector('#harvest .card');
 const open=()=>{ document.getElementById('harvest').classList.add('show'); RUN.screen=true; setPause(true); };
-const close=()=>{ document.getElementById('harvest').classList.remove('show'); RUN.screen=false; setPause(false); };
+const close=()=>{ document.getElementById('harvest').classList.remove('show'); RUN.screen=false; setPause(false);
+  if(typeof drawToken==='function') drawToken(); };
 function drawMana(){
   const el=document.getElementById('mana'), m=manaFor();
   let pips=''; for(let k=0;k<m;k++) pips+=k<RUN.mana?'●':'<i>●</i>';
@@ -2867,14 +2887,52 @@ const FORCES=Object.assign({megatime:{nm:'Megatime',d:'A hundred ticks in a brea
    calendar. Still earned, still never scheduled. */
 const MILESTONES=Object.fromEntries(Object.keys(WONDER_NAMES)
   .map(k=>[k,'The first '+WONDER_NAMES[k].replace(/^The /,'')]));
+/* THE WHIM IS BANKED, NOT FIRED AT YOU.
+
+   It used to open the wheel the moment a Wonder appeared. With twelve
+   milestones on a half-second check, three Wonders forming in the same
+   breath -- which is exactly what happens when a lake finally settles --
+   opened three modals back to back, and you could not act on the first
+   before the second arrived. The playtest hated it and considered cutting
+   the wheel entirely.
+
+   Cutting it was the wrong fix. The wheel was never the problem; being
+   INTERRUPTED by a gift was. So a Wonder now lights a token, the token
+   waits, and you turn the wheel when you want it. Three things fall out at
+   once: the interruption goes, extras queue instead of colliding, and a
+   force can be SAVED for the moment it is worth most -- which makes it a
+   better prize than a modal ever was.
+
+   One a Season on top of that, so a run cannot be handed twelve forces in
+   the first Year just because the board got busy. */
 function checkWhim(){
-  if(RUN.over||RUN.screen||!UNLOCK.raise||RUN.aim||STRIKE) return;
-  if(TICKS>=RUN.nextYearAt-1) return;          /* the Harvest has the floor */
+  if(RUN.over||!UNLOCK.raise) return;
   const W=wonders();
   for(const m of Object.keys(MILESTONES)){
     if(RUN.whims[m]||!W[m]) continue;
-    RUN.whims[m]=true; showWhim(m); return;    /* one at a time; the rest keep */
+    RUN.whims[m]=true; RUN.tokens.push(m); drawToken();
+    return;                                   /* one a check; the rest keep */
   }
+}
+/* a token can be spent once a Season, and never over a screen */
+function tokenReady(){
+  return RUN.tokens.length>0 && !RUN.over && !RUN.screen && !RUN.aim && !STRIKE
+      && TICKS < RUN.nextYearAt-1                 /* the Harvest has the floor */
+      && TICKS >= RUN.lastWhim+SEASON_TICKS;
+}
+function drawToken(){
+  const el=document.getElementById('token'), n=RUN.tokens.length;
+  el.classList.toggle('show', PLAY && n>0);
+  if(!n) return;
+  const ready=tokenReady();
+  el.className='token'+(PLAY?' show':'')+(ready?' ready':'');
+  el.innerHTML='<button'+(ready?'':' disabled')+'><b>Gaia\u2019s Whim</b>'+
+    '<span>'+(ready
+      ? MILESTONES[RUN.tokens[0]]+(n>1?' &middot; +'+(n-1)+' waiting':'')
+      : 'the world is still settling')+'</span></button>';
+  const b=el.querySelector('button');
+  if(ready) b.onclick=()=>{ const m=RUN.tokens.shift(); RUN.lastWhim=TICKS;
+                            drawToken(); showWhim(m); };
 }
 /* three of the eight, drawn from the run seed. All eight was a wall of text
    and made every wheel look the same; three reads at a glance, and the
@@ -3024,7 +3082,7 @@ window.POT={T,at,use,tick,settle,rebuild,POWERS,scene,
   wonders, harvest, BONUS, WONDER_NAMES, showHarvest, MOSS, REED, KINDS, WORTH, worth,
   RUN, TARGETS, BOONS, showSpring, showBehold, showWhim, takeForce, startYear, playClick, drawMana,
   strike, landForce, fx, AIMED, SPELLS, FORCES, MILESTONES, offerFor, checkWhim,
-  OMENS, omenPool, omensFor, showOmens,
+  OMENS, omenPool, omensFor, showOmens, drawToken, tokenReady,
   get freeMana(){ return FREE_MANA }, set freeMana(v){ FREE_MANA=v; drawManaBtn(); drawMana(); drawDock(); },
   toggleDrain, get drain(){ return DRAIN }, get hardBar(){ return HARD_BAR },
   surfaceOf, wouldTake, drawTip, SEEDCARDS, showCodex, WONDER_HOW,
