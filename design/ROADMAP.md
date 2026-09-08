@@ -75,9 +75,16 @@ The current build actively annoys. None of this is a new system.
   units, Q for 1 s turns the camera about its target, locked Q turns
   **0.00°**, Space takes the world from 4 ticks per 0.7 s to **0**. The
   drainage lens moved from **D to V**, since WASD needed D.
-- [ ] **A5 · Draw the waterfall.** River stubs are drawn flat at water height
-  and never sloped, so water reaching a cliff simply vanishes. The data is
-  already there — `out[6]` says which edge it left by.
+- [x] **A5 · The waterfall is drawn.** A curtain hung from the tile's water
+  surface down to the neighbour's, past the shared edge so it clears the
+  cliff face, flattened across the flow and turned to face it. Measured on a
+  four-elevation cliff fed by a trench: the drop reads 2.83 elevations and
+  the instance comes out **0.93 world units tall**, projecting to **68.7 px**
+  against a hex's 49.2. **A fall got its own flow bar** (`RIVER_MIN/3`): the
+  lip was splitting 0.077 and 0.065 across two edges against a river bar of
+  0.0833, so on the exact board a player points at, nothing qualified as a
+  river and nothing was drawn. Splitting two ways is what a lip does — a fall
+  is a *drop* feature, not a river feature.
 
 ## B · The derived world
 

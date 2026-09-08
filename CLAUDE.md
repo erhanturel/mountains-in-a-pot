@@ -572,6 +572,38 @@ refused; the Whim fired on the first Lake and gave Monsoon; Year 1 cleared
 with 5 Dew, Monsoon bought, Year 2 opened with 10 mana and a fresh hand;
 an idle pot rests at Year 1 with Bloom 0.
 
+## The waterfall, finally drawn
+
+River stubs are drawn **flat, at the height of the water already showing on
+their own tile**, and never sloped — a deliberate old decision, because
+sloping them looked wrong. The consequence nobody had noticed: water arriving
+at a cliff simply *stopped*, and the playtest asked, reasonably, where the
+waterfall pours from. The answer was nowhere. It was never drawn.
+
+The data was always there — `out[k]` says how much left by edge `k`, and the
+neighbour's own drawn surface says how far it fell. What was missing was the
+drop between the two.
+
+**A fall gets its own flow bar, `RIVER_MIN/3`, because a fall is a drop
+feature and not a river feature.** Measured on a four-elevation cliff with a
+trench feeding its lip: the lip was sending water over a **2.83-elevation
+drop** through two edges at **0.077 and 0.065**, against a river bar of
+**0.0833** — so neither edge was a river and nothing was drawn, on exactly
+the board a player would point at. Splitting two ways is what a lip *does*;
+the per-edge river bar is right for calling something a river and wrong for
+asking whether water is falling.
+
+Drawn as a **flattened prism turned to face the flow** — wide across the
+water's path, thin along it — rather than a quad, because a quad goes
+edge-on and this camera orbits. It hangs at 0.58 out from the hex centre
+rather than at the edge midpoint of 0.433: put on the edge it is swallowed by
+the source hex's own column face and only its top speck shows, and hanging
+just clear in the air over the drop is what a waterfall does anyway.
+
+Verified: the instance comes out **0.93 world units tall** for a measured
+1.02-unit drop, and projects to **68.7 screen pixels** against a hex's 49.2 —
+so it reads at the scale the board is actually played at.
+
 ## The Whim is banked, not fired at you
 
 Opening the wheel the moment a Wonder appeared was the mistake. With twelve

@@ -3558,8 +3558,65 @@ const rivers=new THREE.InstancedMesh(stubGeo,
 rivers.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
 rivers.receiveShadow=true;
 scene.add(rivers);
-let RIVERS=true;
+/* THE FALL. Stubs are drawn flat, at the height of the water already showing
+   on their own tile -- so water arriving at a cliff simply STOPPED, and the
+   playtest asked, reasonably, where the waterfall actually pours from. The
+   answer was nowhere: it was never drawn.
+
+   The data was always there. out[k] says how much left by edge k, and the
+   neighbour's own drawn surface says how far it fell. What was missing was
+   the drop between the two.
+
+   Drawn as a thin prism rather than a quad, the same way a rain shaft is:
+   a single quad goes invisible edge-on, and this camera orbits. Reusing the
+   rain shaft's own shape also means a fall reads as the same substance as
+   the rain, which it is. */
 const stubQ=new THREE.Quaternion(), stubAx=new THREE.Vector3(0,1,0);
+const MAXFALL=T.length*2;
+const falls=new THREE.InstancedMesh(prism,
+  new THREE.MeshLambertMaterial({color:0xcaf2ff,transparent:true,opacity:0.82}),
+  MAXFALL);
+falls.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+falls.renderOrder=2;
+scene.add(falls);
+/* A FALL IS A DROP FEATURE, NOT A RIVER FEATURE, and that is why it gets its
+   own flow bar rather than borrowing RIVER_MIN.
+
+   Measured on a four-elevation cliff with a trench feeding its lip: the lip
+   was sending water over a 2.83-elevation drop through two edges at 0.077
+   and 0.065, and RIVER_MIN is 0.0833 -- so neither edge was a river and
+   nothing was drawn, on the exact board a player would point at and say
+   "where is the waterfall". Splitting two ways is what a lip DOES; the
+   per-edge river bar is right for calling something a river and wrong for
+   asking whether water is falling.
+
+   So: a third of the river bar, which still keeps the board's rim and every
+   damp hex from sprouting threads, and the width taper does the rest. The
+   fall hangs from the tile's own drawn water surface, so it connects to
+   something visible even where no stub is drawn.
+
+   FALL_MIN is the smallest DROP worth drawing: below half an elevation the
+   water already reads as continuous and a fall would be a speck. */
+const FALL_MIN=0.5, FALL_FLOW=RIVER_MIN/3;
+function fall(n,t,k,d,yTop,yBot){
+  const v=DIRV[k];
+  /* PAST the shared edge, not on it. The edge midpoint is 0.433 out, which
+     is exactly where the source hex's own column face stands -- a fall put
+     there is swallowed by the cliff and only its top speck shows. Hanging it
+     just clear, in the air over the drop, is also what a waterfall does. */
+  /* A CURTAIN, not a thread. Scaled square it came out 0.16 across against a
+     hex two units wide -- correct in the data, invisible on the screen. It
+     is turned to face the flow and flattened: wide across the water's path,
+     thin along it, which is the shape water actually falls in. Flattened
+     rather than a flat quad because a quad goes edge-on and this camera
+     orbits. */
+  const wide=0.34+0.42*Math.min(1,Math.max(0,d-FALL_FLOW)/(3*LAYER));
+  P.set(t.x+v[0]*0.58, (yTop+yBot)/2, t.y+v[1]*0.58);
+  S.set(0.15, yTop-yBot, wide);
+  stubQ.setFromAxisAngle(stubAx,Math.atan2(-v[1],v[0]));
+  falls.setMatrixAt(n,M4.compose(P,stubQ,S));
+}
+let RIVERS=true;
 function stub(n,t,k,d,y){
   const v=DIRV[k], ang=Math.atan2(-v[1],v[0]);
   /* WIDTH TAPERS FROM NOTHING at the threshold. A fixed minimum width drew
@@ -3725,7 +3782,7 @@ function terrain(t,mat){
 }
 
 function rebuild(){
-  let n=0, ns=0;
+  let n=0, ns=0, nf=0;
   if(DRAIN){ ACC=accum(); ACCMAX=Math.max(1,...ACC); } else ACC=null;
   for(let i=0;i<T.length;i++){
     const t=T[i];
@@ -3771,6 +3828,13 @@ function rebuild(){
       for(let k=0;k<6;k++){
         const d=t.out[k];
         if(d>=RIVER_MIN && ns<MAXSTUB) stub(ns++,t,k,d,y);
+        /* and wherever it leaves over a real drop, show the drop */
+        if(d<FALL_FLOW || nf>=MAXFALL) continue;
+        const j=t.nb[k];
+        if(j<0) continue;
+        const u=T[j];
+        const yj=(gnd(j)+Math.floor(u.pool/LAYER+1e-9)*LAYER)*RISE;
+        if(y-yj>=FALL_MIN*RISE) fall(nf++,t,k,d,y,yj);
       }
     }
     /* a stack grows visibly, but a single cloud still has to read as a
@@ -3787,6 +3851,10 @@ function rebuild(){
   rivers.count=ns;
   rivers.instanceMatrix.needsUpdate=true;
   rivers.computeBoundingSphere();
+  for(let k=nf;k<MAXFALL;k++) hide(falls,k);
+  falls.count=nf;
+  falls.instanceMatrix.needsUpdate=true;
+  falls.computeBoundingSphere();
   for(let k=n;k<MAXRUN;k++){ hide(ground,k); rim(k,0,-999,0); }
   ground.count=n;
   ground.instanceMatrix.needsUpdate=true;
@@ -5118,6 +5186,7 @@ window.POT={T,at,use,tick,settle,rebuild,POWERS,scene,
   get freeMana(){ return FREE_MANA }, set freeMana(v){ FREE_MANA=v; drawManaBtn(); drawMana(); drawDock(); },
   toggleDrain, get drain(){ return DRAIN }, get hardBar(){ return HARD_BAR },
   KEYS, camKeys, get lockRot(){ return LOCKROT }, set lockRot(v){ LOCKROT=v; drawLock(); },
+  falls, get fallCount(){ return falls.count },
   surfaceOf, wouldTake, drawTip, SEEDCARDS, showCodex, WONDER_HOW,
   /* the POST block is declared below this object, so these have to be
      getters or they read a const in its temporal dead zone */
