@@ -527,8 +527,7 @@ the state it is for, the way Gaia's Whim will fire on a milestone: dig from
 the start; rain at the first hollow; the speed buttons at the first water
 tile; sow at the first habitable hex; raise at the first living hex. One
 hint at a time, and it goes when the world has answered it. A one-word tip
-beside the pointer says why a seed would or would not take. Strings are TR
-and EN, chosen from the browser and switchable in the corner.
+beside the pointer says why a seed would or would not take. Strings are English only.
 
 Measured headless: a dug, rained-on hollow has a habitable shore at tick
 98 (0.8 Seasons) at 0.7 units/tick; 199 at 0.35; 49 at 1.4. The chain

@@ -155,7 +155,7 @@
     <div class="board-col">
       <div id="board"><div id="info"></div><div id="time"></div><div id="clock"></div><div id="bloom"></div>
         <div id="hintline"></div><div id="dock"></div><div id="speed"></div><div id="tip"></div>
-        <div id="corner"><button id="benchBtn"></button><button id="langBtn"></button></div></div>
+        <div id="corner"><button id="benchBtn"></button></div></div>
       <div class="hint"><b>click a hex</b> — drag to orbit, scroll to zoom.
         The world runs on its own: two ticks a second at 1×, a Season every
         120 ticks, four Seasons to a Year. A rain tile drops 70 units a tick
@@ -3913,21 +3913,13 @@ drawSize();
    the bench default -- so a dug and rained-on hollow has a habitable shore
    in about 100 ticks, under a minute at 1x. Measured: 98 ticks. */
 const STR={
-  en:{dig:'Dig',rain:'Rain',sow:'Sow',raise:'Raise',
-      h_dig:'Dig a hollow.',h_rain:'Hang a cloud over it.',h_wait:'Wait. Water finds its own way.',
-      h_sow:'The shore is ready. Sow a seed.',h_raise:'Soil comes from high ground. Raise a hill.',
-      h_free:'The pot is yours.',
-      drowned:'drowned',bare:'bare',dry:'dry',habitable:'ready',rooted:'alive',
-      bench:'bench',play:'play',pause:'pause',bloom:'bloom',lang:'TR'},
-  tr:{dig:'Kaz',rain:'Yağmur',sow:'Ek',raise:'Kaldır',
-      h_dig:'Bir çukur kaz.',h_rain:'Üstüne bir bulut as.',h_wait:'Bekle. Su kendi yolunu bulur.',
-      h_sow:'Kıyı hazır. Tohum ek.',h_raise:'Toprak yüksekten gelir. Bir tepe kaldır.',
-      h_free:'Saksı senin.',
-      drowned:'boğulmuş',bare:'çorak',dry:'kuru',habitable:'hazır',rooted:'yaşıyor',
-      bench:'tezgâh',play:'oyna',pause:'dur',bloom:'yeşil',lang:'EN'}};
-let LANG=localStorage.getItem('potLang')||(navigator.language||'en').slice(0,2).toLowerCase();
-if(!STR[LANG]) LANG='en';
-const t_=k=>STR[LANG][k]||k;
+  dig:'Dig',rain:'Rain',sow:'Sow',raise:'Raise',
+  h_dig:'Dig a hollow.',h_rain:'Hang a cloud over it.',h_wait:'Wait. Water finds its own way.',
+  h_sow:'The shore is ready. Sow a seed.',h_raise:'Soil comes from high ground. Raise a hill.',
+  h_free:'The pot is yours.',
+  drowned:'drowned',bare:'bare',dry:'dry',habitable:'ready',rooted:'alive',
+  bench:'bench',play:'play',pause:'pause',bloom:'bloom'};
+const t_=k=>STR[k]||k;
 const ICON={
   dig:'<svg viewBox="0 0 32 32"><path d="M4 22c4-6 20-6 24 0"/><path d="M16 5v11"/><path d="M11 12l5 5 5-5"/></svg>',
   rain:'<svg viewBox="0 0 32 32"><path d="M9 15a5 5 0 0 1 1-10 7 7 0 0 1 13 2 4 4 0 0 1 1 8H9z"/><path d="M11 20l-2 4M17 20l-2 4M23 20l-2 4"/></svg>',
@@ -4007,12 +3999,10 @@ renderer.domElement.addEventListener('pointerleave',()=>tipEl.classList.remove('
 function setPlay(on){
   PLAY=on; document.body.classList.toggle('play',on);
   document.getElementById('benchBtn').textContent=on?'⚙ '+t_('bench'):'▶ '+t_('play');
-  document.getElementById('langBtn').textContent=t_('lang');
   if(on){ selectTool(TOOL); drawDock(); drawSpeed(); drawHint(); }
   resize();
 }
 document.getElementById('benchBtn').onclick=()=>setPlay(!PLAY);
-document.getElementById('langBtn').onclick=()=>{ LANG=LANG==='tr'?'en':'tr'; localStorage.setItem('potLang',LANG); setPlay(PLAY); drawBloom(); };
 /* a fresh pot for a player: a step of rock on the bedrock, and weathering
    that shows within a Season */
 function freshPot(){
