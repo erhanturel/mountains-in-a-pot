@@ -572,6 +572,55 @@ refused; the Whim fired on the first Lake and gave Monsoon; Year 1 cleared
 with 5 Dew, Monsoon bought, Year 2 opened with 10 mana and a fresh hand;
 an idle pot rests at Year 1 with Bloom 0.
 
+## The strike: a meteor you can see land
+
+`meteor()` changed the board in one frame, which is correct and invisible.
+The first playtest reported it "pek belli olmuyor" — you aimed, you clicked,
+and the crater was simply *there*. The rule is untouched: the same two
+elevations down over radius 2, the same ring of slag at radius 3. Everything
+added is presentation, it hangs off `frame()` rather than off ticks, and it
+touches no stored state, so the board is still a pure function of the
+snapshot.
+
+The sequence, measured by stepping `fx()` against a fake clock at 60 fps:
+
+```
+  t      bolide y   flash   shake   ring r   ring a
+  0.07     18.83                                      falling, from over
+  0.47     13.93                                      the sun's shoulder
+  0.90      0.34                                      IMPACT: h 1 -> -1
+  0.92        --     0.95    0.00     0.71    0.826
+  0.95        --     0.85    0.83     0.93    0.778
+  1.02        --     0.66    0.31     1.36    0.686
+  1.27        --     0.00    0.01     2.99    0.394
+  1.85        --                      6.80    0.026
+  2.05        --                       off              ring done
+  3.10      everything reset: striking false, scene at the origin
+```
+
+Peaks: flash 0.95, camera shake 0.94 world units, ring radius 8.1 — which
+runs out past the rubble at radius 3 (about 5.2 units), so you see how far
+it reached. The world is held still for the fall and put back the way it was
+found, so pausing before a strike survives it.
+
+**It is timed off the wall clock, not off accumulated frame deltas.** The
+delta has to be clamped or one long frame teleports the bolide, and a clamped
+delta makes the fall take *longer the slower the machine is* — at 10 fps the
+first version took 6 s instead of 3.1. One `t0` for the whole sequence also
+means a tab hidden through the strike comes back to a finished crater rather
+than a bolide parked in the sky, because the impact fires on the first frame
+past `FALL` however late that frame is. Verified: hidden through the whole
+sequence, the crater is `h = -1` on return and nothing is left running.
+
+**The flash is a DOM layer, not a shader uniform**, so it reads the same
+whether the post pass is on or off, and it blooms from where the hex projects
+on screen rather than from the middle. The shake moves `scene.position`
+rather than the camera, because `controls.update()` owns the camera and would
+fight it.
+
+The caption sits at 74px, clear of the hint pill at 22px; at 52px the two
+collided and "METEOR" read as a smudge under the hint.
+
 ## Player mode: powers are earned
 
 The first playtest stalled at the first click — "what do we do now?" — and

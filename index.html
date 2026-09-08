@@ -122,6 +122,18 @@
     white-space:nowrap;transition:opacity .5s;border:1px solid rgba(232,194,116,.35)}
   body.play #hintline{display:block}
   #hintline.gone{opacity:0}
+  /* THE STRIKE. A meteor changed the board in one frame and nobody saw it.
+     The flash is a DOM layer rather than a shader uniform so it reads the
+     same whether the post pass is on or off. */
+  #flash{position:absolute;inset:0;z-index:5;pointer-events:none;opacity:0;
+    background:radial-gradient(circle at var(--fx,50% 50%),
+      rgba(255,244,214,.95) 0%,rgba(255,190,120,.55) 22%,rgba(255,120,60,.18) 45%,transparent 70%)}
+  /* clear of the hint pill at 22px: the two collided and the caption read as
+     a smudge under the hint */
+  #strikeCap{position:absolute;left:50%;top:74px;transform:translateX(-50%);z-index:5;
+    pointer-events:none;opacity:0;transition:opacity .25s;color:#f4d9a8;font-size:19px;
+    letter-spacing:.34em;text-indent:.34em;text-transform:uppercase;font-weight:600;
+    text-shadow:0 2px 22px rgba(0,0,0,.9),0 0 30px rgba(255,170,90,.45)}
   #tip{position:absolute;display:none;pointer-events:none;z-index:4;
     font-family:system-ui,sans-serif;font-size:13px;color:#fff;background:rgba(18,20,28,.85);
     padding:4px 11px;border-radius:14px;transform:translate(14px,-30px)}
@@ -213,6 +225,7 @@
       <div id="board"><div id="info"></div><div id="time"></div><div id="clock"></div><div id="bloom"></div>
         <div id="hintline"></div><div id="dock"></div><div id="hand"></div><div id="speed"></div><div id="tip"></div><div id="mana"></div>
         <div id="corner"><button id="benchBtn"></button></div>
+        <div id="flash"></div><div id="strikeCap"></div>
         <div id="harvest"><div class="card"></div></div></div>
       <div class="hint"><b>click a hex</b> — drag to orbit, scroll to zoom.
         The world runs on its own: two ticks a second at 1×, a Season every
@@ -1777,7 +1790,7 @@ renderer.domElement.addEventListener('click',e=>{
    cloud takes the cloud away for nothing, and a force being aimed lands */
 function playClick(i){
   if(i<0 || RUN.screen || RUN.over) return;
-  if(RUN.aim==='meteor'){ meteor(i); drawMana(); return; }
+  if(RUN.aim==='meteor'){ strike(i); drawMana(); return; }
   if(TOOL==='rain' && clouds(i)){ const b=snap(); if(use(i,POWERS.find(p=>p.k==='erase'),0,1,CLOUD)){ push(b); rebuild(); hover(i); } return; }
   const cost=costOf(TOOL);
   if(RUN.mana<cost) return;
@@ -2477,6 +2490,86 @@ function meteor(i){
   for(const j of within(i,3)) if(!within(i,2).includes(j)) T[j].sed+=2*LAYER;
   tick(); push(before); rebuild(); RUN.aim=null; HINT=null; drawHint();
 }
+/* THE STRIKE. meteor() changed the board in one frame, which is correct and
+   invisible -- the first playtest never saw it land. Everything below is
+   PRESENTATION: it hangs off frame() rather than off ticks, touches no
+   stored state, and the crater rule is exactly the one above. The world is
+   held still for the fall so the thing you are watching is the impact.
+
+   The flash is a DOM layer, not a shader uniform, so it reads the same
+   whether the post pass is on or off. */
+const fxFlash=document.getElementById('flash'), fxCap=document.getElementById('strikeCap');
+const bolide=new THREE.Mesh(new THREE.IcosahedronGeometry(0.42,1),
+  new THREE.MeshBasicMaterial({color:0xfff4dc}));
+const trail=new THREE.Mesh(new THREE.ConeGeometry(0.4,9,12,1,true),
+  new THREE.MeshBasicMaterial({color:0xff9440,transparent:true,opacity:0.5,
+    blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide}));
+trail.position.y=4.5; bolide.add(trail);
+bolide.visible=false; bolide.renderOrder=4; scene.add(bolide);
+const shock=new THREE.Mesh(new THREE.RingGeometry(0.72,1,64),
+  new THREE.MeshBasicMaterial({color:0xffca8a,transparent:true,opacity:0,
+    blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide}));
+shock.rotation.x=-Math.PI/2; shock.visible=false; shock.renderOrder=4; scene.add(shock);
+const UPV=new THREE.Vector3(0,1,0);
+/* the whole sequence, in seconds. FALL is long enough to follow with the
+   eye and short enough not to be a cutscene. */
+const FALL=0.9, SHOCKFOR=1.15, DONE=2.2;
+let STRIKE=null, SHAKE=0, FXWAS=false;
+function strike(i){
+  if(STRIKE) return;
+  const t=T[i], y=gnd(i)*RISE;
+  const to=new THREE.Vector3(t.x,y,t.y);
+  /* it comes in over the sun's shoulder, so the streak is lit against the
+     dark side of the sky rather than lost in the glare */
+  const from=new THREE.Vector3().copy(sun.position).normalize()
+    .multiplyScalar(SPAN*0.9).add(to); from.y=Math.max(from.y,y+SPAN*0.75);
+  STRIKE={i,from,to,t0:performance.now(),hit:false};
+  bolide.quaternion.setFromUnitVectors(UPV,
+    new THREE.Vector3().subVectors(from,to).normalize());
+  bolide.position.copy(from); bolide.visible=true;
+  /* the flash blooms from where the board says the hex is, not the middle */
+  const p=to.clone().project(cam);
+  fxFlash.style.setProperty('--fx',((p.x*0.5+0.5)*100).toFixed(1)+'% '+((-p.y*0.5+0.5)*100).toFixed(1)+'%');
+  fxCap.textContent='Meteor'; fxCap.style.opacity='1';
+  FXWAS=PAUSED; setPause(true);
+  RUN.aim=null; HINT=null; drawHint();
+}
+/* Driven by frame(), so it runs at the screen's rate and not the world's --
+   but timed off the WALL CLOCK, not off accumulated frame deltas. Deltas are
+   clamped (they have to be, or one long frame teleports the thing), and a
+   clamped delta makes the fall take longer the slower the machine is: at 10
+   fps this took 6 s instead of 3.1. One t0 for the whole sequence also means
+   a tab hidden through the strike comes back to a finished crater rather
+   than a bolide parked in the sky, because the impact fires on the first
+   frame past FALL however late that frame is. */
+function fx(dt){
+  if(SHAKE>0){ SHAKE=Math.max(0,SHAKE-dt*2.6);
+    const a=SHAKE*SHAKE*0.9;
+    scene.position.set((Math.random()*2-1)*a,(Math.random()*2-1)*a,(Math.random()*2-1)*a);
+    if(SHAKE===0) scene.position.set(0,0,0); }
+  if(!STRIKE) return;
+  const S=STRIKE, at=(performance.now()-S.t0)/1000;
+  if(!S.hit){
+    /* eased so it accelerates in, the way a falling thing does */
+    const u=Math.min(1,at/FALL), e=u*u;
+    bolide.position.lerpVectors(S.from,S.to,e);
+    bolide.scale.setScalar(1+e*1.4);
+    if(u<1) return;
+    S.hit=true; bolide.visible=false;
+    meteor(S.i);                         /* the rule, at the moment of impact */
+    fxFlash.style.opacity='1'; SHAKE=1;
+    shock.position.set(S.to.x,gnd(S.i)*RISE+0.06,S.to.y);
+    shock.visible=true;
+  }
+  const a=at-FALL, u=Math.min(1,a/SHOCKFOR);
+  fxFlash.style.opacity=String(Math.max(0,1-a/0.34));
+  /* the ring runs out past the rubble ring, so you see how far it reached */
+  shock.scale.setScalar(0.6+u*7.5);
+  shock.material.opacity=0.85*(1-u)*(1-u);
+  if(u>=1) shock.visible=false;
+  if(a>=DONE){ STRIKE=null; SHAKE=0; scene.position.set(0,0,0);
+    fxFlash.style.opacity='0'; fxCap.style.opacity='0'; setPause(FXWAS); }
+}
 setInterval(()=>{ if(PLAY){ checkUnlocks(); checkWhim(); } },500);
 
 /* A module's scope is private, so nothing here is reachable from devtools.
@@ -2495,6 +2588,7 @@ window.POT={T,at,use,tick,settle,rebuild,POWERS,scene,
   get ticks(){ return TICKS }, get lifeEvery(){ return LIFE_EVERY }, set lifeEvery(v){ LIFE_EVERY=v },
   wonders, harvest, BONUS, WONDER_NAMES, showHarvest, MOSS, REED, KINDS, WORTH, worth,
   RUN, TARGETS, BOONS, showSpring, showBehold, showWhim, takeForce, startYear, playClick, drawMana,
+  strike, meteor, fx, get striking(){ return !!STRIKE },
   get rainMult(){ return RAIN_MULT }, set rainMult(v){ RAIN_MULT=v }, get floodTol(){ return FLOOD_TOL }, set floodTol(v){ FLOOD_TOL=v },
   get unlock(){ return UNLOCK }, get hint(){ return HINT }, get play(){ return PLAY }, setPlay, selectTool, checkUnlocks,
   CELL,TOP,cell,solid,retop,ZN,Z0,SLAB,zBot,zTop,AIR,BEDROCK,ROCK,MATS,instHex,ground,
@@ -2554,7 +2648,10 @@ ovPost.onclick=()=>{ POST=!POST; ovPost.classList.toggle('on',POST); };
 
 /* the draw loop. Named frame(), not tick() — a tick is a step of the world
    now, and the two must never be confused. */
+let FXLAST=performance.now();
 function frame(){
+  const now=performance.now(); const dt=Math.min(0.05,(now-FXLAST)/1000); FXLAST=now;
+  fx(dt);
   controls.update();
   if(POST){
     renderer.setRenderTarget(rt); renderer.render(scene,cam);
