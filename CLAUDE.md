@@ -572,6 +572,86 @@ refused; the Whim fired on the first Lake and gave Monsoon; Year 1 cleared
 with 5 Dew, Monsoon bought, Year 2 opened with 10 mana and a fresh hand;
 an idle pot rests at Year 1 with Bloom 0.
 
+## The Whim, opened up
+
+The first playable had **three** milestones and **three** forces, and all
+three milestones were *firsts* — the first Lake, the first River, the first
+Ring of Life. Firsts all happen early. The playtest said the wheel came too
+seldom, and the count says why: **at most three wheels in eight Years, and
+typically all of them before Year 3.** After that the run had nothing new in
+it at all; the only thing that changed in Years 5 to 8 was the target going
+60, 90, 130, 180. Difficulty without novelty.
+
+Measured, 200 seeds, a player buying one Boon a Year:
+
+```
+  Spring after Year   1     2     3     4     5     6     7
+  Boons offered     3.00  3.00  3.00  3.00  2.00  1.00  1.00
+```
+
+So the shop dried up as well. The run was **front-loaded**: four verbs all
+unlocked in Year 1, three wheels in Year 1–2, a Boon pool exhausted by Year 5,
+three seed kinds offered two at a time forever.
+
+**Every Wonder now turns the wheel the first time it stands in this run.**
+Twelve of them instead of three firsts. It needs no new state — `RUN.whims`
+was already keyed by name — and it spreads *itself* over the run, because the
+easy Wonders (Lake, River) come early and the hard ones (Delta, Watershed,
+Terrace, Highland Meadow) come late. Still earned, still never scheduled:
+nothing here is on a calendar.
+
+### Eight forces, in three shapes
+
+Three was too few to be a wheel — the same handful all run. Nothing added
+reaches the simulation except through a lever it already has.
+
+```
+  SPELLS   a Season long, and exactly reversible
+    Monsoon         twice the rain                RAIN_MULT *2
+    Ages of Frost   rock breaks down 4x as fast   WEATHER   *4
+    Quickening      life steps every tick         LIFE_EVERY 10 -> 1
+
+  AIMED    the player picks the hex; ONE tick however many hexes moved
+    Meteor      crater 2 steps deep over r2, slag ring at r3   lower/sed
+    Upheaval    the ground swells 2 steps at r0-1, 1 at r2     raise
+    Landslide   6, 4, 2 courses of slag at r0, r1, r2          sed
+    Cloudburst  12 courses of water over r2, at once           pool
+
+  INSTANT
+    Megatime    a hundred ticks in a breath
+```
+
+Measured on a flat pot (`h` was 1 everywhere):
+
+```
+  Upheaval   h by distance 0,1,2,3:  3  3  2  1     exactly 2 steps, then 1
+  Landslide  sed in courses:         6  4  2  0     exactly as stated
+  Cloudburst pool, after one tick:  10.29 6.29 2.00 4.00   spread by settle
+```
+
+**A spell fired while it is already running extends it rather than stacking
+it**, which is what keeps the multiplicative `off()` exact. Checked: monsoon,
+frost and quicken all on together give rain 2, weather 2.8, life 1, all three
+expiring at the same tick; firing monsoon again leaves rain at 2, not 4; and
+turning all three off returns rain 1, weather 0.7, life 10 — identical to the
+values before, to twelve decimals.
+
+The deadline lives in `RUN.until` as **data, not a stored closure**, so a
+saved board could carry a force that is still running.
+
+**The wheel offers three of the eight, drawn from the run seed.** All eight
+was a wall of text and made every wheel look the same; three reads at a
+glance, and the shortlist is itself part of what a Whim is.
+
+**The lumpy-looking wheel was not a bug**, and this is worth writing down
+because an afternoon was nearly spent on it. On seed 7 three consecutive
+wheels offered the same trio and Monsoon was picked five times in twelve,
+which looks exactly like `mulberry` correlating on nearby seeds. Over 400
+seeds: repeated shortlists **8.8%** against **9.7% expected by chance** for
+three-of-eight over twelve draws, and the picks give chi-square **7.3** on 7
+degrees of freedom, where 14.1 is p .05. Burning eight outputs at
+construction moved neither number. `mulberry` was left alone.
+
 ## The strike: a meteor you can see land
 
 `meteor()` changed the board in one frame, which is correct and invisible.

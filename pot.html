@@ -3757,7 +3757,7 @@ renderer.domElement.addEventListener('click',e=>{
    cloud takes the cloud away for nothing, and a force being aimed lands */
 function playClick(i){
   if(i<0 || RUN.screen || RUN.over) return;
-  if(RUN.aim==='meteor'){ strike(i); drawMana(); return; }
+  if(RUN.aim){ strike(i,RUN.aim); drawMana(); return; }
   if(TOOL==='rain' && clouds(i)){ const b=snap(); if(use(i,POWERS.find(p=>p.k==='erase'),0,1,CLOUD)){ push(b); rebuild(); hover(i); } return; }
   const cost=costOf(TOOL);
   if(RUN.mana<cost) return;
@@ -3869,7 +3869,10 @@ setInterval(()=>{
   acc+=BASE_RATE*STEP*0.1;
   let n=Math.floor(acc); acc-=n;
   if(typeof RUN!=='undefined' && RUN.megatime>0){ const m=Math.min(4,RUN.megatime); RUN.megatime-=m; n+=m; }
-  if(typeof RUN!=='undefined' && RUN.monsoonUntil && TICKS>=RUN.monsoonUntil){ RUN.monsoonUntil=0; RAIN_MULT/=2; }
+  /* a Season-long force ends itself. Data, not a stored closure, so a
+     saved board could carry it. */
+  if(typeof RUN!=='undefined') for(const k in RUN.until)
+    if(TICKS>=RUN.until[k]){ delete RUN.until[k]; SPELLS[k].off(); }
   if(n) advance(n);
 },100);
 function setPause(on){ PAUSED=on; drawRates(); }
@@ -4298,7 +4301,7 @@ const SEEDCARDS={[SEED]:{nm:'Grass',d:'Soil, a shore or a bank. Worth 1.',dew:2}
 const RUNSEED=(+new URLSearchParams(location.search).get('seed'))||((Date.now()/1000|0)%100000);
 const mulberry=a=>()=>{ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; };
 const RUN={year:1, mana:10, dew:0, boons:[], deck:[SEED,SEED,MOSS], hand:[], over:false,
-           yearStart:0, nextYearAt:0, blooms:[], whims:{}, aim:null, megatime:0, monsoonUntil:0, screen:false};
+           yearStart:0, nextYearAt:0, blooms:[], whims:{}, aim:null, megatime:0, until:{}, screen:false};
 let LAST_YEAR=0, BEST=+(localStorage.getItem('potBest')||0);
 const CODEX=new Set(JSON.parse(localStorage.getItem('potCodex')||'[]'));
 const has=k=>RUN.boons.includes(k);
@@ -4416,23 +4419,66 @@ function yearTurn(){
    the first Ring of Life each turn the wheel once. The wheel picks a FORCE
    from the run seed; the player aims it. A force never scores -- it only
    changes the world. */
-const FORCES={
-  meteor:  {nm:'Meteor',   d:'A crater two steps deep, rubble around its rim. Aim it.'},
-  megatime:{nm:'Megatime', d:'A hundred ticks in a breath.'},
-  monsoon: {nm:'Monsoon',  d:'Twice the rain, for one Season.'}};
-const MILESTONES={lake:'The first Lake',river:'The first River',ring:'The first Ring of Life'};
+/* Eight forces, in three shapes. Nothing here reaches the simulation except
+   through a lever it already has: RAIN_MULT, WEATHER, LIFE_EVERY, and the
+   powers raise/lower/sed/pool. There were three, and the wheel showed all
+   three every time, so it landed on the same handful all run. */
+const SPELLS={   /* a Season long, and exactly reversible */
+  monsoon:{nm:'Monsoon',       d:'Twice the rain, for one Season.',
+           on:()=>{ RAIN_MULT*=2; },  off:()=>{ RAIN_MULT/=2; }},
+  frost:  {nm:'Ages of Frost', d:'Rock breaks down four times as fast, for one Season.',
+           on:()=>{ WEATHER*=4; },    off:()=>{ WEATHER/=4; }},
+  quicken:{nm:'Quickening',    d:'Life steps every tick, not every tenth, for one Season.',
+           on:()=>{ LIFE_EVERY=1; },  off:()=>{ LIFE_EVERY=10; }},
+};
+/* aimed: the player picks the hex. Each is one write through a lever that
+   already exists, and each is ONE action -- the tick is taken once however
+   many hexes moved, the same reason the brush lives in the CORE. */
+const AIMED={
+  meteor:   {nm:'Meteor',    d:'A crater two steps deep, rubble around its rim. Aim it.',
+             fall:true, flash:1, shake:1, ring:8.1,
+             go:i=>{ const in2=new Set(within(i,2));
+                     for(const j of in2) lower(j,2*SLAB);
+                     for(const j of within(i,3)) if(!in2.has(j)) T[j].sed+=2*LAYER; }},
+  upheaval: {nm:'Upheaval',  d:'The ground swells two steps under your hand. Aim it.',
+             fall:false, flash:0, shake:0.8, ring:6,
+             go:i=>{ for(const j of within(i,2))
+                       raise(j,(hexDist(i,j)<=1?2:1)*SLAB,ROCK); }},
+  landslide:{nm:'Landslide', d:'Loose rock, six courses of it, where you say. Aim it.',
+             fall:false, flash:0, shake:0.55, ring:5,
+             go:i=>{ for(const j of within(i,2))
+                       T[j].sed+=(6-2*hexDist(i,j))*LAYER; }},
+  cloudburst:{nm:'Cloudburst',d:'A lake\'s worth of water, all at once. Aim it.',
+             fall:false, flash:0.4, shake:0.35, ring:7,
+             go:i=>{ for(const j of within(i,2)) T[j].pool+=12*LAYER; }},
+};
+const FORCES=Object.assign({megatime:{nm:'Megatime',d:'A hundred ticks in a breath.'}},SPELLS,AIMED);
+/* EVERY Wonder turns the wheel the first time it stands in this run -- not
+   three firsts that all land in Year 1. The easy ones (Lake, River) come
+   early and the hard ones (Delta, Watershed, Terrace, Highland Meadow) come
+   late, so the wheel spreads itself over the run without being put on a
+   calendar. Still earned, still never scheduled. */
+const MILESTONES=Object.fromEntries(Object.keys(WONDER_NAMES)
+  .map(k=>[k,'The first '+WONDER_NAMES[k].replace(/^The /,'')]));
 function checkWhim(){
-  if(RUN.over||RUN.screen||!UNLOCK.raise) return;
+  if(RUN.over||RUN.screen||!UNLOCK.raise||RUN.aim||STRIKE) return;
   if(TICKS>=RUN.nextYearAt-1) return;          /* the Harvest has the floor */
   const W=wonders();
   for(const m of Object.keys(MILESTONES)){
-    if(RUN.whims[m]) continue;
-    if(m==='lake' ? (W.lake||W.great) : W[m]){ RUN.whims[m]=true; showWhim(m); return; }
+    if(RUN.whims[m]||!W[m]) continue;
+    RUN.whims[m]=true; showWhim(m); return;    /* one at a time; the rest keep */
   }
 }
+/* three of the eight, drawn from the run seed. All eight was a wall of text
+   and made every wheel look the same; three reads at a glance, and the
+   shortlist itself is part of what a Whim is. */
+function offerFor(n){
+  const r=mulberry(RUNSEED*17+n*37+11), pool=Object.keys(FORCES), out=[];
+  while(out.length<3 && pool.length) out.push(pool.splice(Math.floor(r()*pool.length),1)[0]);
+  return {keys:out, pick:out[Math.floor(r()*out.length)]};
+}
 function showWhim(m){
-  const keys=Object.keys(FORCES), r=mulberry(RUNSEED*17+Object.keys(RUN.whims).length*3);
-  const pick=keys[Math.floor(r()*keys.length)], el=card();
+  const o=offerFor(Object.keys(RUN.whims).length), keys=o.keys, pick=o.pick, el=card();
   el.innerHTML='<h3>Gaia\'s Whim</h3><div class="sub">'+MILESTONES[m]+'. The world answers.</div>'+
     '<div class="wheel">'+keys.map(k=>'<div data-f="'+k+'"><b>'+FORCES[k].nm+'</b>'+FORCES[k].d+'</div>').join('')+'</div>'+
     '<button class="off">…</button>';
@@ -4447,14 +4493,17 @@ function showWhim(m){
   turn();
 }
 function takeForce(k){
-  if(k==='megatime'){ RUN.megatime=100; close(); }
-  else if(k==='monsoon'){ RUN.monsoonUntil=TICKS+SEASON_TICKS; RAIN_MULT*=2; close(); }
-  else { RUN.aim=k; HINT='h_aim'; STR.h_aim='Aim the meteor.'; drawHint(); close(); }
+  if(k==='megatime'){ RUN.megatime=100; close(); return; }
+  if(SPELLS[k]){ /* firing a spell that is already running EXTENDS it rather
+                    than stacking it, which is what keeps off() exact */
+    if(!RUN.until[k]) SPELLS[k].on();
+    RUN.until[k]=TICKS+SEASON_TICKS; close(); return; }
+  RUN.aim=k; HINT='h_aim'; STR.h_aim='Aim the '+AIMED[k].nm+'.'; drawHint(); close();
 }
-function meteor(i){
+/* one aimed force, landed. ONE tick however many hexes it moved. */
+function landForce(k,i){
   const before=snap();
-  for(const j of within(i,2)) lower(j,2*SLAB);
-  for(const j of within(i,3)) if(!within(i,2).includes(j)) T[j].sed+=2*LAYER;
+  AIMED[k].go(i);
   tick(); push(before); rebuild(); RUN.aim=null; HINT=null; drawHint();
 }
 /* THE STRIKE. meteor() changed the board in one frame, which is correct and
@@ -4482,22 +4531,30 @@ const UPV=new THREE.Vector3(0,1,0);
    eye and short enough not to be a cutscene. */
 const FALL=0.9, SHOCKFOR=1.15, DONE=2.2;
 let STRIKE=null, SHAKE=0, FXWAS=false;
-function strike(i){
+/* Every aimed force lands through here. Only the Meteor falls out of the sky;
+   the other three come out of the ground, so they skip the bolide and start
+   at the impact -- but they still get the shake and the ring, because the
+   whole point is that a force must be seen to happen. */
+function strike(i,k){
   if(STRIKE) return;
+  const F=AIMED[k]||AIMED.meteor;
   const t=T[i], y=gnd(i)*RISE;
   const to=new THREE.Vector3(t.x,y,t.y);
-  /* it comes in over the sun's shoulder, so the streak is lit against the
-     dark side of the sky rather than lost in the glare */
-  const from=new THREE.Vector3().copy(sun.position).normalize()
-    .multiplyScalar(SPAN*0.9).add(to); from.y=Math.max(from.y,y+SPAN*0.75);
-  STRIKE={i,from,to,t0:performance.now(),hit:false};
-  bolide.quaternion.setFromUnitVectors(UPV,
-    new THREE.Vector3().subVectors(from,to).normalize());
-  bolide.position.copy(from); bolide.visible=true;
+  STRIKE={i,k:AIMED[k]?k:'meteor',F,to,t0:performance.now(),hit:false,fall:F.fall?FALL:0};
+  if(F.fall){
+    /* it comes in over the sun's shoulder, so the streak is lit against the
+       dark side of the sky rather than lost in the glare */
+    const from=new THREE.Vector3().copy(sun.position).normalize()
+      .multiplyScalar(SPAN*0.9).add(to); from.y=Math.max(from.y,y+SPAN*0.75);
+    STRIKE.from=from;
+    bolide.quaternion.setFromUnitVectors(UPV,
+      new THREE.Vector3().subVectors(from,to).normalize());
+    bolide.position.copy(from); bolide.visible=true;
+  }
   /* the flash blooms from where the board says the hex is, not the middle */
   const p=to.clone().project(cam);
   fxFlash.style.setProperty('--fx',((p.x*0.5+0.5)*100).toFixed(1)+'% '+((-p.y*0.5+0.5)*100).toFixed(1)+'%');
-  fxCap.textContent='Meteor'; fxCap.style.opacity='1';
+  fxCap.textContent=F.nm; fxCap.style.opacity='1';
   FXWAS=PAUSED; setPause(true);
   RUN.aim=null; HINT=null; drawHint();
 }
@@ -4511,27 +4568,31 @@ function strike(i){
    frame past FALL however late that frame is. */
 function fx(dt){
   if(SHAKE>0){ SHAKE=Math.max(0,SHAKE-dt*2.6);
-    const a=SHAKE*SHAKE*0.9;
+    const a=SHAKE*SHAKE*0.9;   /* squared, so it dies rather than fades */
     scene.position.set((Math.random()*2-1)*a,(Math.random()*2-1)*a,(Math.random()*2-1)*a);
     if(SHAKE===0) scene.position.set(0,0,0); }
   if(!STRIKE) return;
   const S=STRIKE, at=(performance.now()-S.t0)/1000;
   if(!S.hit){
-    /* eased so it accelerates in, the way a falling thing does */
-    const u=Math.min(1,at/FALL), e=u*u;
-    bolide.position.lerpVectors(S.from,S.to,e);
-    bolide.scale.setScalar(1+e*1.4);
-    if(u<1) return;
-    S.hit=true; bolide.visible=false;
-    meteor(S.i);                         /* the rule, at the moment of impact */
-    fxFlash.style.opacity='1'; SHAKE=1;
+    if(S.fall){
+      /* eased so it accelerates in, the way a falling thing does */
+      const u=Math.min(1,at/S.fall), e=u*u;
+      bolide.position.lerpVectors(S.from,S.to,e);
+      bolide.scale.setScalar(1+e*1.4);
+      if(u<1) return;
+      bolide.visible=false;
+    }
+    S.hit=true;
+    landForce(S.k,S.i);                  /* the rule, at the moment of impact */
+    fxFlash.style.opacity=String(S.F.flash); SHAKE=S.F.shake;
     shock.position.set(S.to.x,gnd(S.i)*RISE+0.06,S.to.y);
     shock.visible=true;
   }
-  const a=at-FALL, u=Math.min(1,a/SHOCKFOR);
-  fxFlash.style.opacity=String(Math.max(0,1-a/0.34));
-  /* the ring runs out past the rubble ring, so you see how far it reached */
-  shock.scale.setScalar(0.6+u*7.5);
+  const a=at-S.fall, u=Math.min(1,a/SHOCKFOR);
+  fxFlash.style.opacity=String(Math.max(0,S.F.flash*(1-a/0.34)));
+  /* the ring runs out past whatever the force touched, so you see how far
+     it reached */
+  shock.scale.setScalar(0.6+u*(S.F.ring-0.6));
   shock.material.opacity=0.85*(1-u)*(1-u);
   if(u>=1) shock.visible=false;
   if(a>=DONE){ STRIKE=null; SHAKE=0; scene.position.set(0,0,0);
@@ -4555,7 +4616,8 @@ window.POT={T,at,use,tick,settle,rebuild,POWERS,scene,
   get ticks(){ return TICKS }, get lifeEvery(){ return LIFE_EVERY }, set lifeEvery(v){ LIFE_EVERY=v },
   wonders, harvest, BONUS, WONDER_NAMES, showHarvest, MOSS, REED, KINDS, WORTH, worth,
   RUN, TARGETS, BOONS, showSpring, showBehold, showWhim, takeForce, startYear, playClick, drawMana,
-  strike, meteor, fx, get striking(){ return !!STRIKE },
+  strike, landForce, fx, AIMED, SPELLS, FORCES, MILESTONES, offerFor, checkWhim,
+  get striking(){ return !!STRIKE },
   get rainMult(){ return RAIN_MULT }, set rainMult(v){ RAIN_MULT=v }, get floodTol(){ return FLOOD_TOL }, set floodTol(v){ FLOOD_TOL=v },
   get unlock(){ return UNLOCK }, get hint(){ return HINT }, get play(){ return PLAY }, setPlay, selectTool, checkUnlocks,
   CELL,TOP,cell,solid,retop,ZN,Z0,SLAB,zBot,zTop,AIR,BEDROCK,ROCK,MATS,instHex,ground,
