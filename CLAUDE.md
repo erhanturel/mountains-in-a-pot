@@ -572,6 +572,84 @@ refused; the Whim fired on the first Lake and gave Monsoon; Year 1 cleared
 with 5 Dew, Monsoon bought, Year 2 opened with 10 mana and a fresh hand;
 an idle pot rests at Year 1 with Bloom 0.
 
+## Three things the first full run put on trial
+
+The run was liked and the diagnosis was that it is **front-loaded**. Two of
+the three changes below are experiments with a switch on them, not decisions,
+because the things they touch were locked by assumption rather than by
+measurement. Both switches stay until a run has been played each way.
+
+### Mana can be switched off
+
+The claim being tested: **mana solves a problem this simulation does not
+have.** The world already limits you by how fast it answers — a lake takes a
+Season to fill however many times you click. A budget on top of that is a
+second, artificial scarcity, and it is the artificial one that makes you sit
+on your hands.
+
+The arithmetic: ten mana a Year against costs of 1 to 3 allows **five or six
+actions across 480 ticks**, which at 1× is one decision every forty seconds.
+The rest of the Year is watching at 10×, so *the world running on its own* —
+the best thing here — becomes a loading screen.
+
+`?mana=free` starts a run without it and a corner button switches it mid-run,
+so both can be felt in one sitting. **The seed deck is left alone on
+purpose**: three sows a Year is a different mechanic, and moving two limits at
+once would muddy the answer.
+
+The question to answer is narrow: *with it off, are you still thinking?* If
+yes, the real constraint was time and the budget was in the way. If you start
+clicking at random, mana was right and it comes back.
+
+### Drainage is a lens the player holds
+
+It was a toggle in the View panel, and the View panel is hidden in play. So
+the one thing that answers **"where will the water go" before a drop has
+fallen** was computed by the engine every time it was asked and never shown
+to the player. Measured earlier against where the water actually went: seeded
+from the clouds it scores **0.76** by rank correlation. That is not a debug
+view, it is the read the whole game is about.
+
+It sits **beside** the tools rather than among them — same row, round instead
+of square, no cost badge — because it is not a tool: it costs nothing, acts
+on nothing, takes no tick. It is there rather than with the bench buttons in
+the corner because it is pressed while you are deciding where to dig, and
+that is where the eye already is. `D` toggles it. The bench toggle and the
+lens drive each other, so they cannot disagree about one `DRAIN` flag.
+
+### The Omen is the spine, and the bar is a measure
+
+Eight Years with a rising number and nothing else to aim at gave the run
+difficulty and no direction. **The Omen is what a Year is for**; the target is
+now a measure rather than a gate. Missing it costs that Year's dew and
+nothing else, the run is always eight Years, and it ends on Behold with the
+world you made.
+
+- The Harvest leads with the Omen, above the reading rather than below the
+  target, and the target is a soft footnote: *Target 25 — short by 25*.
+- Behold opens with **Omens met: 2 of 3**, then the Bloom curve.
+- **Year 1 has no Omen.** It is the Year the four verbs unlock one at a time,
+  and a goal screen on top of the tutorial is noise.
+
+`?bar=hard` puts the old fail state back, so the two can be compared rather
+than argued about. Checked both ways: missing the target with the soft bar
+gives *The pot goes on. No dew this Year.* and a Spring button; with
+`?bar=hard` the same board gives *The pot rests.* and Behold.
+
+### A trap that cost a debugging cycle
+
+Three guards read `typeof RUN !== 'undefined'`. **`typeof` on a `const` in its
+temporal dead zone does not return `'undefined'` — it throws.** They worked
+only because the module always finished evaluating before the first interval
+fired. The moment anything below threw during evaluation, the 100 ms interval
+spewed the same `ReferenceError` ten times a second and buried the real
+error. A hoisted `var` sentinel cannot dead-zone, and that is what they use
+now.
+
+This is the second time the same shape has bitten: `window.POT` is built
+before the POST block, so `TILT` and `renderer` had to be exported as getters
+for exactly the same reason.
+
 ## Omens: the Year asks for one thing
 
 The other half of the front-loading. Eight Years with a rising bar and

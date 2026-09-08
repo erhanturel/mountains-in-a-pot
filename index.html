@@ -191,6 +191,15 @@
   #harvest .codex div.now{background:rgba(166,217,106,.16);border-color:#a6d96a}
   #harvest .codex div.now b{color:#fff} #harvest .codex div.now u{color:#a6d96a}
   #harvest .codex div.now i{color:#9aa88a}
+  #harvest .omenres{margin:2px 0 14px;padding:10px 13px;border-radius:12px;font-size:14px;line-height:1.45;
+    background:rgba(200,150,232,.11);border:1px solid rgba(200,150,232,.3);color:#e2d4f0}
+  #harvest .omenres b{display:block;font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;
+    color:#b98fdc;font-weight:600;margin-bottom:2px}
+  #harvest .omenres span{display:block;margin-top:3px;font-size:12.5px}
+  #harvest .omenres.ok{background:rgba(166,217,106,.14);border-color:rgba(166,217,106,.42)}
+  #harvest .omenres.ok b{color:#a6d96a} #harvest .omenres.ok span{color:#a6d96a}
+  #harvest .omenres.miss span{color:#8b929c}
+  #harvest .row.soft{font-size:13px;color:#8b929c;border-bottom:none;padding-top:9px}
   #harvest button{width:100%;padding:13px;border-radius:14px;border:1px solid #e8c274;background:linear-gradient(180deg,#4a3d22,#2e2716);
     color:#fff;font-family:inherit;font-size:16px;cursor:pointer}
   /* THE PANEL SAYS WHAT YOU HOLD. It was a row of 15px dots and a seed
@@ -2531,11 +2540,22 @@ const SEEDCARDS={[SEED]:{nm:'Grass',d:'Soil, a shore or a bank. Worth 1.',dew:2}
    sows a Year is a different mechanic, and mixing the two would muddy the
    experiment. */
 let FREE_MANA=new URLSearchParams(location.search).get('mana')==='free';
+/* THE BAR IS NO LONGER THE SPINE. Eight Years with a rising number and
+   nothing else to aim at gave the run difficulty and no direction. The Omen
+   -- one thing Gaia asks for, chosen by you -- is what a Year is now FOR,
+   and the target is a measure rather than a gate: missing it costs the
+   Year's dew and nothing else. The run is always eight Years, and ends on
+   Behold with the world you made.
+
+   ?bar=hard puts the old fail state back, so the two can be compared rather
+   than argued about. */
+const HARD_BAR=new URLSearchParams(location.search).get('bar')==='hard';
 const RUNSEED=(+new URLSearchParams(location.search).get('seed'))||((Date.now()/1000|0)%100000);
 const mulberry=a=>()=>{ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; };
 /* eslint-disable-next-line no-var-assign */
 const RUN={year:1, mana:10, dew:0, boons:[], deck:[SEED,SEED,MOSS], hand:[], over:false,
-           yearStart:0, nextYearAt:0, blooms:[], whims:{}, aim:null, megatime:0, until:{}, omen:null, screen:false};
+           yearStart:0, nextYearAt:0, blooms:[], whims:{}, aim:null, megatime:0, until:{}, omen:null,
+           omens:[], screen:false};
 RUNREADY=true;
 let LAST_YEAR=0, BEST=+(localStorage.getItem('potBest')||0);
 const CODEX=new Set(JSON.parse(localStorage.getItem('potCodex')||'[]'));
@@ -2637,14 +2657,27 @@ function showHarvest(atYearEnd){
      aimed at and made, and the bar is a separate question */
   const om=RUN.omen, omOk=om?om.test(h):false;
   if(omOk){ RUN.dew+=om.dew; dew+=om.dew; }
+  if(om) RUN.omens.push({ask:om.ask, met:omOk});
   RUN.omen=null;
+  const last=RUN.year>=TARGETS.length;
+  const ends=last || (HARD_BAR && !ok);
+  /* the Omen goes ABOVE the reading, not below the target. It is what the
+     Year was for; the arithmetic is how it went. */
+  const omenBar = om
+    ? '<div class="omenres '+(omOk?'ok':'miss')+'"><b>Omen</b>'+om.ask+
+      '<span>'+(omOk?'met · +'+om.dew+' dew':'not this Year')+'</span></div>'
+    : '';
+  const verdict = ends
+    ? (HARD_BAR && !ok ? 'The pot rests.' : 'Eight Years. A world.')
+    : 'The pot goes on.' + (dew ? ' +'+dew+' dew.' : ' No dew this Year.');
   el.innerHTML='<h3>Year '+RUN.year+' · Harvest</h3><div class="sub">The Year turns. What stands, counts.</div>'+
+    omenBar+
     harvestRows(h,now)+
-    (om?'<div class="row '+(omOk?'ok':'miss')+'"><span>Omen · '+om.ask+'</span><span>'+(omOk?'+'+om.dew+' dew':'—')+'</span></div>':'')+
-    '<div class="row '+(ok?'ok':'miss')+'"><span>Target</span><span>'+target+'</span></div>'+
-    '<div class="verdict">'+(ok ? (RUN.year>=TARGETS.length ? 'Eight Years. A world.' : 'The pot goes on. +'+dew+' dew.') : 'The pot rests.')+'</div>'+
-    codexGrid(now)+'<button>'+(ok ? (RUN.year>=TARGETS.length ? 'Behold' : 'Spring') : 'Behold')+'</button>';
-  el.querySelector('button').onclick=()=>{ if(ok && RUN.year<TARGETS.length) showSpring(); else showBehold(ok); };
+    '<div class="row soft '+(ok?'ok':'miss')+'"><span>Target '+target+'</span><span>'+
+      (ok?'cleared':'short by '+Math.round((target-h.bloom)*10)/10)+'</span></div>'+
+    '<div class="verdict">'+verdict+'</div>'+
+    codexGrid(now)+'<button>'+(ends?'Behold':'Spring')+'</button>';
+  el.querySelector('button').onclick=()=>{ if(ends) showBehold(!(HARD_BAR&&!ok)); else showSpring(); };
   open();
 }
 /* SPRING. Three Boons and two seed cards, drawn from the run seed. */
@@ -2735,8 +2768,14 @@ function showSpring(){
 function showBehold(won){
   const el=card();
   const found=[...CODEX].map(k=>WONDER_NAMES[k].replace(/^The /,'')).join(', ')||'none';
+  const met=RUN.omens.filter(o=>o.met);
+  const omenLine = RUN.omens.length
+    ? 'Omens met: <b>'+met.length+' of '+RUN.omens.length+'</b>'+
+      (met.length?' — '+met.map(o=>o.ask.replace(/\.$/,'')).join('; '):'')+'.'
+    : '';
   el.innerHTML='<h3>'+(won?'A world.':'The pot rests.')+'</h3><div class="sub">seed '+RUNSEED+' · '+RUN.year+' Year'+(RUN.year>1?'s':'')+'</div>'+
-    '<div class="story">Bloom by Year: '+RUN.blooms.join(' · ')+'.<br>Boons: '+(RUN.boons.map(k=>BOONS[k].nm).join(', ')||'none')+'.<br>Wonders ever found: '+found+'.</div>'+
+    '<div class="story">'+(omenLine?omenLine+'<br>':'')+
+    'Bloom by Year: '+RUN.blooms.join(' · ')+'.<br>Boons: '+(RUN.boons.map(k=>BOONS[k].nm).join(', ')||'none')+'.<br>Wonders ever found: '+found+'.</div>'+
     '<div class="row2"><button class="ghost" data-stay="1">Stay and look</button><button data-new="1">New pot</button></div>';
   el.querySelector('button[data-stay]').onclick=()=>{ document.getElementById('harvest').classList.remove('show'); RUN.screen=false; };
   el.querySelector('button[data-new]').onclick=()=>{ const u=new URL(location.href); u.searchParams.set('seed',Math.floor(Math.random()*100000)); location.href=u.toString(); };
@@ -2950,7 +2989,7 @@ window.POT={T,at,use,tick,settle,rebuild,POWERS,scene,
   strike, landForce, fx, AIMED, SPELLS, FORCES, MILESTONES, offerFor, checkWhim,
   OMENS, omenPool, omensFor, showOmens,
   get freeMana(){ return FREE_MANA }, set freeMana(v){ FREE_MANA=v; drawManaBtn(); drawMana(); drawDock(); },
-  toggleDrain, get drain(){ return DRAIN },
+  toggleDrain, get drain(){ return DRAIN }, get hardBar(){ return HARD_BAR },
   surfaceOf, wouldTake, drawTip, SEEDCARDS, showCodex, WONDER_HOW,
   /* the POST block is declared below this object, so these have to be
      getters or they read a const in its temporal dead zone */
