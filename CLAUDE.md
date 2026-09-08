@@ -572,6 +572,68 @@ refused; the Whim fired on the first Lake and gave Monsoon; Year 1 cleared
 with 5 Dew, Monsoon bought, Year 2 opened with 10 mana and a fresh hand;
 an idle pot rests at Year 1 with Bloom 0.
 
+## The play screen says what is going on
+
+Four things a playtester could not find out by looking, and the fix for each.
+None of them is a rule; all of them were the screen failing to say something
+the board already knew.
+
+### Sow only unlocked for Grass, so Moss was unreachable
+
+The worst of them, and a real bug rather than a presentation gap. The unlock
+ladder asked `habitable(i)` with no kind, which is **Grass**, and Grass wants
+a course of soil. A pot dug by hand has bare rock walls and no slag at all,
+so on the boards people actually build the tool did not appear until
+weathering had ground out a course — and the Moss in the *starting deck*
+would have taken on that shore from the first tick.
+
+Measured on a hand-dug hollow with water in it, weathering at the player
+default of 0.7 units a tick:
+
+```
+  sow unlocks, asking about Grass only     tick 100      (0.8 of a Season)
+  sow unlocks, asking about the hand        tick 1
+```
+
+A hundred ticks is exactly one course at 70 units and 0.7 a tick. The
+playtest reported this as "I can never sow Moss anywhere"; the truth was that
+the game never offered the tool. It now asks about **every seed in the hand**,
+and the hint names the one that would take: *Sow Moss where it will take.*
+
+### The pointer said one word, and it was the wrong one
+
+The tip showed a single word — `habitable`, `drowned`, `bare`, `dry` — and
+that word is the answer **for the seed you are holding**. On a bare rock
+shore, holding Grass, it said `bare`, which is true and useless: it says
+nothing about the Moss card in the hand.
+
+It now names the ground and, when the ground refuses the seed held, names the
+seed that would take:
+
+```
+  rock
+  bare — Moss takes here
+```
+
+`surfaceOf()` reads the top of the stack the way the renderer does — standing
+water first, then sand, then slag, then the top cell — so it answers *what am
+I looking at* as well as *will this grow*.
+
+### The panel did not show what you hold
+
+It was a row of 15px dots and a seed number. A playtester could not tell how
+much mana was left, and **could not see the Boons or the running force at
+all** — a Whim was granted, the screen closed, and nothing anywhere said it
+was in effect. The panel now carries the count as a number, the Boons held,
+any force still running with the ticks left on it, and the seed cards left
+this Year. The dock already greyed out what you cannot afford; the panel now
+says so too.
+
+### Where a Whim's force went
+
+`RUN.until` is redrawn as the world turns, so a running Monsoon or Ages of
+Frost counts down in the panel instead of being invisible for a Season.
+
 ## The Whim, opened up
 
 The first playable had **three** milestones and **three** forces, and all
