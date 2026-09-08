@@ -1,7 +1,7 @@
-# Handoff — where the project stands (8 Sep 2026)
+# Handoff — where the project stands (8 Sep 2026, end of day)
 
-Read CLAUDE.md first: it is the design record. This file is only the
-"what to do next" note for a fresh session.
+Read CLAUDE.md first: it is the design record. `design/ROADMAP.md` is the
+tracked build list. This file is only the "what to do next" note.
 
 ## Who
 Two-person cozy indie studio (Erhan builds the engine; the founder tests and
@@ -9,89 +9,86 @@ decides). Claude is the proactive game designer and second pair of hands:
 decide, build, measure, report with numbers; discuss rules before coding;
 one step at a time; English only in the game; Turkish in chat is fine.
 
-## Direction, locked
+## Direction
 Sim-board roguelike. Shape the ground (Dig, Raise, Rain, Sow), the world
-grows itself; eight Years in one pot; mana budget; Bloom = worth of living
-hexes x (1 + Wonders); rising target; Spring shop with Boons and seed cards;
-an **Omen** chosen each Year; Gaia's Whim (a wheel earned on Wonders, never
-in the core loop, never scores). No randomness after the run begins except
-the run seed. Cozy mode is a mode, not the spine. Steam-first, ~$13, own
-shader/palette/diorama. The razor: if it could be done by placing objects on
-a fixed map, back up.
+grows itself; eight Years in one pot; **the Omen is the spine and the target
+is a measure**; Spring shop with Boons and seed cards; Gaia's Whim earned from
+Wonders. No randomness after the run begins except the run seed.
 
-## Branches
-- `main`      the bench as it was (water + erosion + life).
-- `steps`     THE WORKING BRANCH. Everything below lives here.
-- `claude/mountains-pot-design-jbdw7t`  the first session's branch; superseded.
+**The razor, and it now has a name:** *derive, don't add*. A biome, a desert,
+a floodplain is a **read** of numbers the board already keeps, the way a
+Wonder is. Seasons + biomes + deserts + wind built as four systems make a
+worse WorldBox; built as consequences of the water they are something nobody
+has. See the top of ROADMAP.md.
 
-## Files
-- `index.html`  the whole game (CORE block is the pure sim; below it the
-  renderer, the bench UI, then PLAYER MODE and THE RUN).
-- `pot.html`    single-file build: `node build.js`. Sendable, double-click.
-  **Rebuild after every change to index.html.**
-- `design/mechanics.xlsx`  the step sheet: one row per mechanic, status,
-  how we test, result. Yellow cells = the founder's Decision (keep/tune/cut).
-  Sheets: Steps, Numbers, Wonders, Seeds, Boons, Wheel, **Omens**, Playtest log.
-  The Steps data block ends at row 29 and the summary COUNTIFs read
-  `$F$2:$F$29` — widen them if you add rows.
-- `design/game-design-v0.1.pdf` (29 p) and `core-loop-2p.pdf` (2 p): older,
-  and v0.1's "Moons" was replaced by the breathing world.
+## Branch
+`steps` — everything. Clean and pushed as of this note.
 
-## Done on `steps` (all measured, see CLAUDE.md)
-1 life · 2 life clock · 3 the world breathes · 4 palette, diorama orbit,
-rain shafts, post pass · 4b player panel with earned tools · 5 Harvest, 12
-Wonders, Codex · 6 mana · 7 targets, Behold · 8 seed cards · 9 Spring, Dew,
-six Boons · 11 Gaia's Whim.
+## Where the list stands
+Block **A is complete** (A1–A5): timescales spread apart, speeds 1/2/4/8, the
+Whim banked as a token, the camera on the keyboard, the waterfall drawn.
+Then two fixes from the second playtest: **mana refills through the Year**,
+and **the token says why it is waiting**.
 
-**This session (12–19), answering the first full-run playtest:**
-12 the meteor is visible — a bolide, a flash, a shake, a ring, timed off the
-wall clock · 13 every Wonder turns the wheel (3 wheels → up to 12) ·
-14 eight forces in three shapes, all through levers the sim already had ·
-15 **the sow-unlock bug**: sow only unlocked for Grass, so Moss was
-unreachable on any hand-dug pot (tick 100 → tick 1) · 16 the tip names the
-ground and the seed that would take; the panel shows mana as a number, the
-Boons, running forces and the deck · 17 the Codex carries a recipe for each
-of the twelve and opens during play · 18 tilt-shift in two passes, on a
-slider · 19 **Omens**: three offered at the turn of the Year, one chosen,
-read from the same Harvest, paid in dew.
+Next up is block **B — the derived world** (rock hardness and differential
+erosion, alluvium → fertility, biome as a pure read). But see the blockers.
 
-## Playtest record
-- 1st (bench UI): "what do we do now?" → player panel.
-- 2nd (panel + Harvest, no stakes): "bored" → the first playable.
-- 3rd (first full run): core loop liked; **the run is front-loaded** — the
-  wheel came too seldom, no quest ever arrived, nothing new turned up in the
-  later Years, and the meteor landed invisibly. Measured: 3 wheels all before
-  Year 3; Boon offers 3/3/3/3/2/1/1; 4 verbs all unlocked in Year 1.
-  Steps 12–19 are the answer.
-- 4th: **PENDING.** The founder plays a run on the new build. The question is
-  narrow: *do the later Years now have something in them?*
+## Blocked on the founder — answer these before building B
 
-## Next, in order (after the 4th playtest)
-- Tune from the run: target curve, mana, Omen dew, tilt-shift strength
-  (`POT.setTilt('blur', n)`, View has the slider).
-- **Open naming question:** the loose weathered material is called `slag`
-  throughout the code and CLAUDE.md. The founder suggested *regolith*, which
-  is the geologically right word (slag is metallurgy waste). A rename touches
-  `SLAG`, `MATS`, `sed`, the tip, the docs and the sheet. Ask before doing it.
-- Content the frame is now ready for: Willow, Pine, Lotus; the remaining
-  Boons (Beaver, Silt, Terraces, Migrating Birds, Gaia's Patience; Old Growth
-  last, needs age state) — the Boon pool is still only 6 against 7 Springs.
-- Then seeded starting pots; cozy mode + Codex notebook; Behold photo mode;
-  vertical slice → demo → Next Fest.
+1. **THE RAIN RULE — this one blocks a visible bug.** Water towers were
+   reported. Diagnosed and measured: 12 stacked clouds × Monsoon puts **4
+   elevations of rain a tick on one hex**, and it has to stand 0.85
+   elevations (5 drawn layers) proud of its neighbours to push that out
+   through six edges. The tower is the simulation being honest about an
+   absurd input, not a rendering fault (`fallCount` was 0 through it).
+   **Proposed rule change, not yet built:** a cloud's rain falls on the hex
+   below *and its six neighbours*. A cloud is an area, not a needle. Kills
+   the tower at source, keeps stacking strong but wide, one clause on rule 1,
+   and it is diegetic. Alternatives: cap the stack (12 is a lot), or cut
+   Monsoon's multiplier. **Do not build without a decision.**
+
+2. **How long should a run be?** Still unanswered, and it gates B and C
+   because it sets how slow erosion and biome change are allowed to be.
+   45 min (as now, 8 Years) / 90 min (12–16 Years, the land really changes) /
+   endless save-and-return. The founder was asked to play a run and notice
+   whether Year 8 feels like "I wish it went on" or "about right".
+
+3. **Forest must not be a timer.** "Grass and moss merge into forest" has to
+   fall out of the *condition* (deep soil + water + dense life), never a
+   counter — stored order-dependent state is what burnt this project twice.
+
+## Still open from the last round
+- The bigger reframe: **clouds you cannot place**, only a wind direction you
+  choose, so shaping the land is the only way to move water and every Wonder
+  becomes a puzzle. C2/C3 build the machinery either way; whether placement
+  goes away is decided after it is felt.
+- **Naming:** the loose weathered material is `slag` everywhere; the founder
+  suggested *regolith*, which is the geologically right word. A rename
+  touches `SLAG`, `MATS`, `sed`, the tip, the docs and the sheet. Ask first.
+- The Boon pool is still 6 against 7 Springs. **Frozen on purpose** until the
+  shop's shape is decided — if it should sell interventions on the board
+  rather than stat lines, five more stat lines is wasted work.
+
+## Flags for playtesting
+`?mana=free` (or the corner button) · `?bar=hard` restores the old fail state
+· `?seed=N` · `?r=8..64` · `?bench=1`. Keys: WASD/arrows pan, Q/E rotate,
+Space pause, **V** the drainage lens.
 
 ## How to test locally
 `git fetch origin && git checkout steps && git pull`, then `run.bat` or
-double-click `pot.html`. `?bench=1` opens the developer bench, `?seed=N`
-fixes the run, `?r=8..64` the radius.
+double-click `pot.html`.
 
 ## Working rules that held
 Every claim with a number; headless tests read the CORE out of index.html
-(never copy the sim); the browser pane + `window.POT` for anything that needs
-three.js; commit per step; push to `steps`; rebuild `pot.html`.
+(`test/measure-timescales.js` is the pattern — never copy the sim); the
+browser pane plus `window.POT` for anything needing three.js; one commit a
+step; rebuild `pot.html` after every change.
 
-**Two traps this session, both worth remembering:**
+**Three traps that have now each cost real time:**
 - A visual effect timed off *accumulated clamped frame deltas* runs slower on
   a slow machine. Time it off the wall clock.
-- `window.POT` is built before the POST block, so anything declared down
-  there (`TILT`, `renderer`) must be exported as a **getter** or it is read in
-  its temporal dead zone and the whole module throws.
+- `typeof X` on a `const` in its temporal dead zone **throws**; it does not
+  return `'undefined'`. Guards like that turn any load error into ten
+  ReferenceErrors a second that bury the real one. Use a hoisted `var`.
+- `window.POT` is built before the POST block, so anything declared below it
+  must be exported as a **getter**.
