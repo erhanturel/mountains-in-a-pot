@@ -227,6 +227,27 @@
   #dock button.off{opacity:.38;cursor:default} #dock button.off:hover{transform:none}
   #dock .cost{position:absolute;top:6px;right:9px;font-size:11px;color:#e8c274}
   #dock button{position:relative}
+  /* THE LENS. Not a tool -- it costs nothing, acts on nothing, and takes no
+     tick. It is a way of LOOKING, so it sits beside the tools rather than
+     among them: same row, its own shape, no cost badge. It lives here and
+     not with the bench buttons in the corner because it is pressed at the
+     moment you are deciding where to dig, and that is where the eye is. */
+  #lens{position:absolute;left:50%;bottom:22px;margin-left:214px;display:none;z-index:3}
+  body.play #lens{display:block}
+  #lens button{width:74px;height:74px;border-radius:50%;border:2px solid #33414a;
+    background:linear-gradient(180deg,#212a31,#171d22);color:#8fb6c8;
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:11px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;
+    cursor:pointer;box-shadow:0 10px 26px rgba(0,0,0,.45);transition:transform .12s}
+  #lens button:hover{transform:translateY(-3px)}
+  #lens button svg{width:26px;height:26px;stroke:#6f97ab;fill:none;stroke-width:1.8;
+    stroke-linecap:round;stroke-linejoin:round}
+  #lens button.on{border-color:#56b4d8;background:linear-gradient(180deg,#17323f,#0f2029);color:#cdeaf6}
+  #lens button.on svg{stroke:#7fd4f2}
+  #lens .cap{position:absolute;left:50%;transform:translateX(-50%);bottom:80px;white-space:nowrap;
+    font-family:system-ui,sans-serif;font-size:10.5px;color:#7fb4cc;opacity:0;transition:opacity .2s;
+    pointer-events:none;text-shadow:0 2px 12px rgba(0,0,0,.9)}
+  #lens .cap.show{opacity:1}
   #hand{position:absolute;left:50%;bottom:122px;transform:translateX(-50%);display:none;gap:8px;z-index:3}
   body.play #hand.show{display:flex}
   #hand button{border:1px solid #3a3d4a;background:#1b1d26;color:#c9c1ae;border-radius:14px;padding:6px 12px;
@@ -271,7 +292,7 @@
   <div class="main">
     <div class="board-col">
       <div id="board"><div id="info"></div><div id="time"></div><div id="clock"></div><div id="bloom"></div>
-        <div id="hintline"></div><div id="dock"></div><div id="hand"></div><div id="speed"></div><div id="tip"></div><div id="mana"></div>
+        <div id="hintline"></div><div id="dock"></div><div id="lens"></div><div id="hand"></div><div id="speed"></div><div id="tip"></div><div id="mana"></div>
         <div id="corner"><button id="benchBtn"></button><button id="codexBtn">✦ Codex</button>
           <button id="manaBtn"></button></div>
         <div id="flash"></div><div id="strikeCap"></div>
@@ -2067,7 +2088,8 @@ function drawFocus(){ setTilt('focus',+tfEl.value/100);
 tsEl.oninput=drawTilt; tfEl.oninput=drawFocus;
 
 const ovDrain=document.getElementById('ovDrain');
-ovDrain.onclick=()=>{ DRAIN=!DRAIN; ovDrain.classList.toggle('on',DRAIN); rebuild(); };
+ovDrain.onclick=()=>{ DRAIN=!DRAIN; ovDrain.classList.toggle('on',DRAIN);
+  if(typeof drawLens==='function') drawLens(); rebuild(); };
 
 const ovRiver=document.getElementById('ovRiver');
 ovRiver.onclick=()=>{ RIVERS=!RIVERS; ovRiver.classList.toggle('on',RIVERS); rebuild(); };
@@ -2332,6 +2354,28 @@ function drawDock(){
   el.querySelectorAll('button').forEach(b=>b.onclick=()=>selectTool(b.dataset.k));
   drawHand();
 }
+/* Drainage was a developer toggle in the View panel, and the View panel is
+   hidden in play -- so the one thing that answers "where will the water go"
+   before a drop falls was the one thing the player could not see. It is a
+   pure read of the ground, it costs nothing, and it is the question the
+   whole game is about. */
+const lensEl=document.getElementById('lens');
+function drawLens(){
+  lensEl.innerHTML='<button class="'+(DRAIN?'on':'')+'" title="Drainage (D)">'+
+    '<svg viewBox="0 0 18 18"><path d="M3 3v4l6 4v4"/><path d="M15 3v4l-6 4"/></svg>'+
+    '<span>Water</span></button>'+
+    '<div class="cap'+(DRAIN?' show':'')+'">where the water would go</div>';
+  lensEl.querySelector('button').onclick=toggleDrain;
+}
+function toggleDrain(){
+  DRAIN=!DRAIN;
+  ovDrain.classList.toggle('on',DRAIN);      /* the bench toggle stays in step */
+  drawLens(); rebuild();
+}
+window.addEventListener('keydown',e=>{
+  if(!PLAY||RUN.screen||e.metaKey||e.ctrlKey||e.altKey) return;
+  if(e.key==='d'||e.key==='D'){ e.preventDefault(); toggleDrain(); }
+});
 function drawSpeed(){
   const el=document.getElementById('speed');
   el.classList.toggle('unlocked',UNLOCK.speed);
@@ -2427,7 +2471,7 @@ renderer.domElement.addEventListener('pointerleave',()=>tipEl.classList.remove('
 function setPlay(on){
   PLAY=on; document.body.classList.toggle('play',on);
   document.getElementById('benchBtn').textContent=on?'⚙ '+t_('bench'):'▶ '+t_('play');
-  drawManaBtn();
+  drawManaBtn(); drawLens();
   if(on){ selectTool(TOOL); drawDock(); drawSpeed(); drawHint(); drawMana(); }
   resize();
 }
@@ -2906,6 +2950,7 @@ window.POT={T,at,use,tick,settle,rebuild,POWERS,scene,
   strike, landForce, fx, AIMED, SPELLS, FORCES, MILESTONES, offerFor, checkWhim,
   OMENS, omenPool, omensFor, showOmens,
   get freeMana(){ return FREE_MANA }, set freeMana(v){ FREE_MANA=v; drawManaBtn(); drawMana(); drawDock(); },
+  toggleDrain, get drain(){ return DRAIN },
   surfaceOf, wouldTake, drawTip, SEEDCARDS, showCodex, WONDER_HOW,
   /* the POST block is declared below this object, so these have to be
      getters or they read a const in its temporal dead zone */
