@@ -715,6 +715,26 @@ mapping and the output colour space are applied in that pass, because
 three.js skips both when drawing to a render target. Toggled from View as
 *Diorama*. Bloom is left for the water shader.
 
+**The look is one palette, one light, one camera and one post pass** — the
+Phase 0 beauty pass, all below the simulation. `PAL` holds every colour
+(warm limestone rock, cool basalt floor, ochre rubble, teal water, moss
+greens, a warm white cloud, a dusk background) and nothing is coloured from
+anywhere else. The sun is warm and filmic tone mapping (ACES, exposure
+1.32) lets it be bright without clipping. The orbit is a **diorama orbit**:
+pitch held between 40° and 62° from the vertical, yaw and zoom free,
+default elevation 35°. **Rain is drawn** as a slim translucent shaft from
+the ground to the cloud, because a world that runs on its own cannot have a
+cloud that visibly does nothing. **Wet ground** — water under the drawn
+tile, the film the water mesh never shows — darkens and blues the rock top
+by up to 45%, so a plain under rain no longer looks bone dry.
+
+The post pass is one full-screen `ShaderMaterial`, no library: the scene
+renders to a half-float MSAA target, then a 5×5 gaussian whose radius grows
+away from a focus band (tilt-shift), a warm grade, and a vignette. Tone
+mapping and the output colour space are applied in that pass, because
+three.js skips both when drawing to a render target. Toggled from View as
+*Diorama*. Bloom is left for the water shader.
+
 **Framing needs the aspect and the shape.** Both cameras used to size
 themselves from the height alone — ortho took `top = SPAN` and let `right`
 follow, perspective sat at a fixed distance — so any viewport *taller than it
@@ -840,8 +860,9 @@ that has burnt this project before — the UI keeps copies of past states, the
 simulation derives nothing from history, and the board is still a pure
 function of whichever snapshot is current.
 
-**Time is three separate things**, in a bar floating over the top right of the
-board: a **speed**, a **tick** button, and **play/pause**. The speed means the
+**Time was three separate things** (a speed, a tick button, play/pause) before
+the world ran on its own — see *Time: the world breathes*. What follows is
+the older arrangement, kept for the reasoning: a **speed**, a **tick** button, and **play/pause**. The speed means the
 same thing either way — how many ticks one step is worth — and Play takes a
 step every **100 ms**. There is no Pause among the speeds: Play *is* the
 pause, and two controls that stop the world is one too many.
