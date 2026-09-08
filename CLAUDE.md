@@ -102,6 +102,40 @@ oversight — see *What was taken out* below before putting any of it back.
 
 ---
 
+## Words, and what they mean here
+
+Fixed deliberately, because several of these were being used two ways.
+
+```
+unit       the atom of height and of volume.  420 units = 1 elev
+slab       1/6 of an elev = 70 units.  The cell stack's quantum, and the
+           quantum a water tile is drawn at
+block      one elev = 6 slabs = 420 units
+tile       either, when it does not matter which
+elev       one elevation step = 420 units = 6 slabs
+floor      one elev, used when talking about a LEVEL rather than a height
+cell       a hex on the board, in 2D (q,r).  A column
+hexcell    a cell at an elev -- 3D
+board      the whole hex grid
+nb         neighbours.  "nb at rd 2" is the ring two out, not the ring next door
+rd         radius
+baseline   the absolute bottom of the board, elev -25
+ground     the top of the SOLID -- rock, slag or sand.  gnd() in the code
+surface    ground plus the water standing on it.  What rule 3 calls height
+```
+
+**Two collisions to know about.** `cell(i,z)` in the code is the **3D**
+accessor and `CELL` the 3D array, which under these names should be
+`hexcell` -- left alone deliberately, because renaming it touches the whole
+stack for no behavioural gain. And `gnd()` is *ground* in the sense above,
+never the 0 elev datum.
+
+**A slab is 1/6 of an elev, not 1/12.** The 12 that keeps appearing is a
+different number: `CLOUD_MAX = 12` is the cloud stack ceiling in slabs, which
+is 2 elevs of sky.
+
+---
+
 ## Running it
 
 ```
@@ -1101,6 +1135,14 @@ away. If any of this is ever built, that is the end to pull.
 The tall sky the height change reserves (elevation 24 to 36 is empty by
 construction) is where the atmosphere tiers would live. That is why the gap is
 a reservation rather than waste.
+
+### Parked: a floor selector, to clip the view
+
+A control that clips the render at a chosen floor: at the top floor the board
+draws as it does now, at floor *x* only elev *x* and below. Cheap -- the
+renderer already walks columns run by run and would simply stop early -- and
+it is the only way to see inside a thick board, which matters more as the
+world gets taller and as air tiles fill the space above it.
 
 ### Parked: two viewports side by side
 
