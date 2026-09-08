@@ -572,6 +572,55 @@ refused; the Whim fired on the first Lake and gave Monsoon; Year 1 cleared
 with 5 Dew, Monsoon bought, Year 2 opened with 10 mana and a fresh hand;
 an idle pot rests at Year 1 with Bloom 0.
 
+## Omens: the Year asks for one thing
+
+The other half of the front-loading. Eight Years with a rising bar and
+nothing else to aim at gave the run *difficulty* and no *direction*: the
+playtest said no quest ever arrives. The Codex now says what a Wonder is; the
+Omen says which one Gaia wants **this Year**.
+
+It is a **pure read of the same Harvest the score comes from** — no new state
+in the world, no new detector, nothing random after the run seed. Four
+shapes, all answered by `harvest()` as it stands:
+
+```
+  stands   one named Wonder is standing          h.wonders[k]
+  many     n of one that can repeat              h.wonders[k] >= n
+  living   n living hexes                        h.alive >= n
+  variety  n different Wonders at once           keys(h.wonders).length >= n
+```
+
+**Three are offered and one is chosen**, because a goal you picked is a plan
+and a goal handed to you is a chore. The choice is the mechanic, not the
+reward. There is a *None this Year* out, so it never becomes a tax.
+
+**The pool grows with the Year**, which is where the variety actually comes
+from: early Omens ask for the easy Wonders and a handful of green, late ones
+ask for Deltas and Watersheds. Measured on seed 42:
+
+```
+  Year   pool   offered
+   1       8    The Lake stands (+4) · The Grove stands (+3) · 2 Wonders at once (+7)
+   3      14    2 Forks at once (+5) · The Terrace stands (+4) · The Grove stands (+3)
+   6      18    40 living hexes (+7) · The Ring of Life stands (+6) · 3 Waterfalls (+9)
+   8      18    The River stands (+4) · 3 Waterfalls (+9) · 3 Deltas at once (+12)
+```
+
+The reward is dew, scaled off the Wonder's own `BONUS`, so the hard shapes
+pay more without a second difficulty table to keep in step.
+
+**It sits on the screen all Year**, in the panel under the mana, because a
+goal you cannot see is not a goal. It is read at the Harvest, shown as its
+own row, and cleared. Checked both ways: with no life on the board the row
+reads `Omen · The Grove stands. —` and the dew does not move; with seven
+living hexes joined it reads `+3 dew` and dew goes 0 → 3.
+
+It **pays whether or not the target was cleared** — it is a thing you aimed
+at and made, and the bar is a separate question.
+
+The Year now opens Harvest → Spring → Omen → play, rather than Harvest →
+Spring → play.
+
 ## Tilt-shift, and this time you can see it
 
 A playtester asked for tilt-shift on a build that already had one. They were
