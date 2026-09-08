@@ -572,6 +572,46 @@ refused; the Whim fired on the first Lake and gave Monsoon; Year 1 cleared
 with 5 Dew, Monsoon bought, Year 2 opened with 10 mana and a fresh hand;
 an idle pot rests at Year 1 with Bloom 0.
 
+## Mana is a rate, not a lump
+
+A debt A1 ran up. Spreading the timescales made a Year **1920 ticks instead
+of 480** — four times longer, 5.3 minutes instead of 4 — while the allowance
+stayed at ten, granted on the first tick. So the Year opened, you spent it in
+half a minute, and then watched for five minutes with nothing to do. The
+playtest put it plainly: *manamız hemen bitiyor.*
+
+The allowance still arrives whole at the turn of the Year, and it now also
+**refills at one every quarter Season** — four a Season, sixteen a Year —
+capped at the allowance. Spend it in a burst and it comes back; hold it and
+nothing is wasted. You are never stuck longer than 120 ticks, 20 seconds at
+1×, and the panel says how long: *+1 in 97 ticks*.
+
+Measured over one Year: **5 actions before, 13 after.**
+
+This is the honest fix rather than raising the number. The problem was never
+how many actions a Year holds — it was that they were all offered at once and
+then never again. The refill is counted from a stamp rather than by a
+countdown, so it stays right across a Megatime jump.
+
+## A disabled button has to say why
+
+The playtest reported that the Whim *"does not open on the first click"*. It
+was not a click that missed: the token was on its Season cooldown and said
+**"the world is still settling"**, which is a mood, not a reason. A disabled
+control that will not say why reads as broken.
+
+Every reason it can be holding now gets its own sentence, checked in order:
+
+```
+  nothing earned yet          no token banked
+  the Year is turning         the Harvest has the floor
+  in a moment                 a screen is open, or a force is being aimed
+  ready in 480 ticks          the Season cooldown, counted down live
+```
+
+Verified in all five states, including the one tick either side of the
+cooldown.
+
 ## The waterfall, finally drawn
 
 River stubs are drawn **flat, at the height of the water already showing on

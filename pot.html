@@ -217,6 +217,7 @@
   #mana .num.free{color:#9ed46a}
   #mana .pips{letter-spacing:3px;font-size:15px;color:#e8c274;margin-top:-1px}
   #mana .pips i{font-style:normal;color:#3a3d4a}
+  #mana .drip{color:#7d8390;font-size:10.5px;margin-top:1px}
   #mana .dew{color:#8fd0e8;margin-top:3px}
   #mana .held{margin-top:9px;padding-top:8px;border-top:1px solid rgba(255,255,255,.08);
     display:flex;flex-wrap:wrap;gap:4px;max-width:216px}
@@ -4093,7 +4094,7 @@ const RATES=[1,2,4,8];
    second and buried the real error. A hoisted `var` cannot dead-zone. */
 var RUNREADY;
 const advance=n=>{ for(let k=0;k<n;k++) tick(); rebuild(); hover(HOVER); drawClock();
-  if(RUNREADY && PLAY && Object.keys(RUN.until).length) drawMana();
+  if(RUNREADY && PLAY && (Object.keys(RUN.until).length || RUN.mana<manaFor())) drawMana();
   if(RUNREADY && PLAY && RUN.tokens.length) drawToken();
   yearTurn(); };
 setInterval(()=>{
@@ -4105,6 +4106,14 @@ setInterval(()=>{
      saved board could carry it. */
   if(RUNREADY) for(const k in RUN.until)
     if(TICKS>=RUN.until[k]){ delete RUN.until[k]; SPELLS[k].off(); drawMana(); }
+  /* the refill. Counted from a stamp rather than by a countdown, so it stays
+     right across a Megatime jump or a load. */
+  if(RUNREADY && !RUN.over){
+    const due=Math.floor((TICKS-RUN.manaAt)/MANA_EVERY);
+    if(due>0){ RUN.manaAt+=due*MANA_EVERY;
+      const m=manaFor();
+      if(RUN.mana<m){ RUN.mana=Math.min(m,RUN.mana+due); if(PLAY){ drawMana(); drawDock(); } } }
+  }
   if(n) advance(n);
 },100);
 function setPause(on){ PAUSED=on; drawRates(); }
@@ -4711,12 +4720,30 @@ const mulberry=a=>()=>{ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t
 /* eslint-disable-next-line no-var-assign */
 const RUN={year:1, mana:10, dew:0, boons:[], deck:[SEED,SEED,MOSS], hand:[], over:false,
            yearStart:0, nextYearAt:0, blooms:[], whims:{}, aim:null, megatime:0, until:{}, omen:null,
-           omens:[], tokens:[], lastWhim:-1e9, screen:false};
+           omens:[], tokens:[], lastWhim:-1e9, manaAt:0, screen:false};
 RUNREADY=true;
 let LAST_YEAR=0, BEST=+(localStorage.getItem('potBest')||0);
 const CODEX=new Set(JSON.parse(localStorage.getItem('potCodex')||'[]'));
 const has=k=>RUN.boons.includes(k);
 const manaFor=()=>10+(has('wellspring')?3:0);
+/* MANA IS A RATE, NOT A LUMP, and this is a debt A1 ran up. Spreading the
+   timescales made a Year 1920 ticks instead of 480 -- four times longer in
+   ticks and 5.3 minutes instead of 4 in real time -- while the allowance
+   stayed at ten granted on the first tick. So the Year opened, you spent it
+   all in half a minute, and then watched for five minutes with nothing to
+   do. Measured before this change: 10 actions a Year, all of them available
+   in the first second.
+
+   Now the allowance still arrives whole at the turn of the Year, and it also
+   REFILLS at one every quarter Season -- four a Season, sixteen a Year --
+   capped at the allowance. Spend it in a burst and it comes back; hold it
+   and nothing is wasted. You are never stuck for longer than 120 ticks,
+   which is 20 seconds at 1x.
+
+   This is the honest fix rather than simply raising the number: the problem
+   was never how many actions a Year holds, it was that they were all offered
+   at once and then never again. */
+const MANA_EVERY=SEASON_TICKS/4;
 const yearLen=()=>SEASON_TICKS*(SEASONS.length+(has('summer')?1:0));
 const costOf=k=>k==='sow'?COST.sow:(k==='dig'||k==='raise')&&has('basalt')?1:COST[k];
 const card=()=>document.querySelector('#harvest .card');
@@ -4734,7 +4761,10 @@ function drawMana(){
     (FREE_MANA
       ? '<div class="num free">&infin;<u> mana &middot; shape freely</u></div>'
       : '<div class="num'+(spent?' low':'')+'">'+RUN.mana+'<u> / '+m+' mana</u></div>'+
-        '<div class="pips">'+pips+'</div>')+
+        '<div class="pips">'+pips+'</div>'+
+        (RUN.mana<m
+          ? '<div class="drip">+1 in '+Math.max(0,Math.ceil(MANA_EVERY-((TICKS-RUN.manaAt)%MANA_EVERY)))+' ticks</div>'
+          : ''))+
     '<div class="dew">'+RUN.dew+' dew</div>';
   /* WHAT YOU HOLD. Boons are permanent, a Whim's spell is running now and
      says how long it has left, and the deck is what you can still sow. */
@@ -4759,7 +4789,7 @@ function drawHand(){
   el.querySelectorAll('button[data-k]').forEach(b=>b.onclick=()=>{ MAT=+b.dataset.k; drawHand(); hover(HOVER); drawTip(...TIPAT); });
 }
 function startYear(){
-  RUN.mana=manaFor(); RUN.hand=[...RUN.deck];
+  RUN.mana=manaFor(); RUN.manaAt=TICKS; RUN.hand=[...RUN.deck];
   if(!RUN.hand.includes(MAT)) MAT=RUN.hand[0]||SEED;
   RUN.yearStart=TICKS; RUN.nextYearAt=TICKS+yearLen();
   drawMana(); drawDock(); drawHand(); drawClock();
@@ -5020,6 +5050,18 @@ function tokenReady(){
       && TICKS < RUN.nextYearAt-1                 /* the Harvest has the floor */
       && TICKS >= RUN.lastWhim+SEASON_TICKS;
 }
+/* A disabled button has to say WHY, or it reads as broken -- the playtest
+   clicked one that said "the world is still settling" and reported that the
+   Whim does not open on the first click. Every reason it can be holding gets
+   its own sentence, and the one that is nearly always true gets a count. */
+function whyWaiting(){
+  if(!RUN.tokens.length)               return 'nothing earned yet';
+  if(TICKS>=RUN.nextYearAt-1)          return 'the Year is turning';
+  if(RUN.screen||RUN.aim||STRIKE)      return 'in a moment';
+  const left=Math.ceil(RUN.lastWhim+SEASON_TICKS-TICKS);
+  if(left>0)                           return 'ready in '+left+' ticks';
+  return 'ready';
+}
 function drawToken(){
   const el=document.getElementById('token'), n=RUN.tokens.length;
   el.classList.toggle('show', PLAY && n>0);
@@ -5027,9 +5069,8 @@ function drawToken(){
   const ready=tokenReady();
   el.className='token'+(PLAY?' show':'')+(ready?' ready':'');
   el.innerHTML='<button'+(ready?'':' disabled')+'><b>Gaia\u2019s Whim</b>'+
-    '<span>'+(ready
-      ? MILESTONES[RUN.tokens[0]]+(n>1?' &middot; +'+(n-1)+' waiting':'')
-      : 'the world is still settling')+'</span></button>';
+    '<span>'+(ready ? MILESTONES[RUN.tokens[0]]+(n>1?' &middot; +'+(n-1)+' waiting':'')
+                    : whyWaiting()+(n>1?' &middot; '+n+' held':''))+'</span></button>';
   const b=el.querySelector('button');
   if(ready) b.onclick=()=>{ const m=RUN.tokens.shift(); RUN.lastWhim=TICKS;
                             drawToken(); showWhim(m); };
