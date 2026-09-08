@@ -67,7 +67,14 @@ The current build actively annoys. None of this is a new system.
   opens the wheel and leaves 2; the next is held for a full Season (not ready
   at 470 ticks, ready at 490). Also held over any screen, while aiming, during
   a strike, and in the last tick before a Harvest.
-- [ ] **A4 · Camera.** WASD pan, Q/E rotate, Space pause, rotation lock.
+- [x] **A4 · Camera.** WASD/arrows pan, Q/E rotate, Space pause, a rotation
+  lock in the corner. Keyed off `e.code`, the physical key, so WASD stays a
+  shape on the keyboard — verified that code `KeyW` carrying key `"z"`
+  (AZERTY) still reads as forward. Panning and rotation run off the wall
+  clock in `frame()`, not per frame. Measured: W for 1 s moves 13.63 world
+  units, Q for 1 s turns the camera about its target, locked Q turns
+  **0.00°**, Space takes the world from 4 ticks per 0.7 s to **0**. The
+  drainage lens moved from **D to V**, since WASD needed D.
 - [ ] **A5 · Draw the waterfall.** River stubs are drawn flat at water height
   and never sloped, so water reaching a cliff simply vanishes. The data is
   already there — `out[6]` says which edge it left by.

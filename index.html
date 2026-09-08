@@ -253,6 +253,7 @@
     stroke-linecap:round;stroke-linejoin:round}
   #lens button.on{border-color:#56b4d8;background:linear-gradient(180deg,#17323f,#0f2029);color:#cdeaf6}
   #lens button.on svg{stroke:#7fd4f2}
+  #lens button u{text-decoration:none;opacity:.55;font-size:9.5px;margin-left:1px}
   #lens .cap{position:absolute;left:50%;transform:translateX(-50%);bottom:80px;white-space:nowrap;
     font-family:system-ui,sans-serif;font-size:10.5px;color:#7fb4cc;opacity:0;transition:opacity .2s;
     pointer-events:none;text-shadow:0 2px 12px rgba(0,0,0,.9)}
@@ -300,7 +301,9 @@
   #corner button{border:1px solid #2a2d38;background:rgba(18,20,28,.6);color:#6f7681;
     font-family:system-ui,sans-serif;font-size:11px;padding:5px 9px;border-radius:10px;cursor:pointer}
   #corner button:hover{color:#c9c1ae}
-  #codexBtn,#manaBtn{display:none} body.play #codexBtn,body.play #manaBtn{display:block}
+  #codexBtn,#manaBtn,#lockBtn{display:none}
+  body.play #codexBtn,body.play #manaBtn,body.play #lockBtn{display:block}
+  #lockBtn.on{color:#8fb6c8;border-color:#33414a}
   #manaBtn.on{color:#9ed46a;border-color:#3d5a30}
   #size,#palette{flex-wrap:wrap}
   #size .rt{flex:1 0 25%}
@@ -320,7 +323,7 @@
         <div id="hintline"></div><div id="dock"></div><div id="lens"></div><div id="hand"></div>
         <div id="token" class="token"></div><div id="speed"></div><div id="tip"></div><div id="mana"></div>
         <div id="corner"><button id="benchBtn"></button><button id="codexBtn">✦ Codex</button>
-          <button id="manaBtn"></button></div>
+          <button id="manaBtn"></button><button id="lockBtn"></button></div>
         <div id="flash"></div><div id="strikeCap"></div>
         <div id="harvest"><div class="card"></div></div></div>
       <div class="hint"><b>click a hex</b> — drag to orbit, scroll to zoom.
@@ -2422,9 +2425,9 @@ function drawDock(){
    whole game is about. */
 const lensEl=document.getElementById('lens');
 function drawLens(){
-  lensEl.innerHTML='<button class="'+(DRAIN?'on':'')+'" title="Drainage (D)">'+
+  lensEl.innerHTML='<button class="'+(DRAIN?'on':'')+'" title="Drainage (V)">'+
     '<svg viewBox="0 0 18 18"><path d="M3 3v4l6 4v4"/><path d="M15 3v4l-6 4"/></svg>'+
-    '<span>Water</span></button>'+
+    '<span>Water <u>V</u></span></button>'+
     '<div class="cap'+(DRAIN?' show':'')+'">where the water would go</div>';
   lensEl.querySelector('button').onclick=toggleDrain;
 }
@@ -2433,10 +2436,71 @@ function toggleDrain(){
   ovDrain.classList.toggle('on',DRAIN);      /* the bench toggle stays in step */
   drawLens(); rebuild();
 }
-window.addEventListener('keydown',e=>{
-  if(!PLAY||RUN.screen||e.metaKey||e.ctrlKey||e.altKey) return;
-  if(e.key==='d'||e.key==='D'){ e.preventDefault(); toggleDrain(); }
+/* THE CAMERA ON THE KEYBOARD. Held keys are collected here and applied in
+   frame() against a wall-clock delta, so panning covers the same ground on a
+   slow machine as on a fast one -- the same lesson the meteor taught.
+
+   Panning is in SCREEN space, not world space: W goes away from you whichever
+   way the board has been turned, which is the only version that stays
+   intuitive after Q or E. The lens moved from D to V because WASD needs D. */
+const KEYS=new Set();
+let LOCKROT=false;
+const typing=e=>/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName);
+/* keyed off e.code, the PHYSICAL key, not e.key. WASD is a shape on the
+   keyboard rather than four letters: on AZERTY those keys type Z, Q, S, D,
+   and a layout-blind e.key handler would leave that player steering with
+   nothing under their left hand. */
+const CODEMAP={KeyW:'w',KeyA:'a',KeyS:'s',KeyD:'d',KeyQ:'q',KeyE:'e',
+  ArrowUp:'w',ArrowLeft:'a',ArrowDown:'s',ArrowRight:'d'};
+addEventListener('keydown',e=>{
+  if(typing(e)||e.metaKey||e.ctrlKey||e.altKey) return;
+  const m=CODEMAP[e.code];
+  if(m){ KEYS.add(m); e.preventDefault(); return; }
+  if(e.code==='Space'||e.key===' '){
+    e.preventDefault(); if(PLAY&&!RUN.screen) setPause(!PAUSED); return; }
+  if((e.code==='KeyV'||e.key==='v'||e.key==='V')&&PLAY&&!RUN.screen){
+    e.preventDefault(); toggleDrain(); }
 });
+addEventListener('keyup',e=>{ const m=CODEMAP[e.code]; if(m) KEYS.delete(m); });
+addEventListener('blur',()=>KEYS.clear());          /* no key stuck down on tab-out */
+function drawLock(){
+  const b=document.getElementById('lockBtn');
+  b.textContent=LOCKROT?'⟳ locked':'⟳ rotate';
+  b.classList.toggle('on',LOCKROT);
+  controls.enableRotate=!LOCKROT;
+}
+/* driven from frame(), like fx() */
+const PANV=new THREE.Vector3(), FWD=new THREE.Vector3(), RGT=new THREE.Vector3();
+function camKeys(dt){
+  if(!KEYS.size) return;
+  const has=(...k)=>k.some(x=>KEYS.has(x));
+  let px=0, pz=0, rot=0;
+  if(has('w')) pz-=1;
+  if(has('s')) pz+=1;
+  if(has('a')) px-=1;
+  if(has('d')) px+=1;
+  if(!LOCKROT){ if(KEYS.has('q')) rot+=1; if(KEYS.has('e')) rot-=1; }
+  if(rot){
+    const a=rot*dt*1.1, p=cam.position.clone().sub(controls.target);
+    const c=Math.cos(a), sn=Math.sin(a);
+    cam.position.set(controls.target.x + p.x*c - p.z*sn, cam.position.y,
+                     controls.target.z + p.x*sn + p.z*c);
+  }
+  if(px||pz){
+    /* forward is the camera's own heading flattened onto the ground */
+    FWD.subVectors(controls.target,cam.position); FWD.y=0; FWD.normalize();
+    RGT.set(-FWD.z,0,FWD.x);
+    const sp=SPAN*0.55*dt;
+    PANV.set(0,0,0).addScaledVector(FWD,-pz*sp).addScaledVector(RGT,px*sp);
+    controls.target.add(PANV); cam.position.add(PANV);
+    /* and never off the edge of the world */
+    const lim=SPAN*0.85, d=Math.hypot(controls.target.x,controls.target.z);
+    if(d>lim){ const back=(d-lim)/d;
+      const bx=controls.target.x*back, bz=controls.target.z*back;
+      controls.target.x-=bx; controls.target.z-=bz;
+      cam.position.x-=bx;    cam.position.z-=bz; }
+  }
+}
 function drawSpeed(){
   const el=document.getElementById('speed');
   el.classList.toggle('unlocked',UNLOCK.speed);
@@ -2532,7 +2596,7 @@ renderer.domElement.addEventListener('pointerleave',()=>tipEl.classList.remove('
 function setPlay(on){
   PLAY=on; document.body.classList.toggle('play',on);
   document.getElementById('benchBtn').textContent=on?'⚙ '+t_('bench'):'▶ '+t_('play');
-  drawManaBtn(); drawLens();
+  drawManaBtn(); drawLens(); drawLock();
   if(on){ selectTool(TOOL); drawDock(); drawSpeed(); drawHint(); drawMana(); drawToken(); }
   else document.getElementById('token').classList.remove('show');
   resize();
@@ -2543,6 +2607,7 @@ const manaBtn=document.getElementById('manaBtn');
 function drawManaBtn(){ manaBtn.textContent=FREE_MANA?'∞ free mana':'◇ mana on';
   manaBtn.classList.toggle('on',FREE_MANA); }
 manaBtn.onclick=()=>{ FREE_MANA=!FREE_MANA; drawManaBtn(); drawMana(); drawDock(); };
+document.getElementById('lockBtn').onclick=()=>{ LOCKROT=!LOCKROT; drawLock(); };
 /* not drawn here: FREE_MANA is declared with the run, further down, so
    reading it at this point is a temporal dead zone. setPlay() runs at the
    very end of the file and draws it there. */
@@ -3085,6 +3150,7 @@ window.POT={T,at,use,tick,settle,rebuild,POWERS,scene,
   OMENS, omenPool, omensFor, showOmens, drawToken, tokenReady,
   get freeMana(){ return FREE_MANA }, set freeMana(v){ FREE_MANA=v; drawManaBtn(); drawMana(); drawDock(); },
   toggleDrain, get drain(){ return DRAIN }, get hardBar(){ return HARD_BAR },
+  KEYS, camKeys, get lockRot(){ return LOCKROT }, set lockRot(v){ LOCKROT=v; drawLock(); },
   surfaceOf, wouldTake, drawTip, SEEDCARDS, showCodex, WONDER_HOW,
   /* the POST block is declared below this object, so these have to be
      getters or they read a const in its temporal dead zone */
@@ -3202,6 +3268,7 @@ let FXLAST=performance.now();
 function frame(){
   const now=performance.now(); const dt=Math.min(0.05,(now-FXLAST)/1000); FXLAST=now;
   fx(dt);
+  camKeys(dt);
   controls.update();
   if(POST){
     renderer.setRenderTarget(rt);  renderer.render(scene,cam);
