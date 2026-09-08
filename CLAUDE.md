@@ -85,11 +85,19 @@ or by hand:
 python -m http.server 8777
 ```
 
-then `http://localhost:8777/index.html`. There is a launch config at
+then `http://localhost:8777/index.html`. **`index.html` opens as the game**
+(player mode: a dock of big buttons, one hint, the bench hidden behind the
+corner button); `?bench=1` opens straight into the bench. There is a launch config at
 `.claude/launch.json` under the name `pot`, and `?r=8|10|12|14` picks the
 board size.
 
-**The page cannot be opened as a file.** It loads three.js as an ES module,
+**`pot.html` is the one-file build**: `node build.js` folds three.core,
+three.module and OrbitControls into the page, each in its own function
+scope, and the result opens from a double click and can be sent over a
+chat. Rebuild it after every change to `index.html`; it is committed so a
+tester never needs the repo.
+
+**`index.html` itself cannot be opened as a file.** It loads three.js as an ES module,
 module scripts are subject to CORS, and a `file://` page has an opaque origin
 — so the import is refused and the viewport comes up blank with nothing but a
 CORS error behind it. three.js r185 ships ESM only, so there is no classic
@@ -504,6 +512,28 @@ every `LIFE_EVERY` (10). Once the world ran on its own a seed that walked a
 hex a tick covered a shore in a breath; at one step in ten the same 12-hex
 rim greens over 56 ticks instead of 5 — about half a Season. `TICKS` is
 saved with the board so a loaded game keeps its phase.
+
+## Player mode: powers are earned
+
+The first playtest stalled at the first click — "what do we do now?" — and
+the answer was that the side panel is a developer bench and none of it
+belongs in front of a player. The page now opens as a game: a fresh pot
+of one step of **rock** over the bedrock (bedrock never weathers, so a pot
+of pure bedrock could never grow soil), weathering at 0.7 units a tick (ten
+times the bench default), one big button, one line of text.
+
+**Nothing unlocks on a timer.** Each tool appears when the world reaches
+the state it is for, the way Gaia's Whim will fire on a milestone: dig from
+the start; rain at the first hollow; the speed buttons at the first water
+tile; sow at the first habitable hex; raise at the first living hex. One
+hint at a time, and it goes when the world has answered it. A one-word tip
+beside the pointer says why a seed would or would not take. Strings are TR
+and EN, chosen from the browser and switchable in the corner.
+
+Measured headless: a dug, rained-on hollow has a habitable shore at tick
+98 (0.8 Seasons) at 0.7 units/tick; 199 at 0.35; 49 at 1.4. The chain
+dig → rain → wait → sow → raise checked on the served page and on
+`pot.html` from `file://`, no errors.
 
 ## Time: the world breathes
 

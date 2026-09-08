@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Uplift</title>
+<title>Mountains in a Pot</title>
 <style>
   /* THE PAGE FILLS THE WINDOW and never scrolls. It used to be capped at
      1140px with a 660px board, which on a wide screen left most of the
@@ -94,6 +94,51 @@
   #wname:focus{border-color:#c9a86a}
   input[type=range]{width:calc(100% - 22px);margin:4px 11px 11px;
     accent-color:#c9a86a;background:none;cursor:pointer}
+  /* PLAYER MODE. The side panel is a developer bench and is hidden; what
+     the player sees is a dock of a few big buttons, one line of hint, the
+     clock and the bloom. Big, round, system font: it has to be playable by
+     someone who has never seen a game panel. */
+  body.play .side,body.play .hint,body.play #info,body.play #time{display:none}
+  body.play .main{grid-template-columns:1fr}
+  body.play h1{display:none}
+  body.play .wrap{padding:0}
+  body.play #board{border:none}
+  #dock{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);display:none;gap:14px;z-index:3}
+  body.play #dock{display:flex}
+  #dock button{width:88px;height:88px;border-radius:24px;border:2px solid #3a3d4a;
+    background:linear-gradient(180deg,#262833,#1b1d26);color:#e9e2d2;
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:14px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;
+    cursor:pointer;box-shadow:0 10px 26px rgba(0,0,0,.45);transition:transform .12s}
+  #dock button:hover{transform:translateY(-3px)}
+  #dock button svg{width:32px;height:32px;stroke:#d2bc8a;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+  #dock button.on{border-color:#e8c274;background:linear-gradient(180deg,#4a3d22,#2e2716);color:#fff}
+  #dock button.on svg{stroke:#ffd98a}
+  #dock button.new{animation:pop .7s cubic-bezier(.2,1.4,.4,1)}
+  @keyframes pop{0%{transform:scale(.4);opacity:0}100%{transform:scale(1);opacity:1}}
+  #hintline{position:absolute;left:50%;top:22px;transform:translateX(-50%);display:none;
+    font-family:Georgia,"Times New Roman",serif;font-size:24px;color:#f4ecd8;
+    background:rgba(18,20,28,.72);padding:12px 26px;border-radius:32px;z-index:3;pointer-events:none;
+    white-space:nowrap;transition:opacity .5s;border:1px solid rgba(232,194,116,.35)}
+  body.play #hintline{display:block}
+  #hintline.gone{opacity:0}
+  #tip{position:absolute;display:none;pointer-events:none;z-index:4;
+    font-family:system-ui,sans-serif;font-size:13px;color:#fff;background:rgba(18,20,28,.85);
+    padding:4px 11px;border-radius:14px;transform:translate(14px,-30px)}
+  body.play #tip.show{display:block}
+  #speed{position:absolute;right:12px;top:12px;display:none;gap:6px;z-index:3}
+  body.play #speed.unlocked{display:flex}
+  #speed button{width:44px;height:38px;border-radius:12px;border:1px solid #3a3d4a;background:#1b1d26;
+    color:#c9c1ae;font-family:system-ui,sans-serif;font-size:14px;cursor:pointer}
+  #speed button.on{border-color:#e8c274;color:#fff;background:#3a3020}
+  body.play #clock{top:58px;font-family:system-ui,sans-serif;font-size:13px;letter-spacing:0;
+    border-radius:12px;background:rgba(18,20,28,.72)}
+  body.play #bloom{font-family:system-ui,sans-serif;font-size:14px;letter-spacing:0;text-transform:none;
+    border-radius:12px;background:rgba(18,20,28,.72);color:#a6d96a}
+  #corner{position:absolute;left:12px;bottom:12px;z-index:3;display:flex;gap:6px}
+  #corner button{border:1px solid #2a2d38;background:rgba(18,20,28,.6);color:#6f7681;
+    font-family:system-ui,sans-serif;font-size:11px;padding:5px 9px;border-radius:10px;cursor:pointer}
+  #corner button:hover{color:#c9c1ae}
   #size,#palette{flex-wrap:wrap}
   #size .rt{flex:1 0 25%}
   #palette .rt{flex:1 0 33%}
@@ -108,7 +153,9 @@
   <h1>Uplift</h1>
   <div class="main">
     <div class="board-col">
-      <div id="board"><div id="info"></div><div id="time"></div><div id="clock"></div><div id="bloom"></div></div>
+      <div id="board"><div id="info"></div><div id="time"></div><div id="clock"></div><div id="bloom"></div>
+        <div id="hintline"></div><div id="dock"></div><div id="speed"></div><div id="tip"></div>
+        <div id="corner"><button id="benchBtn"></button><button id="langBtn"></button></div></div>
       <div class="hint"><b>click a hex</b> — drag to orbit, scroll to zoom.
         The world runs on its own: two ticks a second at 1×, a Season every
         120 ticks, four Seasons to a Year. A rain tile drops 70 units a tick
@@ -1565,7 +1612,7 @@ function drawInfo(){
 function drawBloom(){
   const n=alive();
   const el=document.getElementById('bloom');
-  el.textContent=n ? 'bloom  '+n : '';
+  el.textContent=n ? (typeof t_==='function'?t_('bloom'):'bloom')+'  '+n : '';
 }
 function drawMenu(){
   document.getElementById('powers').innerHTML=POWERS.map(p=>
@@ -1872,6 +1919,143 @@ document.querySelectorAll('#io .rt').forEach(b=>b.onclick=()=>
   b.dataset.a==='s'?save():load());
 drawSize();
 
+/* ---------------------------------------------------------------------
+   PLAYER MODE. The first playtest stalled at the first click: "what do we
+   do now?". The side panel is a developer bench -- six materials, four
+   brushes, five depths, six sliders -- and none of it belongs in front of a
+   player. So the page opens as a game: a fresh pot of rock, one big
+   button, one line of text.
+
+   POWERS ARE EARNED, and the world hands them over. Nothing unlocks on a
+   timer; each tool appears when the pot reaches the state it is for, the
+   same way Gaia's Whim will fire on a milestone:
+
+     dig      from the start
+     rain     the first hollow      (a hex stands lower than a neighbour)
+     speed    the first water tile  (something to wait for)
+     sow      the first habitable hex
+     raise    the first living hex
+
+   One hint at a time, in a serif over the board, and it goes away when
+   the world has answered it. The bench is still there behind the corner
+   button, and ?bench=1 opens straight into it.
+
+   The starting pot is one step of ROCK over the bedrock, because bedrock
+   never weathers: a pot of pure bedrock can never grow soil and a seed
+   could never take. Weathering runs at 0.7 units a tick here -- ten times
+   the bench default -- so a dug and rained-on hollow has a habitable shore
+   in about 100 ticks, under a minute at 1x. Measured: 98 ticks. */
+const STR={
+  en:{dig:'Dig',rain:'Rain',sow:'Sow',raise:'Raise',
+      h_dig:'Dig a hollow.',h_rain:'Hang a cloud over it.',h_wait:'Wait. Water finds its own way.',
+      h_sow:'The shore is ready. Sow a seed.',h_raise:'Soil comes from high ground. Raise a hill.',
+      h_free:'The pot is yours.',
+      drowned:'drowned',bare:'bare',dry:'dry',habitable:'ready',rooted:'alive',
+      bench:'bench',play:'play',pause:'pause',bloom:'bloom',lang:'TR'},
+  tr:{dig:'Kaz',rain:'Yağmur',sow:'Ek',raise:'Kaldır',
+      h_dig:'Bir çukur kaz.',h_rain:'Üstüne bir bulut as.',h_wait:'Bekle. Su kendi yolunu bulur.',
+      h_sow:'Kıyı hazır. Tohum ek.',h_raise:'Toprak yüksekten gelir. Bir tepe kaldır.',
+      h_free:'Saksı senin.',
+      drowned:'boğulmuş',bare:'çorak',dry:'kuru',habitable:'hazır',rooted:'yaşıyor',
+      bench:'tezgâh',play:'oyna',pause:'dur',bloom:'yeşil',lang:'EN'}};
+let LANG=localStorage.getItem('potLang')||(navigator.language||'en').slice(0,2).toLowerCase();
+if(!STR[LANG]) LANG='en';
+const t_=k=>STR[LANG][k]||k;
+const ICON={
+  dig:'<svg viewBox="0 0 32 32"><path d="M4 22c4-6 20-6 24 0"/><path d="M16 5v11"/><path d="M11 12l5 5 5-5"/></svg>',
+  rain:'<svg viewBox="0 0 32 32"><path d="M9 15a5 5 0 0 1 1-10 7 7 0 0 1 13 2 4 4 0 0 1 1 8H9z"/><path d="M11 20l-2 4M17 20l-2 4M23 20l-2 4"/></svg>',
+  sow:'<svg viewBox="0 0 32 32"><path d="M16 27V15"/><path d="M16 17c0-5 3-8 8-8-1 5-4 8-8 8z"/><path d="M16 21c0-4-3-7-7-7 1 4 3 7 7 7z"/><path d="M8 27h16"/></svg>',
+  raise:'<svg viewBox="0 0 32 32"><path d="M3 26L12 10l5 8 4-5 8 13z"/><path d="M16 4v4M12 6l1 3M20 6l-1 3"/></svg>'};
+const TOOLS={
+  dig:  {p:'subduct',brush:2,n:SLAB},
+  rain: {p:'place',  brush:1,n:1,m:CLOUD},
+  sow:  {p:'place',  brush:1,n:1,m:SEED},
+  raise:{p:'uplift', brush:2,n:SLAB}};
+const ORDER=['dig','rain','sow','raise'];
+let PLAY=!/bench=1/.test(location.search), TOOL='dig';
+const UNLOCK={dig:true,rain:false,speed:false,sow:false,raise:false};
+let HINT='h_dig', START_H=0;
+function selectTool(k){
+  TOOL=k; const d=TOOLS[k];
+  POWER=POWERS.find(p=>p.k===d.p); BRUSH=d.brush; DEPTH=d.n; MAT=d.m||ROCK;
+  drawMenu(); drawBrush(); drawDepth(); drawPalette(); drawDock(); hover(HOVER);
+}
+function drawDock(){
+  const el=document.getElementById('dock');
+  const want=ORDER.filter(k=>UNLOCK[k]);
+  const had=[...el.querySelectorAll('button')].map(b=>b.dataset.k);
+  el.innerHTML=want.map(k=>'<button data-k="'+k+'" class="'+(k===TOOL?'on':'')+(had.includes(k)?'':' new')+'">'+
+    ICON[k]+'<span>'+t_(k)+'</span></button>').join('');
+  el.querySelectorAll('button').forEach(b=>b.onclick=()=>selectTool(b.dataset.k));
+}
+function drawSpeed(){
+  const el=document.getElementById('speed');
+  el.classList.toggle('unlocked',UNLOCK.speed);
+  el.innerHTML='<button data-p="1" class="'+(PAUSED?'on':'')+'">❚❚</button>'+
+    [1,3,10].map(r=>'<button data-r="'+r+'" class="'+(!PAUSED&&r===STEP?'on':'')+'">'+'▶'.repeat(r===1?1:r===3?2:3)+'</button>').join('');
+  el.querySelectorAll('button').forEach(b=>b.onclick=()=>{
+    if(b.dataset.p) setPause(!PAUSED); else { STEP=+b.dataset.r; setPause(false); }
+    drawSpeed(); });
+}
+function drawHint(){
+  const el=document.getElementById('hintline');
+  if(!HINT){ el.classList.add('gone'); return; }
+  el.classList.remove('gone'); el.textContent=t_(HINT);
+}
+/* what the world says, read once a beat: cheap facts first, the one that
+   costs a pass over the board only while it is still needed */
+function checkUnlocks(){
+  let hollow=false, water=false, alive=false, high=false, cloud=false;
+  for(let i=0;i<T.length;i++){
+    const t=T[i];
+    if(t.pool>=LAYER-1e-9) water=true;
+    if(t.life) alive=true;
+    if(t.h>START_H) high=true;
+    if(!hollow) for(const j of t.nb) if(j>=0 && T[j].h>t.h){ hollow=true; break; }
+  }
+  if(!cloud) for(let i=0;i<T.length;i++) if(clouds(i)){ cloud=true; break; }
+  let ready=false;
+  if(!UNLOCK.sow || HINT==='h_sow') for(let i=0;i<T.length;i++) if(habitable(i)){ ready=true; break; }
+  const was=JSON.stringify(UNLOCK);
+  if(hollow) UNLOCK.rain=true;
+  if(water)  UNLOCK.speed=true;
+  if(ready||alive) UNLOCK.sow=true;
+  if(alive)  UNLOCK.raise=true;
+  const hint = !hollow ? 'h_dig' : !cloud ? 'h_rain' : !alive && !ready ? 'h_wait'
+             : !alive ? 'h_sow' : !high ? 'h_raise' : (TICKS<SEASON_TICKS*8 ? 'h_free' : null);
+  if(JSON.stringify(UNLOCK)!==was) drawDock();
+  if(!UNLOCK.speed!==!document.getElementById('speed').classList.contains('unlocked')) drawSpeed();
+  if(hint!==HINT){ HINT=hint; drawHint(); }
+}
+/* the one word beside the pointer: why a seed would or would not take */
+const tipEl=document.getElementById('tip');
+renderer.domElement.addEventListener('pointermove',e=>{
+  if(!PLAY||HOVER<0){ tipEl.classList.remove('show'); return; }
+  const r=board.getBoundingClientRect();
+  tipEl.style.left=(e.clientX-r.left)+'px'; tipEl.style.top=(e.clientY-r.top)+'px';
+  tipEl.textContent=T[HOVER].life ? t_('rooted') : t_(habit(HOVER));
+  tipEl.classList.add('show');
+});
+renderer.domElement.addEventListener('pointerleave',()=>tipEl.classList.remove('show'));
+function setPlay(on){
+  PLAY=on; document.body.classList.toggle('play',on);
+  document.getElementById('benchBtn').textContent=on?'⚙ '+t_('bench'):'▶ '+t_('play');
+  document.getElementById('langBtn').textContent=t_('lang');
+  if(on){ selectTool(TOOL); drawDock(); drawSpeed(); drawHint(); }
+  resize();
+}
+document.getElementById('benchBtn').onclick=()=>setPlay(!PLAY);
+document.getElementById('langBtn').onclick=()=>{ LANG=LANG==='tr'?'en':'tr'; localStorage.setItem('potLang',LANG); setPlay(PLAY); drawBloom(); };
+/* a fresh pot for a player: a step of rock on the bedrock, and weathering
+   that shows within a Season */
+function freshPot(){
+  for(let i=0;i<T.length;i++) raise(i,SLAB,ROCK);
+  START_H=1;
+  wearEl.value=70; drawWear();
+  settle(); rebuild();
+}
+setInterval(()=>{ if(PLAY) checkUnlocks(); },500);
+
 /* A module's scope is private, so nothing here is reachable from devtools.
    Being able to poke the board from the console is worth one deliberate
    global — it is how the flat renderer was checked, and it is the only way
@@ -1886,6 +2070,7 @@ window.POT={T,at,use,tick,settle,rebuild,POWERS,scene,
   get abrade(){ return ABRADE }, set abrade(v){ ABRADE=v },
   serialise, apply, R, SEED, habit, habitable, grow, alive, RIVER_MIN,
   get ticks(){ return TICKS }, get lifeEvery(){ return LIFE_EVERY }, set lifeEvery(v){ LIFE_EVERY=v },
+  get unlock(){ return UNLOCK }, get hint(){ return HINT }, get play(){ return PLAY }, setPlay, selectTool, checkUnlocks,
   CELL,TOP,cell,solid,retop,ZN,Z0,SLAB,zBot,zTop,AIR,BEDROCK,ROCK,MATS,instHex,ground,
   camera:()=>cam, hover:i=>hover(i),
   get power(){ return POWER.k },
@@ -1953,10 +2138,13 @@ function frame(){
 }
 drawMenu(); drawBrush(); drawDepth(); drawPalette(); drawRates(); drawHist();
 drawWear(); drawCarry(); drawSand(); drawAbrade(); setSun(0); settle(); rebuild(); resize(); drawInfo(); drawClock(); frame();
-/* a board parked on the way through a resize is picked up here */
+/* a board parked on the way through a resize is picked up here; otherwise a
+   player gets a fresh pot of rock */
 { const parked=sessionStorage.getItem('potLoad');
   if(parked){ sessionStorage.removeItem('potLoad');
-    try{ apply(JSON.parse(parked)); }catch(e){ console.warn(e); } } }
+    try{ apply(JSON.parse(parked)); }catch(e){ console.warn(e); } }
+  else if(PLAY) freshPot(); }
+setPlay(PLAY);
 </script>
 </body>
 </html>
