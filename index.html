@@ -147,6 +147,7 @@
   #tip i{font-style:normal;display:block;font-size:11.5px;color:#8e96a3;margin-top:1px}
   #tip i.no{color:#d08a6a}
   #tip i.yes{color:#9ed46a}
+  #tip i.biome b.deg{font-weight:500;color:#d8b98a;margin-left:2px}
   #tip i.scar{color:#e0a86a;display:block;margin-top:3px;line-height:1.5}
   #tip i.rich{color:#c8a86a}
   #tip i.biome{color:#9fb8a0;font-weight:600}
@@ -156,6 +157,7 @@
   #speed button{width:44px;height:38px;border-radius:12px;border:1px solid #3a3d4a;background:#1b1d26;
     color:#c9c1ae;font-family:system-ui,sans-serif;font-size:14px;cursor:pointer}
   #speed button.on{border-color:#e8c274;color:#fff;background:#3a3020}
+  #clock u.temp{text-decoration:none;font-style:normal;margin-left:7px;color:#d8b98a;font-size:12px;font-variant-numeric:tabular-nums}
   #clock u.wind{text-decoration:none;font-style:normal;margin-left:6px;color:#8fc6d8;font-size:15px;line-height:1}
   #clock u.wind em{font-style:normal;font-size:10px;opacity:.5;margin-left:2px;vertical-align:top}
   body.play #clock{top:58px;font-family:system-ui,sans-serif;font-size:13px;letter-spacing:0;
@@ -3081,9 +3083,31 @@ function setPause(on){ PAUSED=on; drawRates(); }
    nobody can line up with what they are looking at. */
 const WINDGLYPH=['\u2192','\u2198','\u2199','\u2190','\u2196','\u2197'];
 const windMark=()=>{
-  const d=windDir(), left=SEASON_TICKS-(TICKS%SEASON_TICKS);
+  const d=windDir();
   return '<u class="wind" title="the wind, and it turns each Season">'+
     WINDGLYPH[d]+'<em>'+WINDGLYPH[(d+1)%6]+'</em></u>';
+};
+/* TWO PLACES, BECAUSE THEY ANSWER DIFFERENT QUESTIONS.
+   Here, beside the clock, the pot's RANGE -- the coldest and warmest ground
+   on the board right now. A single number would be a lie: a pot spans about
+   twelve degrees of relief, so there is no one temperature it is at. The
+   range says what the Season is doing at a glance, which is what this strip
+   is for. The hex under the pointer gets its own reading in the tip.
+   Both read `tempNow`, the one that carries the swing -- `tempAt` is the
+   Year's mean and belongs to the biome, which must not move with the
+   weather. */
+let TEMPCACHE=[0,0,-1];
+const tempRange=()=>{
+  if(TEMPCACHE[2]===TICKS) return TEMPCACHE;
+  let lo=Infinity, hi=-Infinity;
+  for(let i=0;i<T.length;i++){ const v=tempNow(i); if(v<lo)lo=v; if(v>hi)hi=v; }
+  TEMPCACHE=[lo,hi,TICKS];
+  return TEMPCACHE;
+};
+const tempMark=()=>{
+  const [lo,hi]=tempRange();
+  return '<u class="temp" title="the coldest and warmest ground on the pot">'+
+    Math.round(lo)+'&ndash;'+Math.round(hi)+'\u00b0</u>';
 };
 function drawClock(){
   const el=document.getElementById('clock');
@@ -3091,7 +3115,7 @@ function drawClock(){
     const t=TICKS-RUN.yearStart, season=Math.floor(t/SEASON_TICKS);
     const names=has('summer')?[...SEASONS,'Long Summer']:SEASONS;
     el.innerHTML='<b>Year '+RUN.year+'</b> · '+(names[Math.min(season,names.length-1)]||'')+
-      ' '+windMark()+
+      ' '+windMark()+' '+tempMark()+
       '<i style="width:'+Math.round(100*t/yearLen())+'%"></i>';
     return;
   }
@@ -3656,7 +3680,8 @@ function drawTip(x,y){
   if(!t.life && !Math.floor(t.pool/LAYER+1e-9) && t.sand<LAYER && t.sed<LAYER)
     h+='<i>'+wearsAs(HOVER)+'</i>';
   { const b=biome(HOVER);
-    if(b!=='water') h+='<i class="biome">'+BIOME_NAME[b]+'</i>'; }
+    if(b!=='water') h+='<i class="biome">'+BIOME_NAME[b]+
+      ' <b class="deg">'+Math.round(tempNow(HOVER))+'°</b></i>'; }
   { const f=fertility(HOVER);
     if(f>0.02) h+='<i class="rich">'+richAs(f)+' &middot; life worth &times;'+
                   (1+FERT_GAIN*f).toFixed(2)+'</i>'; }
