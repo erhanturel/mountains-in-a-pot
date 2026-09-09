@@ -156,6 +156,8 @@
   #speed button{width:44px;height:38px;border-radius:12px;border:1px solid #3a3d4a;background:#1b1d26;
     color:#c9c1ae;font-family:system-ui,sans-serif;font-size:14px;cursor:pointer}
   #speed button.on{border-color:#e8c274;color:#fff;background:#3a3020}
+  #clock u.wind{text-decoration:none;font-style:normal;margin-left:6px;color:#8fc6d8;font-size:15px;line-height:1}
+  #clock u.wind em{font-style:normal;font-size:10px;opacity:.5;margin-left:2px;vertical-align:top}
   body.play #clock{top:58px;font-family:system-ui,sans-serif;font-size:13px;letter-spacing:0;
     border-radius:12px;background:rgba(18,20,28,.72)}
   /* THE CHRONICLE. The world reports on itself. Erosion is the one thing in
@@ -1694,8 +1696,46 @@ function harvest(){
           mult:hp, bloom:Math.round(n*hp*10)/10};
 }
 
+/* ================= C2 . WIND, AND CLOUDS THAT DRIFT ==================
+   The single change that stops a board being solved once. A cloud used to be
+   a tap: place it, walk away, come back to a lake. It is a PASS now -- it
+   crosses the pot and leaves over the far side, and the water it gave you is
+   all the water that placement will ever give.
+
+   That falls out rather than being added, and it answers something measured
+   two days ago. test/one-cut.js showed the power of a cut was real (+11
+   living shore hexes) and its cost was not (-1), because a parked cloud
+   outproduces anything a basin can hold, so the pot was never short. A cloud
+   that leaves makes water finite without a budget, a cap or a number pulled
+   out of the air.
+
+   THE WIND TURNS WITH THE SEASON, one of the six hex axes, read straight off
+   the clock. No randomness and no seed: the same pot plays the same way, and
+   the wind is a thing you can see coming rather than a thing that happens to
+   you.
+
+   IT MOVES FROM A SNAPSHOT. Every cloud's destination is read before any of
+   them is written, or the answer would depend on the order hexes are visited
+   -- the exact class of bug this project has been burnt by twice. The map
+   i -> nb[d] is injective, so no two stacks can ever land on one hex and the
+   CLOUD_MAX cap can never silently eat one. */
+const DRIFT=120;                   /* ticks a cloud takes to cross one hex */
+const windDir=()=>Math.floor(TICKS/SEASON_LEN)%6;
+function blow(){
+  if(DRIFT<=0 || TICKS%DRIFT) return;
+  const d=windDir(), n=T.length, was=new Uint8Array(n);
+  for(let i=0;i<n;i++) was[i]=clouds(i);
+  for(let i=0;i<n;i++) if(was[i]) delCloud(i,CLOUD_MAX);
+  for(let i=0;i<n;i++){
+    if(!was[i]) continue;
+    const j=T[i].nb[d];
+    if(j<0) continue;              /* over the side, and gone */
+    addCloud(j,was[i]);
+  }
+}
 /* the rain tiles rain, and then everything sheds once */
 function tick(){
+  blow();                          /* move first, then rain from where it is */
   for(let i=0;i<T.length;i++){
     const n=clouds(i);
     if(n) T[i].pool+=n*RAINFALL*RAIN_MULT;   /* a stack of n drops n times the rain */
@@ -2077,6 +2117,7 @@ const FITPTS=[];
    angle is a good angle and the hex grid reads from all sides. A view from
    straight above flattens the prisms to a tiling; one from the table edge
    hides the far half behind the near. Default elevation is 35 degrees. */
+const ORIGIN=new THREE.Vector3(0,0,0);
 const VIEWDIR=new THREE.Vector3(0,Math.sin(35*Math.PI/180),Math.cos(35*Math.PI/180)).normalize();
 const CAMRIGHT=new THREE.Vector3(1,0,0);
 const CAMUP=new THREE.Vector3().crossVectors(VIEWDIR,CAMRIGHT).normalize();
@@ -2097,8 +2138,41 @@ const fitTop  = a => Math.max(EX[1],EX[0]/a);     /* ortho half-height */
    allowance the board came out 1% over the top of the screen. */
 const fitDist = a => fitTop(a)/VHALF*1.18;
 
+/* A BOOT RACE THAT BLANKED THE BOARD.
+
+   The camera is placed at `VIEWDIR * fitDist(aspect)`, and fitDist DIVIDES by
+   the aspect. Run before the board element has been laid out, clientWidth can
+   be a few pixels against a full-height column -- measured at 0.09 -- and
+   fitDist came out 949 where it should have been 50. resize() then fixed the
+   orthographic box and did NOT move the camera back, because makeCam only
+   positions a camera it is building from nothing. With `far` fixed at
+   SPAN*20 = 496, the camera sat 949 out and the whole pot was behind its own
+   far plane: a black viewport, no console error, WebGL alive and dutifully
+   drawing the background colour. Two features were blamed before the camera
+   was measured.
+
+   Two guards, because either alone leaves half the fault standing:
+
+     the aspect is CLAMPED, so a transient layout cannot ask for a distance
+     the board was never meant to be viewed from;
+
+     and the far plane is derived from where the camera ACTUALLY is rather
+     than from the board's size, so nothing that moves the camera -- the
+     orbit, a pan, a future mode -- can put the world behind it again. */
+let CAMTOUCHED=false;      /* the moment the player takes the orbit, it is theirs */
+const ASPECT_MIN=0.4, ASPECT_MAX=4;
+const aspectOf=()=>{
+  const w=board.clientWidth||900, h=board.clientHeight||660;
+  return Math.min(ASPECT_MAX,Math.max(ASPECT_MIN,w/h));
+};
+function coverFar(){
+  if(!cam) return;
+  const d=cam.position.distanceTo(controls?controls.target:ORIGIN);
+  const want=d+SPAN*4;
+  if(cam.far<want){ cam.far=want; cam.updateProjectionMatrix(); }
+}
 function makeCam(){
-  const w=board.clientWidth||900, h=board.clientHeight||660, a=w/h;
+  const a=aspectOf();
   const was=cam;
   if(ortho){ const t=fitTop(a);
     cam=new THREE.OrthographicCamera(-t*a,t*a,t,-t,0.1,SPAN*20); }
@@ -2106,11 +2180,13 @@ function makeCam(){
   cam.position.copy(was ? was.position
     : VIEWDIR.clone().multiplyScalar(fitDist(a)));
   if(controls){ controls.object=cam; controls.update(); }
+  coverFar();
   return cam;
 }
 cam=makeCam();
 controls=new OrbitControls(cam,renderer.domElement);
 controls.target.set(0,0,0);
+controls.addEventListener('start',()=>{ CAMTOUCHED=true; });
 controls.enableDamping=true; controls.dampingFactor=0.08;
 controls.minPolarAngle=40*Math.PI/180; controls.maxPolarAngle=62*Math.PI/180;
 controls.minZoom=0.6; controls.maxZoom=4;
@@ -2809,12 +2885,21 @@ function playClick(i){
 function resize(){
   const w=board.clientWidth||900, h=board.clientHeight||660;
   renderer.setSize(w,h,false); sizePost();
-  const a=w/h;
+  const a=aspectOf();
   if(cam.isOrthographicCamera){
     const t=fitTop(a);
     cam.left=-t*a; cam.right=t*a; cam.top=t; cam.bottom=-t;
   } else cam.aspect=a;
   cam.updateProjectionMatrix();
+  /* A CAMERA PLACED BY A BOGUS BOOT ASPECT IS PUT BACK HERE. resize() runs
+     once the layout has settled, so this is the first moment the real aspect
+     is known. The distance is only corrected while the user has not taken
+     hold of the orbit -- once they have, where they put it is theirs. */
+  if(!CAMTOUCHED){
+    cam.position.copy(VIEWDIR).multiplyScalar(fitDist(a));
+    if(controls) controls.update();
+  }
+  coverFar();
 }
 window.addEventListener('resize',resize);
 
@@ -2986,12 +3071,27 @@ setInterval(()=>{
   if(LAB) for(let k=0;k<n;k++) labStep();
 },100);
 function setPause(on){ PAUSED=on; drawRates(); }
+/* THE WIND HAS TO BE VISIBLE OR IT IS NOT A MECHANIC.
+   A cloud drifts one hex every DRIFT ticks and turns one step of six with
+   every Season, always the same way round. All of that is knowable in
+   advance -- but only if the screen says which way it is blowing and which
+   way it will turn next, because the decision it drives is where to dig
+   BEFORE the cloud gets there. The six directions are the hex axes, so the
+   arrow points along the board's own geometry rather than at a compass
+   nobody can line up with what they are looking at. */
+const WINDGLYPH=['\u2192','\u2198','\u2199','\u2190','\u2196','\u2197'];
+const windMark=()=>{
+  const d=windDir(), left=SEASON_TICKS-(TICKS%SEASON_TICKS);
+  return '<u class="wind" title="the wind, and it turns each Season">'+
+    WINDGLYPH[d]+'<em>'+WINDGLYPH[(d+1)%6]+'</em></u>';
+};
 function drawClock(){
   const el=document.getElementById('clock');
   if(RUNREADY && PLAY){
     const t=TICKS-RUN.yearStart, season=Math.floor(t/SEASON_TICKS);
     const names=has('summer')?[...SEASONS,'Long Summer']:SEASONS;
     el.innerHTML='<b>Year '+RUN.year+'</b> · '+(names[Math.min(season,names.length-1)]||'')+
+      ' '+windMark()+
       '<i style="width:'+Math.round(100*t/yearLen())+'%"></i>';
     return;
   }
@@ -4523,6 +4623,7 @@ window.POT={T,at,use,tick,settle,rebuild,POWERS,scene,
   get dug(){ return DUG }, get filled(){ return FILLED },
   fertility, worthOf, FERT, FERT_GAIN, ALLU_FULL, richAs, soil, SOIL_MIN, wetAt, DRY,
   tempAt, tempNow, seasonSwing, SWING, LAPSE, TEMP_SEA, SEASON_LEN,
+  windDir, blow, DRIFT,
   clumped, draining, underFall, growQuick, CLUMP_MIN,
   holdsBack, travel, seedReset, SEEDFLAG, LEAK_BASE, SOWN, sowDormant, wake,
   get expA(){ return EXP_A }, set expA(v){ EXP_A=v },
