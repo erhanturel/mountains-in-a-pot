@@ -1422,8 +1422,34 @@ const elevAt=i=>Math.min(1,Math.max(0,(T[i].h-BASE_E)/(H_MAX-BASE_E)));
    18 C at the waterline falling 1.6 C an elevation, which puts the top of a
    twelve-step peak at about -1 C and the floor of a deep dig at 37. Season
    will be added here in C5; nothing else needs to change when it is. */
-const TEMP_SEA=18, LAPSE=1.6;
-const tempAt=i=>TEMP_SEA-T[i].h*LAPSE;
+/* ================= C1 . TEMPERATURE ==================================
+   A pot has no latitude, so the only two things that can make one hex colder
+   than another are how high it stands and what time of Year it is.
+
+     t = base - elevation x lapse + the Season's swing
+
+   TWO TEMPERATURES, AND THE SPLIT IS THE WHOLE OF C1.
+
+   `tempAt` is the Year's MEAN and it is what the biome reads. B3's finding
+   was that the forest has to be a condition rather than a timer -- a hex is
+   tundra or scree because of what is true of it, not because of how long it
+   has been running. Feeding a swinging temperature into the biome would
+   undo exactly that: a hex would change what it IS four times a Year, on a
+   clock, which is the identity flicker that argument was against.
+
+   `tempNow` carries the swing, and it is what snow and the seasonal palette
+   read -- things that are SUPPOSED to come and go. So the Year gets a
+   rhythm and the map keeps its identity.
+
+   The swing is 5 degrees either side. The lapse is 1.6 a step over a board
+   that spans about 14 of them, so relief is worth roughly 22 degrees and the
+   Season about 10: the mountain still decides, and the Season modulates. */
+const TEMP_SEA=18, LAPSE=1.6, SWING=5;
+const SEASON_LEN=480;              /* ticks. The clock in the UI reads this. */
+/* 0 at Spring, +1 at Summer, 0 at Autumn, -1 at Winter */
+const seasonSwing=()=>Math.sin(Math.PI*(TICKS/SEASON_LEN)/2);
+const tempAt=i=>TEMP_SEA-T[i].h*LAPSE;            /* the Year's mean */
+const tempNow=i=>tempAt(i)+SWING*seasonSwing();   /* what it is right now */
 /* moisture is water IN REACH, over the hex and its six neighbours -- the same
    signal rule 6 uses to decide habitability, but counted rather than asked as
    a yes or no, so it grades from a damp shore to the middle of a lake. */
@@ -1860,6 +1886,13 @@ function genPot(seed){
      Bloom nobody earned. */
   for(let i=0;i<T.length;i++){ const t=T[i];
     t.pool=0; t.flow=0; for(let k=0;k<6;k++) t.out[k]=0; }
+  /* THE CLOCK STARTS WHEN THE PLAYER DOES. Cutting the valleys burns about
+     2,400 ticks, and TICKS drives both life's phase and -- since C1 -- the
+     Season's swing. Left running, a pot opened its first Spring at whatever
+     phase the generator happened to stop on, so the clock said Spring while
+     the temperature was at midwinter. The pot's own history is not the run's
+     history, so the clock is set back to zero here. */
+  TICKS=0;
   return s; }
 /*==CORE-END==*/
 
@@ -2915,7 +2948,8 @@ function drawMenu(){
    every measurement in *The timescales, spread apart* still holds tick for
    tick, and the 16.5x spread is untouched. */
 const BASE_RATE=8.5;             /* ticks a second at 1x -- 30 min a run */
-const SEASON_TICKS=480, SEASONS=['Spring','Summer','Autumn','Winter'];
+/* one source of truth: the CORE owns the Season, because tempNow is in it */
+const SEASON_TICKS=SEASON_LEN, SEASONS=['Spring','Summer','Autumn','Winter'];
 let STEP=1, PAUSED=false, acc=0;
 /* 1, 3, 10, 30 were three-fold jumps, which is why there was never a
    setting between 'too slow' and 'the Season just ended'. */
@@ -4488,6 +4522,7 @@ window.POT={T,at,use,tick,settle,rebuild,POWERS,scene,
   get lost(){ return LOST }, set lost(v){ LOST=v },
   get dug(){ return DUG }, get filled(){ return FILLED },
   fertility, worthOf, FERT, FERT_GAIN, ALLU_FULL, richAs, soil, SOIL_MIN, wetAt, DRY,
+  tempAt, tempNow, seasonSwing, SWING, LAPSE, TEMP_SEA, SEASON_LEN,
   clumped, draining, underFall, growQuick, CLUMP_MIN,
   holdsBack, travel, seedReset, SEEDFLAG, LEAK_BASE, SOWN, sowDormant, wake,
   get expA(){ return EXP_A }, set expA(v){ EXP_A=v },
