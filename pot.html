@@ -2937,7 +2937,9 @@ function carry(){
     for(let i=0;i<n;i++){
       const s=was[i];
       if(s<=1e-12) continue;
-      if(T[i].life) continue;                /* roots hold it: see LIFE */
+      /* rule 8, as a dial in EXP_A and as an absolute otherwise */
+      const hold=holdsBack(i);
+      if(hold>=1) continue;                  /* roots hold it: see LIFE */
       const gi=g(i);
       want.fill(0); let tot=0;
       for(let k=0;k<6;k++){
@@ -2952,7 +2954,8 @@ function carry(){
         want[k]=v; tot+=v;
       }
       if(tot<=0) continue;
-      const f=Math.min(1,s/tot);               /* it cannot send what it has not got */
+      let f=Math.min(1,s/tot);                 /* it cannot send what it has not got */
+      if(hold>0) f*=(1-hold);                  /* and roots keep their share back */
       for(let k=0;k<6;k++){
         if(want[k]<=0) continue;
         const v=want[k]*f;
@@ -3111,6 +3114,82 @@ let FLOOD_TOL=0;
    None of them multiplies a score. If an upgrade could be described as
    "+50% something" it does not belong in this set. */
 let UP_ROOTS=false, UP_FLOOD=false, UP_CASCADE=false;
+
+/* =====================================================================
+   EXPERIMENT A -- physical ecosystem combinations.
+
+   Two traits under test, and ONE CONFLICT WITH AN EXISTING RULE that has to
+   be stated rather than quietly reinterpreted.
+
+   THE CONFLICT. The brief asks for a reed that "retains half the sediment
+   that would leave its cells", to create a tradeoff between rooting habitat
+   upstream and supplying sediment downstream. In this engine that tradeoff
+   ALREADY EXISTS and is stronger than the trait describes: rule 8 says life
+   binds the ground it stands on, and carry() implements it as `if(T[i].life)
+   continue` -- a living cell sends NOTHING on. Every planting is already a
+   perfect trap, so a reed retaining half would be a downgrade and the trait
+   would carry no decision.
+
+   So for this experiment only, retention becomes a DIAL rather than an
+   absolute: life leaks LEAK_BASE of what would otherwise leave, and the Reed
+   Trap trait takes designated reeds back to holding all of it. That keeps the
+   tradeoff the brief is after -- retain upstream against supply downstream --
+   and makes the trait a choice instead of a no-op. It is a change to rule 8,
+   it is confined to EXP_A, and the untouched original still holds everything.
+
+   TRAVELLING SEEDS has no such conflict: nothing in the engine moves life
+   along water today. */
+let EXP_A=false;                 /* the whole experimental rule set, off by default */
+let TR_REED=false, TR_TRAVEL=false;
+const LEAK_BASE=0.5;             /* what ordinary life lets past, in EXP_A only */
+/* how much of what WOULD leave this cell actually does */
+const holdsBack=i=>{
+  if(!T[i].life) return 0;
+  if(!EXP_A) return 1;                       /* rule 8 as written */
+  if(TR_REED && T[i].life===REED) return 1;  /* a designated reed holds it all */
+  return 1-LEAK_BASE;
+};
+/* per-PULSE bookkeeping for travelling seeds. 0 free, 1 this patch has sent
+   one already, 2 grown this pulse and so may not send. Cleared at each
+   release, which is what "per pulse" means. */
+const SEEDFLAG=new Uint8Array(T.length);
+let TRAVELLED=0;                 /* how many seeds moved, for the event log */
+const seedReset=()=>{ SEEDFLAG.fill(0); TRAVELLED=0; };
+/* one departure per patch per pulse, along an outgoing WET edge, rooting only
+   where the receiving cell would already take that kind. Descendants are
+   marked 2 so a cascade cannot run away inside one pulse. */
+function travel(){
+  if(!EXP_A || !TR_TRAVEL) return;
+  const seen=new Uint8Array(T.length);
+  for(let s0=0;s0<T.length;s0++){
+    if(seen[s0] || !T[s0].life) continue;
+    /* the patch this cell belongs to */
+    const patch=[s0]; seen[s0]=1;
+    for(let k=0;k<patch.length;k++)
+      for(const j of T[patch[k]].nb)
+        if(j>=0 && !seen[j] && T[j].life){ seen[j]=1; patch.push(j); }
+    let spent=false;
+    for(const i of patch) if(SEEDFLAG[i]){ spent=true; break; }
+    if(spent) continue;
+    /* the first outgoing wet edge that lands somewhere it can take */
+    let landed=-1, kind=0;
+    outer:
+    for(const i of patch){
+      const o=T[i].out, nb=T[i].nb;
+      for(let k=0;k<6;k++){
+        if(o[k]<=0) continue;                 /* water has to be going that way */
+        const j=nb[k];
+        if(j<0 || T[j].life) continue;
+        if(habit(j,T[i].life)!=='habitable') continue;
+        landed=j; kind=T[i].life; break outer;
+      }
+    }
+    if(landed<0) continue;
+    T[landed].life=kind; TRAVELLED++;
+    for(const i of patch) SEEDFLAG[i]=1;
+    SEEDFLAG[landed]=2;
+  }
+}
 /* a hex is CLUMPED when enough of its neighbours are alive to hold the bank */
 const CLUMP_MIN=3;
 function clumped(i){
@@ -3469,7 +3548,7 @@ function tick(){
   weather();
   carry();                      /* slag last, so what just broke loose can move */
   TICKS++;
-  if(TICKS%LIFE_EVERY===0) grow();   /* life, on its own slower clock */
+  if(TICKS%LIFE_EVERY===0){ grow(); travel(); }   /* life, on its own slower clock */
   else if(UP_FLOOD||UP_CASCADE) growQuick();   /* and where an upgrade says now */
 }
 
@@ -5871,6 +5950,11 @@ window.POT={T,at,use,tick,settle,rebuild,POWERS,scene,
   HARDNESS, erode, STRATA, stratum, GRANITE, BASALT, LIMESTONE, SHALE, wearsAs,
   fertility, worthOf, FERT, FERT_GAIN, ALLU_FULL, richAs, soil, SOIL_MIN, wetAt, DRY,
   clumped, draining, underFall, growQuick, CLUMP_MIN,
+  holdsBack, travel, seedReset, SEEDFLAG, LEAK_BASE,
+  get expA(){ return EXP_A }, set expA(v){ EXP_A=v },
+  get trReed(){ return TR_REED }, set trReed(v){ TR_REED=v },
+  get trTravel(){ return TR_TRAVEL }, set trTravel(v){ TR_TRAVEL=v },
+  get travelled(){ return TRAVELLED }, set travelled(v){ TRAVELLED=v },
   get upRoots(){ return UP_ROOTS }, set upRoots(v){ UP_ROOTS=v },
   get upFlood(){ return UP_FLOOD }, set upFlood(v){ UP_FLOOD=v },
   get upCascade(){ return UP_CASCADE }, set upCascade(v){ UP_CASCADE=v },
