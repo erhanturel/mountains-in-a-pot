@@ -256,6 +256,7 @@
   #mana .omen u{text-decoration:none;display:block;color:#8fd0e8;margin-top:2px}
   #harvest .omens .offer b{font-size:14px}
   #dock button.off{opacity:.38;cursor:default} #dock button.off:hover{transform:none}
+  #dock .cost.seed{color:#a6d96a;border-color:rgba(166,217,106,.45)}
   #dock .cost{position:absolute;top:6px;right:9px;font-size:11px;color:#e8c274}
   #dock button{position:relative}
   /* THE LENS. Not a tool -- it costs nothing, acts on nothing, and takes no
@@ -3031,7 +3032,16 @@ function snap(){
            sand:Float64Array.from(T,t=>t.sand),
            wear:Float64Array.from(T,t=>t.wear),
            grit:Float64Array.from(T,t=>t.grit),
-           life:Uint8Array.from(T,t=>t.life|0), ticks:TICKS, out };
+           life:Uint8Array.from(T,t=>t.life|0), ticks:TICKS, out,
+           /* THE UNDO WAS NOT ATOMIC. It restored the world and left the
+              RESOURCES where they were, so undoing a sow put the hex back to
+              bare ground and kept the seed card spent -- the board at one
+              moment and the economy at another. A step is one act; both
+              halves of it come back together. The Year itself is carried so
+              a snapshot from before a turn can be refused rather than
+              silently paying out a Year's allowance twice. */
+           hand:[...RUN.hand], mana:RUN.mana, manaAt:RUN.manaAt,
+           dew:RUN.dew, year:RUN.year };
 }
 function restore(s){
   CELL.set(s.cells); TICKS=s.ticks||0;
@@ -3042,7 +3052,15 @@ function restore(s){
     T[i].grit=s.grit[i]; T[i].life=s.life[i]|0;
     T[i].out.set(s.out.subarray(i*6,i*6+6));
   }
-  rebuild(); hover(HOVER); drawClock();
+  /* the other half of the step. Refused across a Year boundary: the turn
+     hands out an allowance, a fresh hand and an Omen, and rolling the board
+     back through it would pay them twice. */
+  if(s.hand && s.year===RUN.year){
+    RUN.hand=[...s.hand]; RUN.mana=s.mana; RUN.manaAt=s.manaAt; RUN.dew=s.dew;
+    if(!RUN.hand.includes(MAT)) MAT=RUN.hand[0]||SEED;
+    drawMana(); drawDock(); drawHand();
+  }
+  rebuild(); hover(HOVER); drawClock(); drawTip(...TIPAT);
 }
 function push(s){
   HIST.push(s);
@@ -3243,13 +3261,22 @@ function selectTool(k){
   MAT = k==='sow' ? (RUN.hand.includes(MAT)?MAT:(RUN.hand[0]||SEED)) : (d.m||ROCK);
   drawMenu(); drawBrush(); drawDepth(); drawPalette(); drawDock(); hover(HOVER);
 }
+/* THE BADGE HAS TO NAME THE LIMIT THAT IS ACTUALLY BINDING.
+   When mana moved onto rain alone, Sow's badge went on showing its mana cost
+   -- which is now 0 -- while the thing that really stops you is the three
+   seed cards a Year. A review read "0" as "unlimited", sowed three times and
+   found the fourth click did nothing the screen had warned about. So Sow's
+   badge counts SEEDS, in green, and the others count mana. */
+const badgeOf=k=> k==='sow'
+  ? '<span class="cost seed" title="seeds left this Year">'+RUN.hand.length+'</span>'
+  : '<span class="cost">'+costOf(k)+'</span>';
 function drawDock(){
   const el=document.getElementById('dock');
   const want=ORDER.filter(k=>UNLOCK[k]);
   const had=[...el.querySelectorAll('button')].map(b=>b.dataset.k);
   const off=k=>(!FREE_MANA && RUN.mana<costOf(k)) || (k==='sow' && !RUN.hand.length);
   el.innerHTML=want.map(k=>'<button data-k="'+k+'" class="'+(k===TOOL?'on':'')+(had.includes(k)?'':' new')+(off(k)?' off':'')+'">'+
-    '<span class="cost">'+costOf(k)+'</span>'+ICON[k]+'<span>'+t_(k)+'</span></button>').join('');
+    badgeOf(k)+ICON[k]+'<span>'+t_(k)+'</span></button>').join('');
   el.querySelectorAll('button').forEach(b=>b.onclick=()=>selectTool(b.dataset.k));
   drawHand();
 }
@@ -3462,10 +3489,18 @@ function drawTip(x,y){
                   (1+FERT_GAIN*f).toFixed(2)+'</i>'; }
   if(t.life) h+='<i class="yes">'+KINDS[t.life]+' grows here</i>';
   else if(TOOL==='sow'&&UNLOCK.sow){
-    const kind=KINDS[MAT]?MAT:SEED, why=habit(HOVER,kind);
-    if(why==='habitable') h+='<i class="yes">'+SEEDCARDS[kind].nm+' takes here</i>';
-    else { const alt=wouldTake(HOVER);
-      h+='<i class="no">'+t_(why)+(alt.length?' — '+alt.join(' or ')+' takes here':'')+'</i>'; }
+    /* MAT holds the last seed kind chosen and keeps holding it after the hand
+       is empty, so a habitable hex went on reading "Grass takes here" when
+       there was no Grass left to sow. The hand is checked FIRST now: what
+       stops you is named before whether the ground would have taken it. */
+    if(!RUN.hand.length)
+      h+='<i class="no">no seeds left — the hand refills next Year</i>';
+    else {
+      const kind=RUN.hand.includes(MAT)?MAT:RUN.hand[0], why=habit(HOVER,kind);
+      if(why==='habitable') h+='<i class="yes">'+SEEDCARDS[kind].nm+' takes here</i>';
+      else { const alt=wouldTake(HOVER);
+        h+='<i class="no">'+t_(why)+(alt.length?' — '+alt.join(' or ')+' takes here':'')+'</i>'; }
+    }
   }
   tipEl.innerHTML=h;
   tipEl.classList.add('show');
@@ -3567,8 +3602,27 @@ const BOONS={
   wellspring:{nm:'Wellspring',  d:'+3 mana every Year.',                       dew:6},
   summer:   {nm:'Long Summer',  d:'A fifth Season every Year.',                dew:5},
   roots:    {nm:'Deep Roots',   d:'Grass stands one tile of flooding.',        dew:4, on:()=>{ FLOOD_TOL=1; }},
-  basalt:   {nm:'Basalt Heart', d:'Dig and Raise cost 1.',                     dew:6},
-  lakeheart:{nm:'Lake Heart',   d:'Every Lake is worth +0.5 more.',            dew:6, on:()=>{ BONUS.lake+=0.5; BONUS.great+=0.5; }},
+  /* BASALT HEART WAS A BOON YOU PAID SIX DEW TO BE WORSE OFF BY. It made Dig
+     and Raise cost 1 back when they cost 2; once mana moved onto rain alone
+     their base cost became 0, so `costOf` went 0 -> 1 with the boon held.
+     Measured in the browser: dig without it 0, dig with it 1.
+
+     Rewritten around what its name says and what the run now turns on. The
+     hard basement is the punishment for over-watering -- granite makes no
+     soil inside a run and its fertility is 0.30 against shale's 0.60 -- so a
+     heart of basalt makes the ground you HAVE worn through worth keeping. It
+     does not give back the pot's health; it changes what the loss is worth,
+     which is a decision rather than a refund. One existing lever, no new
+     state: the fertility table. */
+  basalt:   {nm:'Basalt Heart', d:'Worn ground is rich: granite grows as well as shale.',
+             dew:6, on:()=>{ FERT[GRANITE]=FERT[SHALE]; FERT[BEDROCK]=FERT[SHALE]; }},
+  /* LAKE HEART STILL WORKS, BUT NOT WHERE IT SAID. BONUS left the Bloom
+     formula when the score became `worth x the pot's health`; measured, the
+     board reads 81.1 both with and without it. What BONUS still drives is
+     the dew an Omen pays -- round(2 + BONUS*4) -- so a Lake omen goes 4 dew
+     to 6. The effect is real and the sentence was wrong, so the sentence is
+     what changed. */
+  lakeheart:{nm:'Lake Heart',   d:'Omens asking for a Lake pay +2 dew.',       dew:6, on:()=>{ BONUS.lake+=0.5; BONUS.great+=0.5; }},
 };
 const SEEDCARDS={[SEED]:{nm:'Grass',d:'Soil, a shore or a bank. Worth 1.',dew:2},
                  [MOSS]:{nm:'Moss', d:'Roots on bare rock. Worth ½.',dew:2},
@@ -3630,7 +3684,9 @@ const manaFor=()=>10+(has('wellspring')?3:0);
    at once and then never again. */
 const MANA_EVERY=SEASON_TICKS/4;
 const yearLen=()=>SEASON_TICKS*(SEASONS.length+(has('summer')?1:0));
-const costOf=k=>k==='sow'?COST.sow:(k==='dig'||k==='raise')&&has('basalt')?1:COST[k];
+/* nothing discounts a cost of zero. Dig, Raise and Sow are free since mana
+   moved onto rain; Basalt Heart used to reach in here and now does not. */
+const costOf=k=>COST[k];
 const card=()=>document.querySelector('#harvest .card');
 const open=()=>{ document.getElementById('harvest').classList.add('show'); RUN.screen=true; setPause(true); };
 const close=()=>{ document.getElementById('harvest').classList.remove('show'); RUN.screen=false; setPause(false);
@@ -3675,6 +3731,7 @@ function drawHand(){
 }
 function startYear(){
   markScar();          /* the lens measures against the Year you are in */
+  HIST.length=0; FUT.length=0;   /* undo may not cross a turn: see restore() */
   RUN.mana=manaFor(); RUN.manaAt=TICKS; RUN.hand=[...RUN.deck];
   if(!RUN.hand.includes(MAT)) MAT=RUN.hand[0]||SEED;
   RUN.yearStart=TICKS; RUN.nextYearAt=TICKS+yearLen();
@@ -3706,7 +3763,10 @@ function harvestRows(h,now){
    hiding the aim was the whole complaint. */
 const codexGrid=now=>'<div class="codex">'+Object.keys(BONUS).map(k=>
   '<div class="'+(now.has(k)?'now':CODEX.has(k)?'found':'')+'"><b>'+WONDER_NAMES[k].replace(/^The /,'')+
-  '</b><u>+'+BONUS[k]+'</u><i>'+WONDER_HOW[k]+'</i></div>').join('')+'</div>';
+  /* these were read as a Bloom bonus and are not one any more. What the
+     number actually buys is the dew an Omen for this shape pays, so that is
+     what it says. */
+  '</b><u>'+Math.round(2+BONUS[k]*4)+' dew</u><i>'+WONDER_HOW[k]+'</i></div>').join('')+'</div>';
 /* and it can be read at any time, not only when the Year turns */
 function showCodex(){
   const now=new Set(Object.keys(wonders())), el=card();
@@ -4343,6 +4403,12 @@ function labStart(){
 window.POT={T,at,use,tick,settle,rebuild,POWERS,scene,
   CLOUD,CLOUD_Z,CLOUD_MAX,clouds,LAYER,RAINFALL,SLAG,gnd,weather,
   get weathering(){ return WEATHER*420 }, set weathering(v){ WEATHER=v/420 },
+  /* handles a review needs to reproduce a finding without clicking: the run
+     economy, the undo snapshot, and the two lenses. window.POT exists for
+     exactly this -- driving the thing by hand. */
+  costOf, COST, snap, restore, drawDock, drawMana, startYear,
+  get scar(){ return SCAR }, set scar(v){ SCAR=v; drawLens(); rebuild(); },
+  scarAt, markScar, potBody, readPot,
   get thresh(){ return THRESH }, set thresh(v){ THRESH=v },
   get cap(){ return CAP }, set cap(v){ CAP=v }, carry, SAND,
   get attr(){ return ATTR }, set attr(v){ ATTR=v },
