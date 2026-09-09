@@ -3892,6 +3892,51 @@ function accum(){
   return a;
 }
 let DRAIN=false, ACC=null, ACCMAX=1;
+/* SMOOTHING, AND WHY IT LIVES HERE.
+
+   Two things blink, and both are the rule being read at a bar the world sits
+   exactly on.
+
+   WATER draws in whole 70-unit layers, so a hex holding almost exactly one
+   layer draws a tile on one tick and none on the next as settle nudges it
+   either side. RIVERS pulse by design -- CLAUDE.md has the measurement, 65,
+   13, 65, 13 along a trench -- because in a channel one hex wide alternate
+   tiles pour on alternate ticks. Both were tolerable as a thin stub. Neither
+   is tolerable now there is a waterfall CURTAIN hanging off the same number.
+
+   The note in Harvest already said where this belongs: "smoothing that is the
+   renderer's business, not the rule's". So it is done here, on copies the
+   simulation never reads, and the board stays a pure function of the
+   snapshot. Nothing below this line may be read by anything in the CORE. */
+const WDRAW=new Int16Array(T.length);      /* water layers currently drawn */
+const PDRAW=new Float32Array(T.length);    /* pool, risen at once and decayed away */
+const ODRAW=new Float32Array(T.length*6);  /* per-edge outflow, the same */
+const PUP=0.5, PDOWN=0.06, ODECAY=0.82;
+/* TWO THINGS WERE TRIED FIRST AND BOTH ARE WORTH RECORDING.
+
+   HYSTERESIS -- hold a layer until the pool falls 15% below it. Right for a
+   lake edge trembling on the bar, useless for a river: the documented pulse
+   is 65 units against 13 along a trench, 0.93 of a layer against 0.19, a
+   swing five times the margin. Cut the blinking by 17%.
+
+   RISE-AT-ONCE, DECAY-AWAY. Also 17%, and for a sharper reason: one decay
+   step is 14%, and a pulse that swings a whole layer clears that in a single
+   tick, so the drawn count still fell and rose with it.
+
+   What works is a LOW-PASS FILTER, asymmetric. On the way up it follows in
+   about two ticks, so water that arrives is drawn at once and nothing looks
+   late. On the way down it seeks the MEAN of the pulse over about seventeen,
+   which is the whole point: a hex alternating 2.1 layers and 0.3 settles at
+   the average and stops arguing with itself. When the rain really stops it
+   still empties, over a breath rather than instantly. */
+function drawnLayers(i,pool){
+  PDRAW[i] += (pool-PDRAW[i]) * (pool>PDRAW[i] ? PUP : PDOWN);
+  return WDRAW[i]=Math.floor(PDRAW[i]/LAYER+1e-9);
+}
+function drawnOut(i,k,v){
+  const n=i*6+k, was=ODRAW[n];
+  return ODRAW[n] = v>=was ? v : was*ODECAY;
+}
 
 function tint(t,i,mat){
   if(DRAIN && ACC){
@@ -3977,7 +4022,7 @@ function rebuild(){
       lifeMesh.setMatrixAt(i,M4.compose(P,Q,S));
       lifeMesh.setColorAt(i,lifeTint(t));
     } else hide(lifeMesh,i);
-    const wd = Math.floor(t.pool/LAYER+1e-9)*LAYER;
+    const wd = drawnLayers(i,t.pool)*LAYER;
     if(wd>0) place(water,i,t.x,t.y,g*RISE,(g+wd)*RISE);
     else     hide(water,i);
     /* rivers ride on whatever surface is already showing, so they never
@@ -3985,14 +4030,13 @@ function rebuild(){
     if(RIVERS){
       const y=(g+wd)*RISE+0.012;
       for(let k=0;k<6;k++){
-        const d=t.out[k];
+        const d=drawnOut(i,k,t.out[k]);
         if(d>=RIVER_MIN && ns<MAXSTUB) stub(ns++,t,k,d,y);
         /* and wherever it leaves over a real drop, show the drop */
         if(d<FALL_FLOW || nf>=MAXFALL) continue;
         const j=t.nb[k];
         if(j<0) continue;
-        const u=T[j];
-        const yj=(gnd(j)+Math.floor(u.pool/LAYER+1e-9)*LAYER)*RISE;
+        const yj=(gnd(j)+WDRAW[j]*LAYER)*RISE;
         if(y-yj>=FALL_MIN*RISE) fall(nf++,t,k,d,y,yj);
       }
     }
@@ -4021,6 +4065,12 @@ function rebuild(){
   edgeGeo.attributes.position.needsUpdate=true;
   edgeGeo.computeBoundingSphere();
   slag.instanceMatrix.needsUpdate=true;
+  /* WITHOUT THIS THE SLAG IS WHITE. three.js uploads instanceColor once when
+     it is created and never again unless told, so the very first rebuild
+     after setColorAt showed the right colours and every rebuild after it kept
+     the stale buffer -- and since slag only appears once weathering has run,
+     what the player saw was the untouched default: snow. */
+  if(slag.instanceColor) slag.instanceColor.needsUpdate=true;
   slag.computeBoundingSphere();
   sand.instanceMatrix.needsUpdate=true;
   sand.computeBoundingSphere();
@@ -5422,6 +5472,7 @@ window.POT={T,at,use,tick,settle,rebuild,POWERS,scene,
   KEYS, camKeys, get lockRot(){ return LOCKROT }, set lockRot(v){ LOCKROT=v; drawLock(); },
   falls, get fallCount(){ return falls.count },
   surfaceOf, wouldTake, drawTip, SEEDCARDS, showCodex, WONDER_HOW,
+  WDRAW, PDRAW, ODRAW, drawnLayers, drawnOut,
   HARDNESS, erode, STRATA, stratum, GRANITE, BASALT, LIMESTONE, SHALE, wearsAs,
   fertility, worthOf, FERT, FERT_GAIN, ALLU_FULL, richAs, soil, SOIL_MIN,
   get contrast(){ return CONTRAST }, set contrast(v){ CONTRAST=v },
