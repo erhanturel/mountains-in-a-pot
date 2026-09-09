@@ -1602,10 +1602,56 @@ function wonders(){
   }
   return W;
 }
+/* THE MULTIPLIER IS THE POT, NOT THE POT'S COMPLEXITY
+
+   Bloom was `living worth x (1 + the sum of the Wonders standing)`, and that
+   was right while every Wonder was something the player had dug. On generated
+   terrain the water makes them by itself. Measured across three seeds:
+
+     seed   2 clouds   14 clouds        what stood at 14 clouds
+       42     x1.50      x16.75         lake x5 fall x7 fork x20 delta x5
+        7     x3.00      x22.00         fork x42
+     1337     x7.00      x28.50         lake x7 fall x20 fork x35
+
+   Seed 1337 opened at x7 before the player had done anything, and the Year-1
+   target of 8 fell to a single living hex on six of nine boards. The
+   multiplier had stopped measuring the player and started measuring the seed.
+
+   It is now what the pot has left. Water is the only thing that moves ground,
+   part of what moves goes over the edge for good, and what it uncovers is
+   GRANITE -- which erodes at 0.20x, so within a 15,360-tick run it makes no
+   soil at all. Measured over six Years, the same water offered to each pot at
+   the end, the life a played-out pot can still carry:
+
+     seed      careful (2 clouds)   greedy (14)   at 24 clouds
+       42            161.0             102.7         166.5
+        7            209.2             121.3         112.9
+     1337            180.4             133.5         121.5
+
+   So the cost is already real -- and seed 42's last cell is why it still
+   wants scoring rather than being left to the capacity alone: flood hard
+   enough and every hex becomes a shore, and MOSS roots on bare rock, so a
+   wrecked pot can buy its seats back. The health term closes that.
+
+   IT IS MEASURED AGAINST WHERE THE POT STARTED, not against zero. Seed 42
+   opens with 10 barren hexes and seed 1337 with 152, so an absolute reading
+   would score the seed again -- the exact fault being fixed. Against its own
+   opening every pot starts at 1.00 and falls only by what the player did. */
+let HARD0=-1;
+const hardNow=()=>{ let n=0;
+  for(let i=0;i<T.length;i++){ const m=T[i].mat; if(m===GRANITE||m===BEDROCK) n++; }
+  return n; };
+const markPot=()=>{ HARD0=hardNow(); };
+function health(){
+  if(HARD0<0) return 1;
+  const room=T.length-HARD0;
+  if(room<=0) return 1;
+  return Math.max(0, Math.min(1, 1-(hardNow()-HARD0)/room));
+}
 function harvest(){
-  const W=wonders(), n=worth();
-  let sum=0; for(const k in W) sum+=BONUS[k]*(k==='grove'||k==='fall'||k==='fork'||k==='delta' ? W[k] : 1);
-  return {alive:n, wonders:W, mult:1+sum, bloom:Math.round(n*(1+sum)*10)/10};
+  const W=wonders(), n=worth(), hp=health();
+  return {alive:n, wonders:W, health:hp, bare:Math.max(0,hardNow()-HARD0),
+          mult:hp, bloom:Math.round(n*hp*10)/10};
 }
 
 /* the rain tiles rain, and then everything sheds once */
@@ -3024,6 +3070,10 @@ function serialise(){
     sed:T.map(t=>round(t.sed)),   sand:T.map(t=>round(t.sand)),
     wear:T.map(t=>round(t.wear)), grit:T.map(t=>round(t.grit)), out,
     life:T.map(t=>t.life|0), ticks:TICKS,
+    /* the pot's opening barren count. Health is measured against where THIS
+       pot started, so without it a saved board would reopen at 1.00 and hand
+       back everything the player spent. */
+    hard0:HARD0,
     knobs:{weather:WEATHER, shield:SHIELD, thresh:THRESH, cap:CAP,
            attr:ATTR, mob:MOB, abrade:ABRADE}
   });
@@ -3042,6 +3092,7 @@ function apply(d){
     T[i].life=(d.life&&d.life[i])|0; if(T[i].life===1) T[i].life=SEED;   /* older saves: 1 meant grass */
     for(let k=0;k<6;k++) T[i].out[k]=(d.out&&d.out[i*6+k])||0;
   }
+  if(typeof d.hard0==='number') HARD0=d.hard0;
   if(d.knobs){ WEATHER=d.knobs.weather; THRESH=d.knobs.thresh; CAP=d.knobs.cap;
                ATTR=d.knobs.attr; MOB=d.knobs.mob;
                if(d.knobs.abrade!==undefined) ABRADE=d.knobs.abrade;
@@ -3375,6 +3426,7 @@ document.getElementById('lockBtn').onclick=()=>{ LOCKROT=!LOCKROT; drawLock(); }
 function freshPot(){
   if(FLAT){ for(let i=0;i<T.length;i++) raise(i,SLAB,ROCK); START_H=1; }
   else { genPot(RUNSEED); START_H=Math.max(...T.map(t=>t.h)); }
+  markPot();   /* the barren ground the pot came with, so health starts at 1.00 */
   /* 0.10 units/tick, and it is now a rate for WET ground -- the dry parts of
      the board weather at 0.15 of it. Measured over one run on a hill falling
      to a plain: the slope holds 1.7 courses and the plain 3.3, and 215 hexes
@@ -3398,7 +3450,27 @@ function freshPot(){
    levers it already has: RAIN_MULT, FLOOD_TOL, BONUS, and the powers.
 
    The run seed fixes what the shop offers; nothing else is random. */
-const TARGETS=[8,15,25,40,60,90,130,180];
+/* PROVISIONAL, and marked so. The old curve was calibrated against
+   `worth x (1 + the Wonders)`, a number that grew all run because the Wonders
+   accumulated. Bloom is now `worth x the pot's health`, which PLATEAUS -- a
+   pot has a carrying capacity -- so a curve climbing to 180 was unreachable
+   by construction.
+
+   Measured on the budget a person actually has, three sows a Year placed
+   where they have room to spread, over eight Years and three seeds:
+
+     seed  clouds   bloom by Year
+       42       3     7  11  15  15  23  37  67  66     too little water
+       42       8    87 115 106 114 112 107 108 116
+        7       3    49 100 117 113 155 157 147 154     the best run seen
+        7      16    56  90  84  74  74  65  60  58     greed, punished
+     1337       8    34  65  73  72  64  55  77  78
+
+   A good run sits 110-155 and a spent one 17-75, so the curve tops out at
+   110. It is still a bot's reading and the bar is soft -- a miss costs that
+   Year's dew and nothing else -- so this wants a human run before it is
+   called tuned. */
+const TARGETS=[8,20,35,50,65,80,95,110];
 /* MANA LANDS ON RAIN AND NOTHING ELSE.
    Two limits were running at once and only one of them was real. Digging,
    raising and sowing cost mana, which is a number from outside the
@@ -3540,10 +3612,13 @@ function harvestRows(h,now){
   let rows='<div class="row"><span>Life</span><span>'+life1(h.alive)+'</span></div>';
   for(const k of Object.keys(BONUS)) if(now.has(k)){
     const n=h.wonders[k], b=BONUS[k]*(per[k]?n:1);
-    rows+='<div class="row w"><span>'+WONDER_NAMES[k]+(n>1?'<i>×'+n+'</i>':'')+'</span><span>+'+b.toFixed(2).replace(/\.?0+$/,'')+'</span></div>';
+    rows+='<div class="row w"><span>'+WONDER_NAMES[k]+(n>1?'<i>×'+n+'</i>':'')+'</span><span>stands</span></div>';
   }
   if(!now.size) rows+='<div class="row"><span style="color:#4d5561">No Wonders yet</span><span></span></div>';
-  rows+='<div class="row"><span>Multiplier</span><span>×'+h.mult.toFixed(2).replace(/\.?0+$/,'')+'</span></div>';
+  /* the Wonders are listed because they are what the Omen asks for and what
+     the Codex remembers. They no longer multiply -- see harvest(). */
+  rows+='<div class="row"><span>The pot'+(h.bare?'<i> — '+h.bare+' hexes worn to stone</i>':'')+
+        '</span><span>×'+h.health.toFixed(2)+'</span></div>';
   rows+='<div class="row total"><span>Bloom</span><span>'+h.bloom+'</span></div>';
   return rows;
 }
@@ -4209,6 +4284,7 @@ window.POT={T,at,use,tick,settle,rebuild,POWERS,scene,
   surfaceOf, wouldTake, drawTip, SEEDCARDS, showCodex, WONDER_HOW,
   WDRAW, PDRAW, ODRAW, drawnLayers, drawnOut,
   HARDNESS, erode, STRATA, stratum, GRANITE, BASALT, LIMESTONE, SHALE, wearsAs,
+  health, hardNow, markPot,
   genPot, GEN, fbm, vnoise, hashf, highest,
   fertility, worthOf, FERT, FERT_GAIN, ALLU_FULL, richAs, soil, SOIL_MIN, wetAt, DRY,
   clumped, draining, underFall, growQuick, CLUMP_MIN,

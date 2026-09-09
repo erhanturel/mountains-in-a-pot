@@ -145,7 +145,48 @@ After this block the game stops resembling anything on the market.
 
 ## D · Where a pot comes from
 
-- [ ] **D1 · Terrain generator that uses our own erosion engine.** Noise, then
+**D came before C, and the measurement is why.** On the flat disc every run
+opened on, as a player meets it: relief 0.00 elevations, 1 of 5 rocks
+exposed, 1 of 11 biomes present, temperature range 0.0 C. So the whole of
+block B was invisible on the board people play, and C would have multiplied
+by zero -- `lift = max(0, z - zUpwind)` is 0 on a plain and so is
+`lapse x elevation`. Building climate first would have been machinery with
+no terrain to act on.
+
+- [x] **D1 · Terrain generator that uses our own erosion engine.** Relief from
+  hashed value noise, valleys cut by the shipping engine. Measured: relief
+  **7.33-10.17** elevations, **4 of 5** rocks exposed (the fifth is bedrock,
+  which has no business at the surface), 3 of 11 biomes on a dry pot, dT
+  **11.7-16.3 C**, and **241-439 courses** of soil laid down by real
+  transport. Deterministic: the same seed generated three times gives
+  byte-identical boards. Tuned against the obvious guess -- heavy weathering
+  during the cut puts the soil on the RIDGES (2.08 courses against a valley's
+  0.39, backwards), so the relief comes from the noise and the erosion is
+  kept light: ridge **0.01**, valley **1.93**, 147 of 469 hexes carrying a
+  course. The range is -7 to 7 and the post-erosion floor is -4.0, so every
+  hex is still diggable. `?flat=1` keeps the old disc.
+- [x] **D1b · The pot is a body, and the score says so.** D1 broke the Bloom
+  formula and that had to be fixed before anything could ship. `worth x (1 +
+  the Wonders)` was calibrated on hand-dug pots where a Lake was an
+  achievement; on real terrain the water makes them itself -- fork x42 -- so
+  the multiplier ran **x1.5 to x28.5 by seed** and seed 1337 opened at x7
+  before the player moved. Bloom is now **`worth x the pot's health`**, where
+  health is 1 minus the share of workable ground the PLAYER turned to
+  granite, measured against that pot's own opening so every seed starts at
+  1.00. Measured over a run: careful play **rises** 88 -> 118 at health 0.89,
+  greedy play **falls** 93 -> 54 at health 0.57. Targets retuned to
+  8/20/35/50/65/80/95/110 and marked provisional -- the old curve climbed to
+  180 for a number that grew, and Bloom now plateaus.
+- [x] **D1c · The Chronicle.** Erosion is the one thing that happens *to* the
+  player and nothing said it was happening. A feed beside the board reads the
+  pot every half Season against the last read -- granite showing, courses
+  gone over the edge, soil settling, dieback. Pure UI; the CORE stores
+  nothing for it. Three sweeps looked for a knob to make the loss bite harder
+  and none keeps the decision: weathering 0.10 -> 0.35 lifts a careless run
+  13.2% -> 19.9% but a careful one 0.25% -> 0.52%, so the contrast falls 53x
+  -> 38x; transport moves it only to 17.5%; abrasion does not move it at all.
+  The physics already gives the widest gap; only the seeing was missing.
+- [ ] **D1-old · Terrain generator** (superseded, kept for the wording) Noise, then
   a few thousand ticks of rain and erosion, and the valleys are real because
   they were actually cut. Most games use noise plus painted biomes; this one
   can afford the truth, and the engine is already written.
