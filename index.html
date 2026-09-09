@@ -1185,6 +1185,24 @@ const holdsBack=i=>{
 /* per-PULSE bookkeeping for travelling seeds. 0 free, 1 this patch has sent
    one already, 2 grown this pulse and so may not send. Cleared at each
    release, which is what "per pulse" means. */
+/* DORMANT SEEDS, and this is a prerequisite rather than a nicety. The whole
+   prepare-then-release shape asks the player to plant BEFORE the rain, and
+   rule 6 refuses a seed on dry ground -- so without this a player literally
+   cannot sow during a prepare phase, and every plan has to be written as
+   "release, then sow", which throws away the anticipation the structure is
+   for. A sown seed now waits where it was put and takes when the water
+   arrives. It never dies of waiting: it is a seed, not a shoot. */
+const SOWN=new Uint8Array(T.length);
+const sowDormant=(i,kind)=>{ if(!EXP_A) return 0;
+  if(T[i].life) return 0; SOWN[i]=kind; return 1; };
+function wake(){
+  if(!EXP_A) return;
+  for(let i=0;i<T.length;i++){
+    if(!SOWN[i] || T[i].life) continue;
+    if(habit(i,SOWN[i])!=='habitable') continue;
+    T[i].life=SOWN[i]; SOWN[i]=0;
+  }
+}
 const SEEDFLAG=new Uint8Array(T.length);
 let TRAVELLED=0;                 /* how many seeds moved, for the event log */
 const seedReset=()=>{ SEEDFLAG.fill(0); TRAVELLED=0; };
@@ -1581,7 +1599,7 @@ function tick(){
   weather();
   carry();                      /* slag last, so what just broke loose can move */
   TICKS++;
-  if(TICKS%LIFE_EVERY===0){ grow(); travel(); }   /* life, on its own slower clock */
+  if(TICKS%LIFE_EVERY===0){ wake(); grow(); travel(); }   /* life, on its own slower clock */
   else if(UP_FLOOD||UP_CASCADE) growQuick();   /* and where an upgrade says now */
 }
 
@@ -3983,7 +4001,7 @@ window.POT={T,at,use,tick,settle,rebuild,POWERS,scene,
   HARDNESS, erode, STRATA, stratum, GRANITE, BASALT, LIMESTONE, SHALE, wearsAs,
   fertility, worthOf, FERT, FERT_GAIN, ALLU_FULL, richAs, soil, SOIL_MIN, wetAt, DRY,
   clumped, draining, underFall, growQuick, CLUMP_MIN,
-  holdsBack, travel, seedReset, SEEDFLAG, LEAK_BASE,
+  holdsBack, travel, seedReset, SEEDFLAG, LEAK_BASE, SOWN, sowDormant, wake,
   get expA(){ return EXP_A }, set expA(v){ EXP_A=v },
   get trReed(){ return TR_REED }, set trReed(v){ TR_REED=v },
   get trTravel(){ return TR_TRAVEL }, set trTravel(v){ TR_TRAVEL=v },
