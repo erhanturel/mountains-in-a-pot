@@ -3662,6 +3662,91 @@ function use(i,p,rad,n,m){
   tick();                       /* every action is a tick: the weather runs */
   return true;
 }
+
+/* ================= D1 · A POT IS GROWN, NOT LAID DOWN ==================
+   Every run opened on the same flat disc of rock. Measured on that disc, as
+   a player meets it: ONE of five rocks exposed, ONE of eleven biomes
+   present, 0.00 elevations of relief and a temperature range of 0.0 C. A
+   whole block of work was invisible, and the climate block would have
+   multiplied by zero -- `lift = max(0, z - zUpwind)` is 0 on a plain.
+
+   Two properties govern how a generator is allowed to work here.
+
+   NOISE GIVES THE RELIEF; THE ENGINE CUTS THE VALLEYS. Terrain generators
+   normally lay down noise and paint biomes onto it. We already own an
+   erosion engine that weathers rock by its hardness, carries the debris down
+   the water's own routing and drops it where the stream power falls off --
+   so the generator runs it. The valleys are real because they were cut, the
+   strata show on the ridges because they were worn through, and the flats
+   are fertile because the fans were actually deposited there.
+
+   IT IS A HASH, NOT A STREAM. A hex's height is hashed from its own axial
+   coordinates, so it cannot depend on the order the hexes are visited. A
+   PRNG stream would make the board a function of the loop -- the exact class
+   of order-dependence this project has been burnt by twice. Same seed, same
+   pot, whatever else happened first. */
+const hashf=(x,y,s)=>{
+  let h=Math.imul(x|0,73856093)^Math.imul(y|0,19349663)^Math.imul(s|0,83492791);
+  h=Math.imul(h^h>>>13,1274126177); h^=h>>>16;
+  return (h>>>0)/4294967296; };
+const ease=t=>t*t*(3-2*t);
+/* value noise on a lattice, sampled in axial space */
+function vnoise(x,y,s){
+  const x0=Math.floor(x), y0=Math.floor(y), fx=ease(x-x0), fy=ease(y-y0);
+  const a=hashf(x0,y0,s), b=hashf(x0+1,y0,s), c=hashf(x0,y0+1,s), d=hashf(x0+1,y0+1,s);
+  const lo=a+(b-a)*fx, hi=c+(d-c)*fx;
+  return lo+(hi-lo)*fy; };
+function fbm(x,y,s,oct){
+  let v=0, amp=1, tot=0, f=1;
+  for(let k=0;k<oct;k++){ v+=amp*vnoise(x*f,y*f,s+k*1013); tot+=amp; amp*=0.5; f*=2; }
+  return v/tot; };
+
+/* Tuned by measurement, not by eye. The tension the sweep found: heavy
+   weathering during the cut gives deep relief but leaves the debris lying on
+   the RIDGES (ridge 2.08 courses against a valley's 0.39 -- exactly backwards),
+   because weathering makes soil in place and the shield stops it before the
+   water can take it away. So the relief comes from the noise and the erosion
+   is kept light, which inverts it: ridge 0.01, valley 1.93.
+
+   The range is -7 to 7 and the floor after erosion comes out at -4.0, so
+   every hex on the board can still be dug -- a valley floor resting on the
+   bedrock at -6 would be dead ground, and digging is the first verb. */
+const GEN={ scale:5.5, oct:3, lo:-7, hi:7, clouds:14, cut:2000, wear:0.15/420, calm:400 };
+
+/* where the rain falls while the pot is being cut: the highest ground, which
+   is where it falls on a real range. Ties broken by index so the choice is a
+   function of the board and not of the sort. */
+function highest(n){
+  const o=T.map((t,i)=>i);
+  o.sort((a,b)=> (T[b].h-T[a].h) || (a-b));
+  return o.slice(0,n); }
+
+function genPot(seed){
+  const s=(seed|0)||1, W=WEATHER;
+  /* 1 · the relief. The strata are re-laid the whole depth of every stack
+     and the column is then cut back to its surface, so which rock a hex
+     shows is decided by how high it stands -- not by anything stored. */
+  for(let i=0;i<T.length;i++){
+    const t=T[i], b=i*ZN;
+    for(let z=0;z<ZN;z++) CELL[b+z]=stratum(zBot(z));
+    const n=fbm(t.q/GEN.scale, t.r/GEN.scale, s, GEN.oct);
+    setTop(i, Math.round(GEN.lo+n*(GEN.hi-GEN.lo)));
+    t.pool=0; t.sed=0; t.sand=0; t.wear=0; t.grit=0; t.life=0;
+    for(let k=0;k<6;k++) t.out[k]=0;
+    t.flow=0; }
+  /* 2 · the engine cuts it */
+  WEATHER=GEN.wear;
+  for(const i of highest(GEN.clouds)) addCloud(i,3);
+  for(let n=0;n<GEN.cut;n++) tick();
+  for(let i=0;i<T.length;i++) delCloud(i,CLOUD_MAX);
+  for(let n=0;n<GEN.calm;n++) tick();
+  WEATHER=W;
+  /* 3 · the water is the player's to bring. What the pot keeps is the SHAPE
+     and the SOIL the water made; leaving the lakes behind would hand out
+     Bloom nobody earned. */
+  for(let i=0;i<T.length;i++){ const t=T[i];
+    t.pool=0; t.flow=0; for(let k=0;k<6;k++) t.out[k]=0; }
+  return s; }
 /*==CORE-END==*/
 
 /* ======================================================================
@@ -4683,7 +4768,7 @@ function drawClock(){
 function drawRates(){
   document.getElementById('time').innerHTML=
     '<button data-a="t">tick</button>'+
-    '<button data-a="h">harvest</button>'+
+    '<button data-a="h">reading</button>'+
     '<button class="go'+(PAUSED?' on':'')+'" data-a="p">'+(PAUSED?'paused':'pause')+'</button>'+
     RATES.map(r=>'<button class="'+(r===STEP?'on':'')+'" data-r="'+r+'">'+r+'×</button>').join('');
   document.querySelectorAll('#time button').forEach(b=>b.onclick=()=>{
@@ -5227,9 +5312,17 @@ document.getElementById('lockBtn').onclick=()=>{ LOCKROT=!LOCKROT; drawLock(); }
    very end of the file and draws it there. */
 /* a fresh pot for a player: a step of rock on the bedrock, and weathering
    that shows within a Season */
+/* A pot is GENERATED from the run seed, unless `?flat=1` asks for the old
+   disc -- kept so the two can be compared rather than argued about, the same
+   way `?mana=free` and `?bar=hard` are kept.
+
+   START_H is the ground the player found rather than a constant, because it
+   is what the *raise* unlock is measured against: on a flat disc anything
+   above 1 was clearly the player's doing, and on a range it has to be the
+   highest ground the pot came with. */
 function freshPot(){
-  for(let i=0;i<T.length;i++) raise(i,SLAB,ROCK);
-  START_H=1;
+  if(FLAT){ for(let i=0;i<T.length;i++) raise(i,SLAB,ROCK); START_H=1; }
+  else { genPot(RUNSEED); START_H=Math.max(...T.map(t=>t.h)); }
   /* 0.10 units/tick, and it is now a rate for WET ground -- the dry parts of
      the board weather at 0.15 of it. Measured over one run on a hill falling
      to a plain: the slope holds 1.7 courses and the plain 3.3, and 215 hexes
@@ -5292,6 +5385,7 @@ let FREE_MANA=new URLSearchParams(location.search).get('mana')==='free';
    ?bar=hard puts the old fail state back, so the two can be compared rather
    than argued about. */
 const HARD_BAR=new URLSearchParams(location.search).get('bar')==='hard';
+const FLAT=new URLSearchParams(location.search).get('flat')==='1';
 const RUNSEED=(+new URLSearchParams(location.search).get('seed'))||((Date.now()/1000|0)%100000);
 const mulberry=a=>()=>{ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; };
 /* eslint-disable-next-line no-var-assign */
@@ -5411,7 +5505,7 @@ function showHarvest(atYearEnd){
   if(h.bloom>BEST){ BEST=h.bloom; localStorage.setItem('potBest',BEST); }
   const el=card();
   if(!atYearEnd){
-    el.innerHTML='<h3>Harvest</h3><div class="sub">A reading of the pot as it stands.</div>'+harvestRows(h,now)+
+    el.innerHTML='<h3>The Reading</h3><div class="sub">The pot as it stands.</div>'+harvestRows(h,now)+
       '<div class="best">best '+BEST+'</div>'+codexGrid(now)+'<button>Back</button>';
     el.querySelector('button').onclick=()=>{ document.getElementById('harvest').classList.remove('show'); };
     document.getElementById('harvest').classList.add('show'); return;
@@ -5437,7 +5531,7 @@ function showHarvest(atYearEnd){
   const verdict = ends
     ? (HARD_BAR && !ok ? 'The pot rests.' : 'Eight Years. A world.')
     : 'The pot goes on.' + (dew ? ' +'+dew+' dew.' : ' No dew this Year.');
-  el.innerHTML='<h3>Year '+RUN.year+' · Harvest</h3><div class="sub">The Year turns. What stands, counts.</div>'+
+  el.innerHTML='<h3>Year '+RUN.year+' · The Reading</h3><div class="sub">The Year turns. What stands, counts.</div>'+
     omenBar+
     harvestRows(h,now)+
     '<div class="row soft '+(ok?'ok':'miss')+'"><span>Target '+target+'</span><span>'+
@@ -5501,7 +5595,7 @@ function omensFor(year,roll){
 /* the Year is chosen, then begun */
 function showOmens(){
   const o=omensFor(RUN.year,ROLL), el=card();
-  el.innerHTML='<h3>Year '+RUN.year+'</h3><div class="sub">Gaia asks for one thing. Choose it, and the Harvest pays.</div>'+
+  el.innerHTML='<h3>Year '+RUN.year+'</h3><div class="sub">Gaia asks for one thing. Choose it, and the Reading pays.</div>'+
     '<div class="offers omens">'+o.map((m,i)=>
       '<div class="offer"><b>'+m.ask+'</b><span>'+m.how+'</span><span class="p">+'+m.dew+' dew</span>'+
       '<button data-i="'+i+'">Take</button></div>').join('')+'</div>'+
@@ -5966,6 +6060,7 @@ window.POT={T,at,use,tick,settle,rebuild,POWERS,scene,
   surfaceOf, wouldTake, drawTip, SEEDCARDS, showCodex, WONDER_HOW,
   WDRAW, PDRAW, ODRAW, drawnLayers, drawnOut,
   HARDNESS, erode, STRATA, stratum, GRANITE, BASALT, LIMESTONE, SHALE, wearsAs,
+  genPot, GEN, fbm, vnoise, hashf, highest,
   fertility, worthOf, FERT, FERT_GAIN, ALLU_FULL, richAs, soil, SOIL_MIN, wetAt, DRY,
   clumped, draining, underFall, growQuick, CLUMP_MIN,
   holdsBack, travel, seedReset, SEEDFLAG, LEAK_BASE, SOWN, sowDormant, wake,
