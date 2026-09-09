@@ -150,9 +150,13 @@ After this block the game stops resembling anything on the market.
 
 ## Open questions, still unanswered
 
-1. **How long should a run be?** Eight Years is 32 minutes at 1× today.
-   Separating the timescales lengthens it. 45 minutes, 90, or "it does not
-   end, I save and come back"? This decides how many Years there are.
+1. ~~How long should a run be?~~ **ANSWERED: 30 minutes.** Set by the clock
+   (`BASE_RATE` 6 → 8.5), not by the Season length — shortening the Season in
+   ticks would move every process relative to it and invalidate the Bloom
+   targets that A1 was careful to keep. Eight Years is 15,360 ticks; at 8.5 a
+   second that is **30.1 minutes**. Verified: the Seasons column is unchanged
+   to two decimals (0.18 / 0.50 / 2.92, spread 16.47×) and only wall time
+   moved — a bowl fills in 10s instead of 14, a Season is 56s instead of 80.
 2. **The bigger reframe, still on the table:** clouds you cannot place, only
    a wind direction you choose — so shaping the land is the *only* way to
    move water, and every Wonder becomes a puzzle instead of a placement.

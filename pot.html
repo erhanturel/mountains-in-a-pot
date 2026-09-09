@@ -4080,7 +4080,17 @@ function drawMenu(){
    does not move. Weathering is the one that really slows: soil is now a
    thing the land does over a Year, not over a Season, which is what makes
    Moss the early game and Grass the reward for lasting. */
-const BASE_RATE=6;               /* ticks a second at 1x */
+/* THE RUN IS THIRTY MINUTES, and this constant is the only thing that says
+   so. Eight Years is 15,360 ticks; at 8.5 a second that is 30.1 minutes.
+
+   The clock is the right lever rather than the Season length. Shortening the
+   Season in TICKS would move every process relative to it -- life would take
+   more Seasons, and the Bloom targets, which were kept valid through A1
+   precisely by tuning in Seasons rather than in ticks, would stop meaning
+   what they mean. Speeding the clock changes wall time and nothing else:
+   every measurement in *The timescales, spread apart* still holds tick for
+   tick, and the 16.5x spread is untouched. */
+const BASE_RATE=8.5;             /* ticks a second at 1x -- 30 min a run */
 const SEASON_TICKS=480, SEASONS=['Spring','Summer','Autumn','Winter'];
 let STEP=1, PAUSED=false, acc=0;
 /* 1, 3, 10, 30 were three-fold jumps, which is why there was never a
