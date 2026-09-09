@@ -277,6 +277,30 @@
   @keyframes tok{0%{box-shadow:0 0 0 0 rgba(232,194,116,.45)}
                  70%{box-shadow:0 0 0 16px rgba(232,194,116,0)}
                  100%{box-shadow:0 0 0 0 rgba(232,194,116,0)}}
+  /* THE LAB. A prototype mode, deliberately its own HUD: prepare, release,
+     read. It reuses the board, the tools and the Harvest card and nothing
+     else, so it cannot destabilise the run it sits beside. */
+  #lab{position:absolute;left:50%;top:14px;transform:translateX(-50%);display:none;z-index:4;
+    font-family:system-ui,sans-serif;text-align:center;pointer-events:none}
+  body.lab #lab{display:block}
+  /* the run's own HUD stands down: the lab has one goal and one button, and
+     a Year clock beside them is furniture from another game */
+  body.lab #hintline, body.lab #mana, body.lab #clock, body.lab #token,
+  body.lab #bloom{display:none !important}
+  #lab .phase{font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:#8fb6c8}
+  #lab .goal{font-family:Georgia,serif;font-size:19px;color:#f4ecd8;margin-top:2px}
+  #lab .prog{display:flex;gap:7px;justify-content:center;margin-top:7px}
+  #lab .prog span{font-size:11px;padding:3px 11px;border-radius:9px;
+    background:rgba(18,20,28,.75);border:1px solid rgba(255,255,255,.1);color:#8b929c}
+  #lab .prog span.met{background:rgba(166,217,106,.16);border-color:#a6d96a;color:#c6e8a0}
+  #labgo{position:absolute;left:50%;bottom:126px;transform:translateX(-50%);display:none;z-index:4}
+  body.lab #labgo.show{display:block}
+  #labgo button{font-family:Georgia,serif;font-size:19px;padding:13px 30px;border-radius:28px;
+    border:1px solid #7fd4f2;background:linear-gradient(180deg,#17323f,#0f2029);color:#cdeaf6;
+    cursor:pointer;box-shadow:0 0 26px rgba(127,212,242,.25)}
+  #labgo button:hover{transform:translateY(-2px)}
+  #harvest .ups{display:grid;grid-template-columns:1fr;gap:8px;margin:14px 0}
+  #harvest .ups .offer{text-align:left}
   #hand{position:absolute;left:50%;bottom:122px;transform:translateX(-50%);display:none;gap:8px;z-index:3}
   body.play #hand.show{display:flex}
   #hand button{border:1px solid #3a3d4a;background:#1b1d26;color:#c9c1ae;border-radius:14px;padding:6px 12px;
@@ -324,7 +348,8 @@
     <div class="board-col">
       <div id="board"><div id="info"></div><div id="time"></div><div id="clock"></div><div id="bloom"></div>
         <div id="hintline"></div><div id="dock"></div><div id="lens"></div><div id="hand"></div>
-        <div id="token" class="token"></div><div id="speed"></div><div id="tip"></div><div id="mana"></div>
+        <div id="token" class="token"></div>
+        <div id="lab"></div><div id="labgo"></div><div id="speed"></div><div id="tip"></div><div id="mana"></div>
         <div id="corner"><button id="benchBtn"></button><button id="codexBtn">✦ Codex</button>
           <button id="manaBtn"></button><button id="lockBtn"></button></div>
         <div id="flash"></div><div id="strikeCap"></div>
@@ -3071,6 +3096,43 @@ const fertility=i=>{
 const KINDS={[SEED]:'grass',[MOSS]:'moss',[REED]:'reed'};
 const WORTH={[SEED]:1,[MOSS]:0.5,[REED]:1};
 let FLOOD_TOL=0;
+/* THE THREE UPGRADES REACH THE SIMULATION HERE, and nowhere else. Each is one
+   clause on a rule the board already has, and each changes a DECISION rather
+   than a number:
+
+     ROOT NETWORK   plant in clumps instead of scattering, because a clump
+                    survives being flooded and a lone shoot does not
+     FERTILE FLOOD  flood a planted basin and then DRAIN it, because ground
+                    that is draining takes root at once instead of in forty
+                    ticks
+     CASCADE        build the river as steps instead of a smooth channel,
+                    because the pool under a fall roots at once and is fed
+
+   None of them multiplies a score. If an upgrade could be described as
+   "+50% something" it does not belong in this set. */
+let UP_ROOTS=false, UP_FLOOD=false, UP_CASCADE=false;
+/* a hex is CLUMPED when enough of its neighbours are alive to hold the bank */
+const CLUMP_MIN=3;
+function clumped(i){
+  const nb=T[i].nb; let n=0;
+  for(let k=0;k<6;k++){ const j=nb[k]; if(j>=0 && T[j].life) n++; }
+  return n>=CLUMP_MIN;
+}
+/* DRAINING: wet, but no longer under water, and with something to root in.
+   That is what "newly exposed after flooding" is, read off the board rather
+   than remembered -- a hex holding a film of water it has not shed yet. */
+const draining=i=>{ const t=T[i]; return t.pool>1e-9 && t.pool<LAYER && soil(i)>=SOIL_MIN-1e-9; };
+/* UNDER A FALL: some neighbour stands two steps higher and is pouring in. */
+function underFall(i){
+  const nb=T[i].nb, g=gnd(i);
+  for(let k=0;k<6;k++){
+    const j=nb[k]; if(j<0) continue;
+    if(gnd(j)-g<2) continue;
+    const o=T[j].out;
+    for(let e=0;e<6;e++) if(T[j].nb[e]===i && o[e]>=RIVER_MIN/3) return true;
+  }
+  return false;
+}
 const under=(i,tiles)=>T[i].pool<LAYER*(tiles+1)-1e-9;
 const riverEdge=i=>{ const o=T[i].out; for(let k=0;k<6;k++) if(o[k]>=RIVER_MIN) return true; return false; };
 function damp(i){
@@ -3086,7 +3148,8 @@ function damp(i){
    shows it, because a seed that does not take needs to say why */
 function habit(i,kind){
   kind=kind||SEED;
-  const tol = kind===REED ? 1 : kind===SEED ? FLOOD_TOL : 0;
+  let tol = kind===REED ? 1 : kind===SEED ? FLOOD_TOL : 0;
+  if(UP_ROOTS && kind!==REED && clumped(i)) tol=Math.max(tol,1);
   if(!under(i,tol)) return 'drowned';
   if(kind!==MOSS && soil(i)<SOIL_MIN-1e-9) return 'bare';
   if(!drowned(i) && !damp(i)) return 'dry';       /* standing in water is in reach of it */
@@ -3100,6 +3163,32 @@ const habitable=(i,kind)=>habit(i,kind)==='habitable';
    hex's six neighbours for their six edges. Read the two per-hex facts once
    into scratch, and only look at hexes that are alive or beside something
    alive, since nothing else can change. */
+/* GROWQUICK is the upgrades' own clock. Life steps once in forty ticks; these
+   two say "not here, here it is now", so this runs on the other thirty-nine
+   and touches only the hexes they name. It spreads and never kills -- dying
+   stays on life's own clock, so an upgrade can only ever be a gift.
+
+   It reads WAS from the last full grow() rather than the live board, for the
+   same reason grow() does: two hexes must not be able to see each other move
+   inside one tick. */
+let QUICK_FLOOD=0, QUICK_CASCADE=0;      /* what the last round's chain did */
+function growQuick(){
+  const n=T.length;
+  for(let i=0;i<n;i++) WAS[i]=T[i].life;
+  for(let i=0;i<n;i++){
+    if(WAS[i]) continue;
+    const nb=T[i].nb;
+    let near=0;
+    for(let k=0;k<6;k++){ const j=nb[k]; if(j>=0 && WAS[j]){ near=WAS[j]; break; } }
+    if(!near) continue;
+    const byFlood=UP_FLOOD && draining(i);
+    const byFall =UP_CASCADE && underFall(i);
+    if(!byFlood && !byFall) continue;
+    if(habit(i,near)!=='habitable') continue;
+    T[i].life=near;
+    if(byFlood) QUICK_FLOOD++; else QUICK_CASCADE++;
+  }
+}
 const WAS=new Uint8Array(T.length), DRN=new Uint8Array(T.length), EDGE=new Uint8Array(T.length);
 function grow(){
   const n=T.length;
@@ -3112,7 +3201,10 @@ function grow(){
       if(DRN[j]||EDGE[j]) wet=1; }
     if(!WAS[i] && !near) continue;               /* nothing here can change */
     const kind=WAS[i]||near;
-    const tol = kind===REED ? 1 : kind===SEED ? FLOOD_TOL : 0;
+    let tol = kind===REED ? 1 : kind===SEED ? FLOOD_TOL : 0;
+    if(UP_ROOTS && kind!==REED){ let c=0;
+      for(let k=0;k<6;k++){ const j=nb[k]; if(j>=0 && WAS[j]) c++; }
+      if(c>=CLUMP_MIN) tol=Math.max(tol,1); }
     const ok = under(i,tol) && wet===1 && (kind===MOSS || soil(i)>=SOIL_MIN-1e-9);
     T[i].life = ok ? kind : 0;
   }
@@ -3378,6 +3470,7 @@ function tick(){
   carry();                      /* slag last, so what just broke loose can move */
   TICKS++;
   if(TICKS%LIFE_EVERY===0) grow();   /* life, on its own slower clock */
+  else if(UP_FLOOD||UP_CASCADE) growQuick();   /* and where an upgrade says now */
 }
 
 /* ERASE is the mirror of PLACE, and like Place it is driven by the palette:
@@ -4474,6 +4567,7 @@ setInterval(()=>{
       if(RUN.mana<m){ RUN.mana=Math.min(m,RUN.mana+due); if(PLAY){ drawMana(); drawDock(); } } }
   }
   if(n) advance(n);
+  if(LAB) for(let k=0;k<n;k++) labStep();
 },100);
 function setPause(on){ PAUSED=on; drawRates(); }
 function drawClock(){
@@ -5595,6 +5689,159 @@ function fx(dt){
 }
 setInterval(()=>{ if(PLAY){ checkUnlocks(); checkWhim(); } },500);
 
+/* =====================================================================
+   THE LAB -- prepare, release, read.
+
+   A prototype of the shape the design brief asks for, kept beside the run
+   rather than replacing it, so both can be played and compared. One pot,
+   three rain rounds, three upgrades offered as a fixed choice.
+
+   The point is not the numbers. It is whether a person can PLAN a chain,
+   ARM it, watch it fire, and understand why it worked. Everything here
+   serves that: the rain is a pulse you release rather than weather you wait
+   through, the upgrades change what shape you build rather than what a
+   number multiplies, and the round ends with a readout of what each one
+   actually did.
+
+   Measured before any of it was built: a 300-tick pulse plus its settle is
+   about 500 ticks, seven seconds at 8x, and moves soil on ~150 hexes and
+   the biome on ~120. That was the feasibility question and it passed. */
+const LAB=new URLSearchParams(location.search).get('lab')==='1';
+const LAB_ROUNDS=3, RAIN_TICKS=300, SETTLE_MAX=900, QUIET=LAYER/20;
+const LAB_SHORE=5;               /* living hexes on a shore, per sector */
+const UPS={
+  roots:  {nm:'Root Network',
+           d:'A plant with three living neighbours stands one tile of flooding. Alone, it drowns.',
+           w:'Plant in clumps, not in lines.'},
+  flood:  {nm:'Fertile Flood',
+           d:'Ground that is draining -- wet, no longer under water, with soil in it -- takes root at once instead of in forty ticks.',
+           w:'Flood a planted bowl, then cut the outlet and let it fall.'},
+  cascade:{nm:'Cascade',
+           d:'The pool under a waterfall takes root at once.',
+           w:'Build the river as steps, not as a ramp.'},
+};
+const LAB2={round:1, phase:'prepare', ups:[], ticks:0, log:null, over:false};
+/* three separated parts of the pot, by the angle from the middle */
+const sector=i=>{ const t=T[i];
+  const a=Math.atan2(t.y,t.x)+Math.PI;
+  return Math.min(2,Math.floor(a/(Math.PI*2)*3)); };
+/* a LIVING SHORE: something alive with open water beside it */
+function shores(){
+  const n=[0,0,0];
+  for(let i=0;i<T.length;i++){
+    if(!T[i].life) continue;
+    let wet=false;
+    for(const j of T[i].nb) if(j>=0 && drowned(j)){ wet=true; break; }
+    if(wet) n[sector(i)]++;
+  }
+  return n;
+}
+const labWon=()=>shores().every(v=>v>=LAB_SHORE);
+
+function drawLab(){
+  const el=document.getElementById('lab'), go=document.getElementById('labgo');
+  if(!LAB){ go.classList.remove('show'); return; }
+  const sh=shores();
+  el.innerHTML='<div class="phase">Round '+LAB2.round+' of '+LAB_ROUNDS+' &middot; '+LAB2.phase+'</div>'+
+    '<div class="goal">Living shores in three parts of the pot</div>'+
+    '<div class="prog">'+sh.map((v,k)=>'<span class="'+(v>=LAB_SHORE?'met':'')+'">'+
+      ['west','north-east','south-east'][k]+' '+v+'/'+LAB_SHORE+'</span>').join('')+'</div>';
+  go.classList.toggle('show', LAB2.phase==='prepare' && !LAB2.over);
+  if(LAB2.phase==='prepare' && !LAB2.over){
+    go.innerHTML='<button>Release the rain</button>';
+    go.querySelector('button').onclick=labRelease;
+  }
+}
+/* the pulse comes off the high western rim, so the pot is fed from one side
+   and the player decides where it goes */
+function labRelease(){
+  LAB2.phase='rain'; LAB2.ticks=0;
+  LAB2.log={flood0:QUICK_FLOOD, cascade0:QUICK_CASCADE,
+            soil0:T.reduce((a,t)=>a+t.sed+t.sand,0), life0:alive()};
+  for(let r=-4;r<=4;r++){ const i=at(-6,r); if(i>=0) use(i,{k:'place'},0,3,CLOUD); }
+  STEP=8; setPause(false); drawLab(); drawSpeed();
+}
+function labClearSky(){
+  for(let i=0;i<T.length;i++) for(let z=0;z<ZN;z++)
+    if(CELL[i*ZN+z]===CLOUD){ CELL[i*ZN+z]=AIR; retop(i); }
+}
+let labPrev=null;
+function labStep(){
+  if(!LAB || LAB2.over) return;
+  if(LAB2.phase==='rain'){
+    if(++LAB2.ticks>=RAIN_TICKS){ labClearSky(); LAB2.phase='settle'; LAB2.ticks=0; labPrev=null; drawLab(); }
+    return;
+  }
+  if(LAB2.phase!=='settle') return;
+  LAB2.ticks++;
+  let biggest=0;
+  if(labPrev) for(let i=0;i<T.length;i++){ const d=Math.abs(T[i].pool-labPrev[i]); if(d>biggest) biggest=d; }
+  labPrev=T.map(t=>t.pool);
+  if(LAB2.ticks>60 && (biggest<QUIET || LAB2.ticks>=SETTLE_MAX)) labRead();
+}
+function labRead(){
+  LAB2.phase='read'; setPause(true); STEP=1; drawSpeed();
+  const sh=shores(), L=LAB2.log;
+  const soil=(T.reduce((a,t)=>a+t.sed+t.sand,0)-L.soil0)/LAYER;
+  const el=card();
+  const won=labWon(), last=LAB2.round>=LAB_ROUNDS;
+  let rows='<div class="row"><span>Living shores</span><span>'+sh.join(' &middot; ')+'</span></div>'+
+    '<div class="row"><span>Soil moved or made</span><span>'+soil.toFixed(1)+' courses</span></div>';
+  if(LAB2.ups.includes('flood'))
+    rows+='<div class="row w"><span>Fertile Flood took</span><span>'+(QUICK_FLOOD-L.flood0)+' hexes</span></div>';
+  if(LAB2.ups.includes('cascade'))
+    rows+='<div class="row w"><span>Cascade rooted</span><span>'+(QUICK_CASCADE-L.cascade0)+' hexes</span></div>';
+  if(LAB2.ups.includes('roots')){
+    let c=0; for(let i=0;i<T.length;i++) if(T[i].life&&clumped(i)) c++;
+    rows+='<div class="row w"><span>Root Network holding</span><span>'+c+' hexes</span></div>';
+  }
+  rows+='<div class="row"><span>Life</span><span>'+alive()+' hexes</span></div>';
+  if(won||last){
+    el.innerHTML='<h3>'+(won?'Three living shores.':'The pot rests.')+'</h3>'+
+      '<div class="sub">'+(won?'The chain carried.':'Three rounds, and two shores at most.')+'</div>'+
+      rows+'<div class="row2"><button class="ghost" data-stay="1">Stay and look</button>'+
+      '<button data-new="1">Again</button></div>';
+    el.querySelector('[data-stay]').onclick=()=>{ document.getElementById('harvest').classList.remove('show'); RUN.screen=false; };
+    el.querySelector('[data-new]').onclick=()=>location.reload();
+    LAB2.over=true; open(); drawLab(); return;
+  }
+  /* a fixed choice, so the combinations can be read without randomness in
+     the way. Whatever has not been taken is what is offered. */
+  const left=Object.keys(UPS).filter(k=>!LAB2.ups.includes(k));
+  el.innerHTML='<h3>Round '+LAB2.round+' read</h3><div class="sub">What the rain did, and what to add before the next.</div>'+
+    rows+'<div class="ups">'+left.map(k=>
+      '<div class="offer"><b>'+UPS[k].nm+'</b><span>'+UPS[k].d+'</span>'+
+      '<span class="p">'+UPS[k].w+'</span><button data-u="'+k+'">Take</button></div>').join('')+'</div>';
+  el.querySelectorAll('button[data-u]').forEach(b=>b.onclick=()=>{
+    const k=b.dataset.u; LAB2.ups.push(k);
+    UP_ROOTS=LAB2.ups.includes('roots');
+    UP_FLOOD=LAB2.ups.includes('flood');
+    UP_CASCADE=LAB2.ups.includes('cascade');
+    LAB2.round++; LAB2.phase='prepare'; labStock(); close(); drawLab();
+  });
+  open();
+}
+/* The seed deck is not one of the things under test. The brief asks for the
+   basic sculpting tools to stay dependable, so the lab hands out as much of
+   each kind as anyone could want and the only real limits are the ground and
+   the water. */
+function labStock(){
+  RUN.hand=[]; for(let k=0;k<40;k++) RUN.hand.push(SEED,MOSS,REED);
+  if(!RUN.hand.includes(MAT)) MAT=MOSS;
+  drawHand();
+}
+function labStart(){
+  document.body.classList.add('lab');
+  RUN.over=true;                       /* the Year machinery stands down */
+  FREE_MANA=true; drawManaBtn(); drawMana();
+  for(let i=0;i<T.length;i++) raise(i,SLAB,ROCK);
+  START_H=1; wearEl.value=10; drawWear();
+  UNLOCK.rain=UNLOCK.sow=UNLOCK.raise=UNLOCK.speed=true;
+  labStock();
+  selectTool('dig'); drawDock(); drawSpeed();
+  setPause(true); settle(); rebuild(); drawLab();
+}
+
 /* A module's scope is private, so nothing here is reachable from devtools.
    Being able to poke the board from the console is worth one deliberate
    global — it is how the flat renderer was checked, and it is the only way
@@ -5613,6 +5860,8 @@ window.POT={T,at,use,tick,settle,rebuild,POWERS,scene,
   RUN, TARGETS, BOONS, showSpring, showBehold, showWhim, takeForce, startYear, playClick, drawMana,
   strike, landForce, fx, AIMED, SPELLS, FORCES, MILESTONES, offerFor, checkWhim,
   OMENS, omenPool, omensFor, showOmens, drawToken, tokenReady,
+  LAB2, UPS, shores, sector, labWon, labRelease, labRead, labStart, drawLab,
+  RAIN_TICKS, LAB_SHORE, labStock, labStep,
   get freeMana(){ return FREE_MANA }, set freeMana(v){ FREE_MANA=v; drawManaBtn(); drawMana(); drawDock(); },
   toggleDrain, get drain(){ return DRAIN }, get hardBar(){ return HARD_BAR },
   KEYS, camKeys, get lockRot(){ return LOCKROT }, set lockRot(v){ LOCKROT=v; drawLock(); },
@@ -5621,6 +5870,12 @@ window.POT={T,at,use,tick,settle,rebuild,POWERS,scene,
   WDRAW, PDRAW, ODRAW, drawnLayers, drawnOut,
   HARDNESS, erode, STRATA, stratum, GRANITE, BASALT, LIMESTONE, SHALE, wearsAs,
   fertility, worthOf, FERT, FERT_GAIN, ALLU_FULL, richAs, soil, SOIL_MIN, wetAt, DRY,
+  clumped, draining, underFall, growQuick, CLUMP_MIN,
+  get upRoots(){ return UP_ROOTS }, set upRoots(v){ UP_ROOTS=v },
+  get upFlood(){ return UP_FLOOD }, set upFlood(v){ UP_FLOOD=v },
+  get upCascade(){ return UP_CASCADE }, set upCascade(v){ UP_CASCADE=v },
+  get quickFlood(){ return QUICK_FLOOD }, set quickFlood(v){ QUICK_FLOOD=v },
+  get quickCascade(){ return QUICK_CASCADE }, set quickCascade(v){ QUICK_CASCADE=v },
   biome, BIOMES, BIOME_NAME, elevAt, tempAt, moistAt, pref,
   get contrast(){ return CONTRAST }, set contrast(v){ CONTRAST=v },
   /* the POST block is declared below this object, so these have to be
@@ -5755,6 +6010,7 @@ drawWear(); drawCarry(); drawSand(); drawAbrade(); drawTilt(); drawFocus(); setS
 { const parked=sessionStorage.getItem('potLoad');
   if(parked){ sessionStorage.removeItem('potLoad');
     try{ apply(JSON.parse(parked)); }catch(e){ console.warn(e); } }
+  else if(LAB) labStart();
   else if(PLAY) freshPot(); }
 setPlay(PLAY);
 </script>
