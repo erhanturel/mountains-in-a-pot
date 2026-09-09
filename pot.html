@@ -4515,7 +4515,16 @@ function rebuild(){
     const nc=clouds(i);
     if(nc){
       place(cloudMesh,i,t.x,t.y,zBot(CLOUD_Z)*RISE,(zBot(CLOUD_Z)+Math.max(0.35,nc/SLAB))*RISE);
-      const lo=(g+wd)*RISE, hi=zBot(CLOUD_Z)*RISE, w=0.16+0.05*nc;
+      /* THE SHAFT SATURATES INSTEAD OF GROWING. It was `0.16 + 0.05*nc`,
+         linear in the number of stacked rain tiles, so a twelve-cloud stack
+         drew a shaft 0.76 across -- three quarters of a hex -- standing
+         sixteen elevations from the ground to the cloud band. That is not
+         rain, it is a tower, and a playtest called them water skyscrapers.
+         Heavier rain should read as MORE rain, not as thicker rain; the
+         intensity is already carried above, where the cloud itself grows
+         taller with the stack. Saturating keeps 0.20 at one cloud and 0.29
+         at twelve, so the shaft stays a shaft. */
+      const lo=(g+wd)*RISE, hi=zBot(CLOUD_Z)*RISE, w=0.16+0.16*(1-1/(1+nc/3));
       P.set(t.x,(lo+hi)/2,t.y); S.set(w,hi-lo,w);
       rainMesh.setMatrixAt(i,M4.compose(P,Q,S));
     } else { hide(cloudMesh,i); hide(rainMesh,i); }
