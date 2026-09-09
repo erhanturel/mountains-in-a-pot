@@ -44,17 +44,27 @@ for (let k = 1; k <= 6000; k++) {
   else { still = 0; last = a; }
 }
 
-// ---- 3. how long to weather one slab of rock at the player rate?
-const M3 = world(8);
-const i3 = M3.at(0, 0);
-M3.WEATHER = (+process.argv[4] || 0.7) / 420;
-M3.raise(i3, 6, M3.ROCK);
-const h0 = M3.T[i3].h;
-let slabTicks = -1;
-for (let k = 1; k <= 20000; k++) {
-  M3.tick();
-  if (M3.T[i3].sed >= M3.LAYER - 1e-9) { slabTicks = k; break; }
+// ---- 3. how long to weather one slab, WET and DRY. Weathering scales with
+//         the water working on a hex now, so one number will not do: the gap
+//         between these two is what puts soil in the valleys and leaves the
+//         ridges bare.
+function slab(wet) {
+  const M = world(8);
+  const i = M.at(0, 0);
+  M.WEATHER = (+process.argv[4] || 0.7) / 420;
+  M.raise(i, 6, M.ROCK);
+  const h0 = M.T[i].h;
+  for (let k = 1; k <= 400000; k++) {
+    if (wet) M.T[i].pool = 6 * M.LAYER;   /* deep enough to survive settle */
+    M.tick();
+    /* the ROCK converting, not the slag piling up: on a wet hex the water
+       carries the slag off as fast as it is made, so waiting for a course of
+       it to accumulate measures transport rather than weathering. */
+    if (M.T[i].h <= h0 - 1 / M.SLAB + 1e-9) return k;
+  }
+  return -1;
 }
+const slabWet = slab(true), slabTicks = slab(false);
 
 const R = +process.argv[2] || 2, S = +process.argv[3] || 120;
 const secs = t => (t / R).toFixed(0);
@@ -64,7 +74,8 @@ const row = (n, t) => console.log('  ' + n.padEnd(28) + String(t).padStart(6) +
   String(secs(t)).padStart(15) + 's' + (t / S).toFixed(2).padStart(13));
 row('a bowl fills', fillTicks);
 row('life covers a lake rim', lifeTicks);
-row('one slab of rock weathers', slabTicks);
+row('one slab weathers, WET', slabWet);
+row('one slab weathers, DRY', slabTicks);
 row('ONE SEASON', S);
 console.log('\n  spread (slowest / fastest): ' +
-  (Math.max(fillTicks, lifeTicks, slabTicks) / Math.min(fillTicks, lifeTicks, slabTicks)).toFixed(2) + 'x');
+  (Math.max(fillTicks, lifeTicks, slabTicks) / Math.min(fillTicks, lifeTicks, slabWet)).toFixed(2) + 'x');

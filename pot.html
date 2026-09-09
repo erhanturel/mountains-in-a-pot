@@ -2790,6 +2790,38 @@ function settle(){
    --------------------------------------------------------------------- */
 let WEATHER=0.07/420;            /* units of rock loosened per tick */
 let ABRADE=0.07;                 /* rock ground away per unit of grit crossing */
+/* WEATHERING IS NO LONGER WATER-BLIND, and the measurement that forced this
+   is worth keeping.
+
+   The playtest said soil never travels: no drag, no fan, no delta. It was
+   right. On a hill falling to a plain, over a whole run, the courses of loose
+   ground came out 4.3, 3.4, 4.8, 5.2, 5.0 from summit to far plain -- a
+   blanket, with no peak past the break of slope where a fan belongs.
+
+   The obvious suspect was the transport threshold, and it was innocent: 51.7%
+   of the edges carrying water cleared the bar and the strongest was 24
+   against a bar of 0.2. Transport works. The real count was this --
+
+       469 hexes weathering,  60 edges carrying water.
+
+   Over ninety percent of the soil was being made where no water ever goes,
+   and there it stayed. Nothing was wrong with the carrying; there was simply
+   nothing to carry in the places that could carry it.
+
+   So the base rate now scales with how much water is working on the hex.
+   CLAUDE.md has said "weathering on its own is water-blind" since abrasion
+   was written, and abrasion only half-answered it: grit needs transport, and
+   transport needs soil in a wet place, which is the loop this closes.
+
+   DRY is not zero. Dry rock still weathers, slowly -- frost, heat, time --
+   and a floor keeps a rain shadow from being permanent bare stone.
+
+   The wetness is FLOW PLUS POOL, both already on the hex, so it costs two
+   reads. It is deliberately not the neighbourhood measure the biomes use:
+   that one asks six neighbours for their six edges, and grow() cost 4.5 ms a
+   tick the last time something in the CORE did that. */
+const DRY=0.15;
+const wetAt=i=>{ const t=T[i]; return Math.min(1,(t.flow+t.pool)/LAYER); };
 const SHIELD=140/420;            /* slag depth at which weathering halves */
 function weather(){
   if(WEATHER<=0) return;
@@ -2815,7 +2847,8 @@ function weather(){
 
        grit is last tick's, since carry() runs after this. A tick of lag at
        these timescales is nothing. */
-    T[i].wear += (WEATHER + ABRADE*T[i].grit)*E/(1+T[i].sed/SHIELD);
+    T[i].wear += (WEATHER*(DRY+(1-DRY)*wetAt(i)) + ABRADE*T[i].grit)*E
+                 /(1+T[i].sed/SHIELD);
     while(T[i].wear>=LAYER && TOP[i]>=0 && erode(CELL[i*ZN+TOP[i]])){
       T[i].wear-=LAYER;
       CELL[i*ZN+TOP[i]]=AIR; retop(i);            /* the slab is gone */
@@ -5006,10 +5039,17 @@ document.getElementById('lockBtn').onclick=()=>{ LOCKROT=!LOCKROT; drawLock(); }
 function freshPot(){
   for(let i=0;i<T.length;i++) raise(i,SLAB,ROCK);
   START_H=1;
-  wearEl.value=5; drawWear();     /* 0.05 units/tick: one course of soil
-                                     in about three Seasons. Moss needs
-                                     none of it and carries the early
-                                     game; Grass is what waiting buys. */
+  /* 0.10 units/tick, and it is now a rate for WET ground -- the dry parts of
+     the board weather at 0.15 of it. Measured over one run on a hill falling
+     to a plain: the slope holds 1.7 courses and the plain 3.3, and 215 hexes
+     reach the three courses a forest needs. At 0.05 the contrast was sharper
+     but only 11 hexes could carry forest; at 0.30 there was soil everywhere
+     and the contrast washed out.
+
+     In a wet place one course takes about 700 ticks, a Season and a half. On
+     a dry ridge it takes 4,700, most of a run -- so ridges stay bare stone
+     and the strata keep showing, which is what B1 was for. */
+  wearEl.value=10; drawWear();
   settle(); rebuild();
   startYear();
 }
@@ -5145,7 +5185,10 @@ function startYear(){
    browser; a Wonder standing now is lit. */
 function harvestRows(h,now){
   const per={grove:1,fall:1,fork:1,delta:1};
-  let rows='<div class="row"><span>Life</span><span>'+h.alive+'</span></div>';
+  /* worth is fractional since B2 -- moss is a half and fertility multiplies --
+     so this has to be rounded or the Harvest reads "42.42568955207642". */
+  const life1=n=>Math.round(n*10)/10;
+  let rows='<div class="row"><span>Life</span><span>'+life1(h.alive)+'</span></div>';
   for(const k of Object.keys(BONUS)) if(now.has(k)){
     const n=h.wonders[k], b=BONUS[k]*(per[k]?n:1);
     rows+='<div class="row w"><span>'+WONDER_NAMES[k]+(n>1?'<i>×'+n+'</i>':'')+'</span><span>+'+b.toFixed(2).replace(/\.?0+$/,'')+'</span></div>';
@@ -5577,7 +5620,7 @@ window.POT={T,at,use,tick,settle,rebuild,POWERS,scene,
   surfaceOf, wouldTake, drawTip, SEEDCARDS, showCodex, WONDER_HOW,
   WDRAW, PDRAW, ODRAW, drawnLayers, drawnOut,
   HARDNESS, erode, STRATA, stratum, GRANITE, BASALT, LIMESTONE, SHALE, wearsAs,
-  fertility, worthOf, FERT, FERT_GAIN, ALLU_FULL, richAs, soil, SOIL_MIN,
+  fertility, worthOf, FERT, FERT_GAIN, ALLU_FULL, richAs, soil, SOIL_MIN, wetAt, DRY,
   biome, BIOMES, BIOME_NAME, elevAt, tempAt, moistAt, pref,
   get contrast(){ return CONTRAST }, set contrast(v){ CONTRAST=v },
   /* the POST block is declared below this object, so these have to be
