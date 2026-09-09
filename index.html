@@ -157,6 +157,25 @@
   #speed button.on{border-color:#e8c274;color:#fff;background:#3a3020}
   body.play #clock{top:58px;font-family:system-ui,sans-serif;font-size:13px;letter-spacing:0;
     border-radius:12px;background:rgba(18,20,28,.72)}
+  /* THE CHRONICLE. The world reports on itself. Erosion is the one thing in
+     this game that happens TO you rather than because of you, and until now
+     nothing said it was happening: a run could turn a fifth of the pot to
+     barren granite and the only clue was that things stopped growing.
+     It is a pure read compared against the last read, kept entirely in the
+     UI -- the simulation stores nothing for it and does not know it exists. */
+  #chron{position:absolute;right:10px;top:96px;z-index:2;pointer-events:none;
+    width:206px;display:none;flex-direction:column;gap:5px;align-items:flex-end}
+  body.play #chron{display:flex}
+  #chron div{font-family:system-ui,sans-serif;font-size:11.5px;line-height:1.4;
+    padding:7px 10px;border-radius:11px;background:rgba(18,20,28,.72);
+    color:#c3cad4;text-align:right;max-width:100%;
+    animation:chronin .5s ease both}
+  #chron div b{display:block;font-size:9px;letter-spacing:.14em;text-transform:uppercase;
+    color:#7d8593;font-weight:600;margin-bottom:2px}
+  #chron div.warn{color:#efb27a} #chron div.warn b{color:#c98a52}
+  #chron div.good{color:#b8e57f} #chron div.good b{color:#84a557}
+  #chron div.fade{opacity:.55}
+  @keyframes chronin{from{opacity:0;transform:translateX(10px)}to{opacity:1;transform:none}}
   body.play #bloom{font-family:system-ui,sans-serif;font-size:14px;letter-spacing:0;text-transform:none;
     border-radius:12px;background:rgba(18,20,28,.72);color:#a6d96a}
   /* HARVEST. The clock stops at the end of a Year and the world is read
@@ -348,7 +367,7 @@
     <div class="board-col">
       <div id="board"><div id="info"></div><div id="time"></div><div id="clock"></div><div id="bloom"></div>
         <div id="hintline"></div><div id="dock"></div><div id="lens"></div><div id="hand"></div>
-        <div id="token" class="token"></div>
+        <div id="token" class="token"></div><div id="chron"></div>
         <div id="lab"></div><div id="labgo"></div><div id="speed"></div><div id="tip"></div><div id="mana"></div>
         <div id="corner"><button id="benchBtn"></button><button id="codexBtn">✦ Codex</button>
           <button id="manaBtn"></button><button id="lockBtn"></button></div>
@@ -3380,7 +3399,19 @@ function freshPot(){
 
    The run seed fixes what the shop offers; nothing else is random. */
 const TARGETS=[8,15,25,40,60,90,130,180];
-const COST={dig:2,raise:2,rain:3,sow:1};
+/* MANA LANDS ON RAIN AND NOTHING ELSE.
+   Two limits were running at once and only one of them was real. Digging,
+   raising and sowing cost mana, which is a number from outside the
+   simulation; rain costs the POT, which is the water taking the ground apart
+   and carrying part of it over the edge for good. Measured over one run at
+   radius 12: two clouds cost 0.25% of the pot and fifteen hexes turned to
+   barren granite, fourteen clouds cost 13.2% and a hundred and six.
+
+   So the budget now sits on the one verb that already had a price, and
+   doubles it. Shaping is free -- reading the land and cutting it is the
+   interesting decision and it should not be rationed -- and water is the
+   scarce thing, which is what it is in the fiction too. */
+const COST={dig:0,raise:0,rain:3,sow:0};
 const BOONS={
   monsoon:  {nm:'Monsoon',      d:'Every rain tile drops half again as much.', dew:5, on:()=>{ RAIN_MULT=1.5; }},
   wellspring:{nm:'Wellspring',  d:'+3 mana every Year.',                       dew:6},
@@ -3911,7 +3942,92 @@ function fx(dt){
   if(a>=DONE){ STRIKE=null; SHAKE=0; scene.position.set(0,0,0);
     fxFlash.style.opacity='0'; fxCap.style.opacity='0'; setPause(FXWAS); }
 }
-setInterval(()=>{ if(PLAY){ checkUnlocks(); checkWhim(); } },500);
+
+/* ======================================================================
+   THE CHRONICLE -- the world reports on itself
+
+   Erosion is the only thing in this game that happens TO the player rather
+   than because of them, and nothing said it was happening. Measured over one
+   run: fourteen clouds turn 106 of 469 hexes to bare granite -- the hard
+   basement, which erodes at 0.20x and so makes no soil inside a run -- and
+   the only clue a player got was that things quietly stopped growing.
+
+   Three sweeps looked for a knob that would make the loss bigger. There
+   isn't one that keeps the DECISION: raising the weathering rate lifts a
+   careless run from 13.2% of the pot to 19.9% but lifts a careful one from
+   0.25% to 0.52% as well, so the contrast falls from 53x to 38x, and
+   abrasion -- which only acts where water runs, and so looked like the
+   selective lever -- does not move the careless number at all (13.2% to
+   11.3%). The physics already gives the widest gap available. What was
+   missing was that nobody could see it.
+
+   It is a PURE READ compared against the last read. The simulation stores
+   nothing for it, exports nothing for it and does not know it exists; every
+   number here is recomputed from the board, and the only thing remembered is
+   the previous reading, which lives in the UI beside the undo stack. */
+const chronEl=document.getElementById('chron');
+const CHRON={ last:null, lines:[], at:0 };
+const CHRON_EVERY=240;             /* half a Season */
+const CHRON_KEEP=4;
+
+/* what the pot is made of. Bedrock cannot move, so it is not part of the
+   body that can be lost -- counting it would bury the signal under a
+   constant. */
+function potBody(){
+  let stone=0, loose=0;
+  for(let i=0;i<T.length;i++){
+    const b=i*ZN;
+    for(let z=0;z<=TOP[i];z++){ const c=CELL[b+z]; if(c && c!==BEDROCK) stone++; }
+    loose += T[i].sed + T[i].sand;
+  }
+  return stone + loose/LAYER;
+}
+function readPot(){
+  let hard=0, soil=0, alive=0;
+  for(let i=0;i<T.length;i++){
+    const m=T[i].mat;
+    if(m===GRANITE || m===BEDROCK) hard++;
+    if(T[i].sed+T[i].sand>=LAYER) soil++;
+    if(T[i].life) alive++;
+  }
+  return { hard, soil, alive, body:potBody() };
+}
+function chronSay(kind,head,text){
+  CHRON.lines.push({kind,head,text});
+  while(CHRON.lines.length>CHRON_KEEP) CHRON.lines.shift();
+  drawChron();
+}
+function drawChron(){
+  const n=CHRON.lines.length;
+  chronEl.innerHTML=CHRON.lines.map((l,i)=>
+    '<div class="'+l.kind+(i<n-2?' fade':'')+'"><b>'+l.head+'</b>'+l.text+'</div>').join('');
+}
+/* one reading against the last one. Every branch is a comparison of two
+   counts, so nothing here can drift out of step with the board. */
+function chronicle(){
+  if(!PLAY || RUN.over) return;
+  if(TICKS-CHRON.at < CHRON_EVERY) return;
+  CHRON.at=TICKS;
+  const now=readPot(), was=CHRON.last;
+  CHRON.last=now;
+  if(!was) return;                      /* the first reading is the baseline */
+
+  const gone=was.body-now.body;
+  if(now.hard-was.hard>=4)
+    chronSay('warn','the basement',
+      'Granite is showing on '+(now.hard-was.hard)+' more hexes. It makes no soil.');
+  else if(gone>=6)
+    chronSay('warn','the pot',
+      Math.round(gone)+' courses of ground went over the edge.');
+  if(now.soil-was.soil>=8)
+    chronSay('good','alluvium',
+      'Soil is settling. '+now.soil+' hexes deep enough to root.');
+  if(was.alive-now.alive>=3)
+    chronSay('warn','dieback', (was.alive-now.alive)+' green hexes died.');
+  else if(now.alive-was.alive>=6)
+    chronSay('good','it spreads', now.alive+' hexes green.');
+}
+setInterval(()=>{ if(PLAY){ checkUnlocks(); checkWhim(); chronicle(); } },500);
 
 /* =====================================================================
    THE LAB -- prepare, release, read.
