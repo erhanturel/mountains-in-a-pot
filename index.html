@@ -147,6 +147,7 @@
   #tip i{font-style:normal;display:block;font-size:11.5px;color:#8e96a3;margin-top:1px}
   #tip i.no{color:#d08a6a}
   #tip i.yes{color:#9ed46a}
+  #tip i.scar{color:#e0a86a;display:block;margin-top:3px;line-height:1.5}
   #tip i.rich{color:#c8a86a}
   #tip i.biome{color:#9fb8a0;font-weight:600}
   body.play #tip.show{display:block}
@@ -979,6 +980,18 @@ const DROPCAP=1;                 /* one elevation */
 
    Both are read from ONE snapshot of the ground and written afterwards, so
    moving the slag cannot change what the sand thinks the ground is. */
+/* WHAT LEAVES THE POT IS COUNTED, NOT INFERRED.
+   The Chronicle used to report the difference between two whole-board mass
+   readings as "went over the edge". Digging lowers that total too, and
+   raising hides a real loss behind new ground, so the sentence could name
+   the wrong cause for a number that was right. This is the only place
+   material actually leaves -- a neighbour index below zero is the void -- so
+   it is counted here, at the source.
+
+   It is a RUNNING TOTAL of a flow, not a description of state, so it is not
+   the kind of stored value the board is forbidden to keep: nothing reads it
+   back into the simulation and clearing it changes no future tick. */
+let LOST=0;
 function carry(){
   const n=T.length;
   const wS=T.map(t=>t.sed), wA=T.map(t=>t.sand);
@@ -1014,7 +1027,7 @@ function carry(){
         const v=want[k]*f;
         add[i]-=v; T[i].grit+=v;
         const j=T[i].nb[k];
-        if(j<0) continue;                      /* over the side, and gone */
+        if(j<0){ LOST+=v; continue; }          /* over the side, and gone */
         if(grind){ addS[j]+=v*(1-ATTR); addA[j]+=v*ATTR; }
         else       add[j]+=v;
       }
@@ -1685,6 +1698,7 @@ const TOPMAX=H_MAX*SLAB-Z0-1, TOPMIN=-H_MAX*SLAB-Z0-1;
    what lets a click lay down a seventy-unit course rather than a whole
    four-hundred-and-twenty-unit step. Each returns how many it managed, so a
    click that could do nothing at all is not counted as an action. */
+let DUG=0, FILLED=0;      /* slabs the PLAYER moved, kept apart from the water's */
 function raise(i,n,m){
   const b=i*ZN; let t=TOP[i], did=0;
   for(let k=0;k<n;k++){
@@ -1692,7 +1706,7 @@ function raise(i,n,m){
     if(z>TOPMAX || z>=ZN || CELL[b+z]===CLOUD) break;   /* not through a cloud */
     CELL[b+z]=m; t=z; did++;
   }
-  if(did) retop(i);
+  if(did){ retop(i); FILLED+=did; }
   return did;
 }
 function lower(i,n){
@@ -1702,6 +1716,7 @@ function lower(i,n){
     if(t<0 || t<=TOPMIN) break;
     CELL[b+t]=AIR; retop(i); did++;
   }
+  if(did) DUG+=did;
   return did;
 }
 function erase(i,n,m){
@@ -2149,9 +2164,40 @@ const LIFE_CAP=0.12;             /* world units of green on top of the soil */
    when the Year began -- the same shape as the drainage lens: costs nothing,
    moves nothing, takes no tick. The mark lives in the UI beside the undo
    stack; the CORE stores nothing for it. */
-let SCAR=false, SCAR0=null, SCARMAX=1/6;
-function markScar(){ SCAR0=T.map(t=>t.h); SCARMAX=1/6; }
-function scarAt(i){ return SCAR0 ? SCAR0[i]-T[i].h : 0; }
+let SCAR=false, SCAR0=null, SCARHAND=null;
+/* THREE THINGS IT WAS MEASURING WRONG, all found by review.
+
+   IT READ THE STONE, NOT THE SURFACE. `t.h` is solid rock; slag and sand are
+   separate amounts lying on top. So rock weathering IN PLACE -- which moves
+   no material at all and leaves the column exactly as tall -- read as a cut,
+   while loose soil being carried away, which is the erosion a player cares
+   about, did not read at all. It reads `gnd(i)` now: stone plus what is
+   lying on it, which is the surface you are actually looking at.
+
+   IT COUNTED THE PLAYER'S OWN DIGGING AS WEAR. Every action goes through
+   playClick, so the surface is sampled either side of one and the difference
+   booked to the player. What the lens draws is the total change LESS what
+   you did yourself, which is the water's share and nothing else.
+
+   ITS SCALE MOVED. The ramp was rescaled to the deepest cut on the board, so
+   the same colour meant a different amount from one minute to the next and
+   nothing could be compared with anything. It is fixed at one elevation now,
+   and the caption says so. */
+const SCAR_FULL=1;                 /* full colour at one elevation, always */
+function markScar(){
+  SCAR0=T.map((t,i)=>gnd(i));
+  SCARHAND=new Float64Array(T.length);
+}
+/* what the WATER took: everything that moved, less what the player moved */
+function scarAt(i){ return SCAR0 ? (SCAR0[i]-gnd(i))-SCARHAND[i] : 0; }
+/* book one player action against the hexes it touched */
+function scarHand(before){
+  if(!SCAR0||!before) return;
+  for(let i=0;i<T.length;i++){
+    const d=before[i]-gnd(i);
+    if(d) SCARHAND[i]+=d;
+  }
+}
 /* THE LENS HAS TO REACH THE LOOSE MATERIAL TOO. 381 of 469 hexes draw a slag
    prism over their stone, so tinting only the ground left the lens invisible
    on precisely the hexes that had eroded most -- the first build of it looked
@@ -2159,7 +2205,7 @@ function scarAt(i){ return SCAR0 ? SCAR0[i]-T[i].h : 0; }
    base colour, so the reading is one reading. */
 function scarRGB(base,i){
   const d=scarAt(i);
-  const f=Math.min(1,Math.abs(d)/Math.max(SCARMAX,1/6));
+  const f=Math.min(1,Math.abs(d)/SCAR_FULL);
   if(Math.abs(d)<1/12) return blend(base,[58,62,70],0.66);   /* untouched: sink it back */
   return blend(base, d>0 ? blend([132,100,60],[246,158,58],f)    /* cut  : ochre */
                          : blend([80,108,72],[150,220,110],f),   /* fill : green */
@@ -2706,7 +2752,9 @@ renderer.domElement.addEventListener('click',e=>{
   if(PLAY){ playClick(i); return; }
   /* snapshot first, keep it only if the click actually did something */
   const before=snap();
-  if(use(i,POWER,BRUSH-1,DEPTH,MAT)){ push(before); rebuild(); hover(i); }
+  const gbefore=SCAR0?T.map((t,k)=>gnd(k)):null;   /* the lens must not blame you for your own dig */
+  if(use(i,POWER,BRUSH-1,DEPTH,MAT)){
+    scarHand(gbefore); push(before); rebuild(); hover(i); }
 });
 /* a click in the game: it costs mana, a seed spends a card, rain on a
    cloud takes the cloud away for nothing, and a force being aimed lands */
@@ -3295,7 +3343,7 @@ function drawLens(){
     '<svg viewBox="0 0 18 18"><path d="M3 12h3l3-7 3 10 3-5h2"/></svg>'+
     '<span>Wear <u>C</u></span></button>'+
     '<div class="cap'+(DRAIN||SCAR?' show':'')+'">'+
-      (SCAR?'what the water took this Year':'where the water would go')+'</div>';
+      (SCAR?'what the WATER took this Year · full colour = 1 elevation':'where the water would go')+'</div>';
   lensEl.querySelectorAll('button').forEach(b=>b.onclick=()=>
     b.dataset.l==='d'?toggleDrain():toggleScar());
 }
@@ -3305,18 +3353,9 @@ function toggleDrain(){
   ovDrain.classList.toggle('on',DRAIN);      /* the bench toggle stays in step */
   drawLens(); rebuild();
 }
-/* the ramp is scaled to the deepest cut on the board, so early in a Year a
-   single slab still reads instead of being lost at the bottom of a scale
-   sized for a whole elevation */
-function scaleScar(){
-  if(!SCAR0) return;
-  let m=1/6;
-  for(let i=0;i<T.length;i++){ const d=Math.abs(SCAR0[i]-T[i].h); if(d>m) m=d; }
-  SCARMAX=m;
-}
 function toggleScar(){
   SCAR=!SCAR;
-  if(SCAR){ if(!SCAR0) markScar(); DRAIN=false; ovDrain.classList.remove('on'); scaleScar(); }
+  if(SCAR){ if(!SCAR0) markScar(); DRAIN=false; ovDrain.classList.remove('on'); }
   drawLens(); rebuild();
 }
 /* THE CAMERA ON THE KEYBOARD. Held keys are collected here and applied in
@@ -3487,6 +3526,16 @@ function drawTip(x,y){
   { const f=fertility(HOVER);
     if(f>0.02) h+='<i class="rich">'+richAs(f)+' &middot; life worth &times;'+
                   (1+FERT_GAIN*f).toFixed(2)+'</i>'; }
+  /* with the lens up, the hovered hex says the amount and where it came
+     from, so the colour can be checked against a number rather than
+     trusted. Courses, the same unit the soil is drawn in. */
+  if(SCAR && SCAR0){
+    const w=scarAt(HOVER)/LAYER, y=SCARHAND[HOVER]/LAYER;
+    const say=(v,cut,fill)=>Math.abs(v)<0.05 ? 'nothing'
+      : (v>0?cut:fill)+' '+Math.abs(v).toFixed(1)+(Math.abs(v)>=1.95?' courses':' course');
+    h+='<i class="scar">water: '+say(w,'took','laid')+
+       '<br>you: '+say(y,'dug','raised')+'</i>';
+  }
   if(t.life) h+='<i class="yes">'+KINDS[t.life]+' grows here</i>';
   else if(TOOL==='sow'&&UNLOCK.sow){
     /* MAT holds the last seed kind chosen and keeps holding it after the hand
@@ -4204,7 +4253,7 @@ function readPot(){
     if(T[i].sed+T[i].sand>=LAYER) soil++;
     if(T[i].life) alive++;
   }
-  return { hard, soil, alive, body:potBody() };
+  return { hard, soil, alive, body:potBody(), lost:LOST };
 }
 function chronSay(kind,head,text){
   CHRON.lines.push({kind,head,text});
@@ -4226,13 +4275,17 @@ function chronicle(){
   CHRON.last=now;
   if(!was) return;                      /* the first reading is the baseline */
 
-  const gone=was.body-now.body;
+  /* MEASURED AT THE SOURCE, NOT INFERRED FROM A TOTAL. This used to be the
+     difference between two whole-board mass readings, which digging lowers
+     and raising hides, so the line could name the wrong cause. LOST counts
+     only material that actually crossed the rim, in carry(). */
+  const gone=(now.lost-was.lost)/LAYER;
   if(now.hard-was.hard>=4)
     chronSay('warn','the basement',
       'Granite is showing on '+(now.hard-was.hard)+' more hexes. It makes no soil.');
   else if(gone>=6)
-    chronSay('warn','the pot',
-      Math.round(gone)+' courses of ground went over the edge.');
+    chronSay('warn','over the rim',
+      Math.round(gone)+' courses left the pot for good.');
   if(now.soil-was.soil>=8)
     chronSay('good','alluvium',
       'Soil is settling. '+now.soil+' hexes deep enough to root.');
@@ -4241,7 +4294,7 @@ function chronicle(){
   else if(now.alive-was.alive>=6)
     chronSay('good','it spreads', now.alive+' hexes green.');
 }
-setInterval(()=>{ if(PLAY){ checkUnlocks(); checkWhim(); chronicle(); if(SCAR) scaleScar(); } },500);
+setInterval(()=>{ if(PLAY){ checkUnlocks(); checkWhim(); chronicle(); } },500);
 
 /* =====================================================================
    THE LAB -- prepare, release, read.
@@ -4408,7 +4461,8 @@ window.POT={T,at,use,tick,settle,rebuild,POWERS,scene,
      exactly this -- driving the thing by hand. */
   costOf, COST, snap, restore, drawDock, drawMana, startYear,
   get scar(){ return SCAR }, set scar(v){ SCAR=v; drawLens(); rebuild(); },
-  scarAt, markScar, potBody, readPot,
+  scarAt, markScar, scarHand, potBody, readPot,
+  get scarHand0(){ return SCARHAND },
   get thresh(){ return THRESH }, set thresh(v){ THRESH=v },
   get cap(){ return CAP }, set cap(v){ CAP=v }, carry, SAND,
   get attr(){ return ATTR }, set attr(v){ ATTR=v },
@@ -4431,6 +4485,8 @@ window.POT={T,at,use,tick,settle,rebuild,POWERS,scene,
   HARDNESS, erode, STRATA, stratum, GRANITE, BASALT, LIMESTONE, SHALE, wearsAs,
   health, hardNow, markPot,
   genPot, GEN, fbm, vnoise, hashf, highest,
+  get lost(){ return LOST }, set lost(v){ LOST=v },
+  get dug(){ return DUG }, get filled(){ return FILLED },
   fertility, worthOf, FERT, FERT_GAIN, ALLU_FULL, richAs, soil, SOIL_MIN, wetAt, DRY,
   clumped, draining, underFall, growQuick, CLUMP_MIN,
   holdsBack, travel, seedReset, SEEDFLAG, LEAK_BASE, SOWN, sowDormant, wake,
