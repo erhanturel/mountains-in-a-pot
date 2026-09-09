@@ -136,12 +136,52 @@ After this block the game stops resembling anything on the market.
   arrives at the lee with less to give. **The rain shadow is where the
   desert comes from** — not a desert feature, a consequence of where you put
   the mountain.
+### The founder's note, 10 Sep — the Seasons have to MEAN something
+
+> "bulutlar taşınıyor ok ama kış gelince kar yağışı, yazın kuraklık vb —
+> dört mevsimi görsel olarak doğru verebilmeliyiz"
+
+C1 gave the Year a temperature and C2 gave it a wind, and neither yet
+*changes what the water does*. A Season you can only read off a clock is a
+label. All four have to be legible from the board alone, and each has to do
+something the others do not:
+
+```
+  Winter   water arrives as SNOW above the freezing line and stops moving
+  Spring   the snow releases -- a surge the player can aim by where the
+           freezing line fell, which is where they built the height
+  Summer   DROUGHT: less water enters, the lakes draw down, shores retreat
+           and the life on them is tested
+  Autumn   the last growth, and the colour that says so
+```
+
+**One warning to settle before building the drought, because the two
+versions are not equivalent.** CLAUDE.md states and measures an invariant:
+*water is created only by clouds and lost only over the edge* — 0 ticks in
+300 boards × 85 created any. Evaporation would break it, and the board would
+stop being a closed system we can check.
+
+- **Cheap and safe:** drought is `RAIN_MULT` falling in Summer. Clouds give
+  less; conservation is untouched; it uses a lever that already exists and
+  that the Boons already move.
+- **Honest and expensive:** real evaporation, `pool` shrinking with
+  `tempNow`. It gives drawdown on a pot with no rain at all, which the cheap
+  version cannot — a lake that shrinks while you watch. It costs the
+  conservation guarantee and the test that proves it.
+
+Recommend starting with the cheap one and measuring whether the drawdown
+reads at all; only pay for the second if it does not.
+
 - [ ] **C4 · Snow and the spring melt.** Above the freezing line water is
   held as snow and does not flow; in spring it releases. One number a hex,
-  no flow, no order dependence — the same shape as `pool`. Gives the Year a
-  rhythm instead of four identical quarters.
-- [ ] **C5 · Seasonal colour and effect.** The palette shifts, and the
-  season drives rainfall and evaporation through levers that already exist.
+  no flow, no order dependence — the same shape as `pool`. `tempNow` from C1
+  is already the driver, so this needs no new climate. **Snow is also the
+  first thing on this board that is white**, so it is the strongest visual
+  the Season has.
+- [ ] **C5 · Seasonal colour and effect.** The palette shifts with
+  `seasonSwing()`, and the Season drives rainfall through levers that
+  already exist. The biome must NOT move with it — that is C1's split and
+  the reason it exists.
 
 ## D · Where a pot comes from
 
