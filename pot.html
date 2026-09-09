@@ -263,8 +263,8 @@
      among them: same row, its own shape, no cost badge. It lives here and
      not with the bench buttons in the corner because it is pressed at the
      moment you are deciding where to dig, and that is where the eye is. */
-  #lens{position:absolute;left:50%;bottom:22px;margin-left:214px;display:none;z-index:3}
-  body.play #lens{display:block}
+  #lens{position:absolute;left:50%;bottom:22px;margin-left:214px;display:none;z-index:3;gap:8px}
+  body.play #lens{display:flex}
   #lens button{width:74px;height:74px;border-radius:50%;border:2px solid #33414a;
     background:linear-gradient(180deg,#212a31,#171d22);color:#8fb6c8;
     font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:11px;
@@ -4095,11 +4095,48 @@ lifeMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
 lifeMesh.castShadow=true; lifeMesh.receiveShadow=true;
 scene.add(lifeMesh);
 const LIFE_CAP=0.12;             /* world units of green on top of the soil */
+/* ================= THE SCAR LENS =================================
+   A playtest said the erosion could not be seen. Measured, it is not that
+   little happens -- at three clouds a Year, 463 of 469 hexes drop, 104 of
+   them by a whole elevation or more, and the board loses a slab somewhere
+   every 0.8 seconds. The trouble is that it happens EVERYWHERE: the busiest
+   ten hexes hold 11% of it, so no one place ever looks different from the
+   last time you looked at it.
+
+   The obvious physical fix was tried and measured first. Raising the
+   discharge exponent in the stream power from 1.0 to 2.5 -- the superlinear
+   law real rivers cut canyons with -- moves the concentration not at all
+   (463/469 hexes and 11% either way). The diffuseness does not come from the
+   transport law; it comes from rule 4, which levels water with every lower
+   neighbour, so water spreads and sediment spreads with it. Rule 4 is the
+   heart of the simulation and is not being changed for a legibility problem.
+
+   So the fix is a lens, not a rule. It is a pure read against a mark taken
+   when the Year began -- the same shape as the drainage lens: costs nothing,
+   moves nothing, takes no tick. The mark lives in the UI beside the undo
+   stack; the CORE stores nothing for it. */
+let SCAR=false, SCAR0=null, SCARMAX=1/6;
+function markScar(){ SCAR0=T.map(t=>t.h); SCARMAX=1/6; }
+function scarAt(i){ return SCAR0 ? SCAR0[i]-T[i].h : 0; }
+/* THE LENS HAS TO REACH THE LOOSE MATERIAL TOO. 381 of 469 hexes draw a slag
+   prism over their stone, so tinting only the ground left the lens invisible
+   on precisely the hexes that had eroded most -- the first build of it looked
+   like it did nothing at all. Both meshes take the same ramp over their own
+   base colour, so the reading is one reading. */
+function scarRGB(base,i){
+  const d=scarAt(i);
+  const f=Math.min(1,Math.abs(d)/Math.max(SCARMAX,1/6));
+  if(Math.abs(d)<1/12) return blend(base,[58,62,70],0.66);   /* untouched: sink it back */
+  return blend(base, d>0 ? blend([132,100,60],[246,158,58],f)    /* cut  : ochre */
+                         : blend([80,108,72],[150,220,110],f),   /* fill : green */
+               0.40+0.52*f);
+}
 /* PAL.slag is one colour, so this is the ramp it sits at the top of. */
 const SOILDARK=[74,54,38];
 const soilTint=(i)=>{
   const f=fertility(i), base=[0x8a,0x6d,0x50];
-  const c=blend(base,SOILDARK,Math.min(1,f*1.15));
+  let c=blend(base,SOILDARK,Math.min(1,f*1.15));
+  if(SCAR && SCAR0) c=scarRGB(c,i);
   return new THREE.Color(c[0]/255,c[1]/255,c[2]/255).convertSRGBToLinear();
 };
 /* B4. A ramp per biome, low to high, and the per-hex hash still picks a point
@@ -4409,6 +4446,13 @@ function drawnOut(i,k,v){
 }
 
 function tint(t,i,mat){
+  if(SCAR && SCAR0){
+    /* what this hex has lost since the Year turned. Cut reads ochre, fill
+       reads green -- a delta building is the same story told the other way
+       round -- and ground that has not moved sinks into the background. */
+    const c=scarRGB(terrain(t,mat),i);
+    return new THREE.Color(c[0]/255,c[1]/255,c[2]/255).convertSRGBToLinear();
+  }
   if(DRAIN && ACC){
     /* log scale: the interesting range runs from one tile draining itself
        to a trunk valley carrying a third of the board */
@@ -5183,15 +5227,36 @@ function drawDock(){
    whole game is about. */
 const lensEl=document.getElementById('lens');
 function drawLens(){
-  lensEl.innerHTML='<button class="'+(DRAIN?'on':'')+'" title="Drainage (V)">'+
+  lensEl.innerHTML=
+    '<button data-l="d" class="'+(DRAIN?'on':'')+'" title="Drainage (V)">'+
     '<svg viewBox="0 0 18 18"><path d="M3 3v4l6 4v4"/><path d="M15 3v4l-6 4"/></svg>'+
     '<span>Water <u>V</u></span></button>'+
-    '<div class="cap'+(DRAIN?' show':'')+'">where the water would go</div>';
-  lensEl.querySelector('button').onclick=toggleDrain;
+    '<button data-l="s" class="'+(SCAR?'on':'')+'" title="What the water took (C)">'+
+    '<svg viewBox="0 0 18 18"><path d="M3 12h3l3-7 3 10 3-5h2"/></svg>'+
+    '<span>Wear <u>C</u></span></button>'+
+    '<div class="cap'+(DRAIN||SCAR?' show':'')+'">'+
+      (SCAR?'what the water took this Year':'where the water would go')+'</div>';
+  lensEl.querySelectorAll('button').forEach(b=>b.onclick=()=>
+    b.dataset.l==='d'?toggleDrain():toggleScar());
 }
 function toggleDrain(){
   DRAIN=!DRAIN;
+  if(DRAIN) SCAR=false;                      /* one lens at a time, or they fight */
   ovDrain.classList.toggle('on',DRAIN);      /* the bench toggle stays in step */
+  drawLens(); rebuild();
+}
+/* the ramp is scaled to the deepest cut on the board, so early in a Year a
+   single slab still reads instead of being lost at the bottom of a scale
+   sized for a whole elevation */
+function scaleScar(){
+  if(!SCAR0) return;
+  let m=1/6;
+  for(let i=0;i<T.length;i++){ const d=Math.abs(SCAR0[i]-T[i].h); if(d>m) m=d; }
+  SCARMAX=m;
+}
+function toggleScar(){
+  SCAR=!SCAR;
+  if(SCAR){ if(!SCAR0) markScar(); DRAIN=false; ovDrain.classList.remove('on'); scaleScar(); }
   drawLens(); rebuild();
 }
 /* THE CAMERA ON THE KEYBOARD. Held keys are collected here and applied in
@@ -5218,6 +5283,10 @@ addEventListener('keydown',e=>{
     e.preventDefault(); if(PLAY&&!RUN.screen) setPause(!PAUSED); return; }
   if((e.code==='KeyV'||e.key==='v'||e.key==='V')&&PLAY&&!RUN.screen){
     e.preventDefault(); toggleDrain(); }
+  /* C, not E: E is already the camera's right-rotate, and a lens that
+     silently spun the world would be a bug nobody could describe. */
+  if((e.code==='KeyC'||e.key==='c'||e.key==='C')&&PLAY&&!RUN.screen){
+    e.preventDefault(); toggleScar(); }
 });
 addEventListener('keyup',e=>{ const m=CODEMAP[e.code]; if(m) KEYS.delete(m); });
 addEventListener('blur',()=>KEYS.clear());          /* no key stuck down on tab-out */
@@ -5572,6 +5641,7 @@ function drawHand(){
   el.querySelectorAll('button[data-k]').forEach(b=>b.onclick=()=>{ MAT=+b.dataset.k; drawHand(); hover(HOVER); drawTip(...TIPAT); });
 }
 function startYear(){
+  markScar();          /* the lens measures against the Year you are in */
   RUN.mana=manaFor(); RUN.manaAt=TICKS; RUN.hand=[...RUN.deck];
   if(!RUN.hand.includes(MAT)) MAT=RUN.hand[0]||SEED;
   RUN.yearStart=TICKS; RUN.nextYearAt=TICKS+yearLen();
@@ -6078,7 +6148,7 @@ function chronicle(){
   else if(now.alive-was.alive>=6)
     chronSay('good','it spreads', now.alive+' hexes green.');
 }
-setInterval(()=>{ if(PLAY){ checkUnlocks(); checkWhim(); chronicle(); } },500);
+setInterval(()=>{ if(PLAY){ checkUnlocks(); checkWhim(); chronicle(); if(SCAR) scaleScar(); } },500);
 
 /* =====================================================================
    THE LAB -- prepare, release, read.
