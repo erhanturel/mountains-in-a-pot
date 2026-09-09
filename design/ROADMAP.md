@@ -90,12 +90,15 @@ The current build actively annoys. None of this is a new system.
 
 After this block the game stops resembling anything on the market.
 
-- [ ] **B1 · Rock types and hardness.** Mold World 2.8. Not cosmetic:
-  `E = max(1 - contrast*(2*hardness - 1), 0.05)` as a multiplier on
-  weathering, so a hard band makes a river bend around it and a soft one
-  makes a canyon step. Differential erosion is where landscape character
-  comes from. Also halves the bedrock floor: layered ground makes digging
-  an act of discovery.
+- [x] **B1 · Rock types and hardness.** Five weatherable rocks with Mold
+  World's erodibility law: granite 0.20× through shale 1.50×, **7.49×** end to
+  end. Proved it changes the *shape* and not just the rate — two halves of one
+  slab under one cloud, identical to **0.002 elevations** with contrast off
+  and **6.8 elevations** apart with it on. The column is layered (rock /
+  limestone / shale / granite / bedrock) and the bedrock floor halved from 13
+  elevations to 7, so a dig has somewhere to go. Caught two bugs doing it: a
+  `MAXRUN` comment that stopped being true, and a bounds guard that ran after
+  the write and only broke the inner loop, so the board rendered black.
 - [ ] **B2 · Soil and fertility from alluvium.** Mold World 5.6, adapted:
   `soil = warmth * wet * flat * rate + alluvium * rate`,
   `fertility = soil * F(rock) * (0.4 + 0.6*wet) + 0.3*alluvium`.

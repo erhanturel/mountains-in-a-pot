@@ -500,10 +500,48 @@ const zTop=z=>(Z0+z+1)/SLAB;
 
    BASALT went with the lava it was made by, several rewrites ago; nothing
    had set or read it since. */
-const AIR=0, BEDROCK=1, ROCK=2, CLOUD=3, SLAG=4, SAND=5, SEED=6, MOSS=7, REED=8;
+const AIR=0, BEDROCK=1, ROCK=2, CLOUD=3, SLAG=4, SAND=5, SEED=6, MOSS=7, REED=8,
+      GRANITE=9, BASALT=10, LIMESTONE=11, SHALE=12;
+/* HARDNESS AND DIFFERENTIAL EROSION. Mold World 2.8 and 5.3, adapted: there
+   the hardness field comes from tectonic setting, here it comes from which
+   stratum a cell lies in, but the erodibility law is the same one.
+
+       E = max(1 - CONTRAST*(2*hardness - 1), 0.05)
+
+   E multiplies the weathering rate, so at CONTRAST 1 shale wears seven and a
+   half times faster than granite. That ratio is the whole point: it is where
+   landscape CHARACTER comes from. Uniform rock gives uniform slopes; a hard
+   band left standing while the soft rock around it goes is a cliff, a ledge,
+   a river forced to bend, a waterfall pinned to one line. Nothing else in the
+   engine can produce those, because nothing else distinguishes one piece of
+   ground from another.
+
+   BEDROCK is deliberately absent from the table. Not in it means E is 0
+   means it never weathers, which is the whole of what makes it bedrock, and
+   it stays a single test rather than a special case. */
+const HARDNESS={[ROCK]:0.55,[GRANITE]:0.90,[BASALT]:0.70,[LIMESTONE]:0.45,[SHALE]:0.25};
+let CONTRAST=1;
+const erode=m=>{ const h=HARDNESS[m]; return h===undefined ? 0 : Math.max(1-CONTRAST*(2*h-1),0.05); };
 /* SEED is on the palette but is not a cell and not an amount: it is the one
    thing the player does that the world then takes over. See LIFE below. */
-const MATS={[BEDROCK]:'bedrock',[ROCK]:'rock',[SLAG]:'slag',[SAND]:'sand',[CLOUD]:'cloud',[SEED]:'grass',[MOSS]:'moss',[REED]:'reed'};
+const MATS={[BEDROCK]:'bedrock',[ROCK]:'rock',[SLAG]:'slag',[SAND]:'sand',[CLOUD]:'cloud',
+  [SEED]:'grass',[MOSS]:'moss',[REED]:'reed',
+  [GRANITE]:'granite',[BASALT]:'basalt',[LIMESTONE]:'limestone',[SHALE]:'shale'};
+/* THE COLUMN IS LAYERED, from the floor up, and that is what makes digging an
+   act of discovery rather than a way of removing the one material there is.
+   Read as "everything below `to` is this", so the list runs upward.
+
+   The bedrock floor is halved -- it was thirteen elevations of it and the
+   player hit it one step down. Seven now, with six of workable stone above,
+   so a hole can go somewhere. */
+const STRATA=[
+  {to:-6, m:BEDROCK},      /* the floor: never weathers, cannot be worn away */
+  {to:-3, m:GRANITE},      /* hard basement. A dig that reaches it slows down */
+  {to:-1, m:SHALE},        /* soft: wears fast and gives soil fast */
+  {to: 1, m:LIMESTONE},
+  {to: 99,m:ROCK},
+];
+const stratum=e=>{ for(const s of STRATA) if(e<s.to) return s.m; return ROCK; };
 const CELL=new Uint8Array(T.length*ZN);
 const TOP=new Int16Array(T.length).fill(-1);
 const cell=(i,z)=>(z<0||z>=ZN)?AIR:CELL[i*ZN+z];
@@ -541,6 +579,10 @@ for(let i=0;i<T.length;i++){
   Object.defineProperty(T[i],'mat',{
     get(){ return TOP[i]>=0 ? CELL[i*ZN+TOP[i]] : AIR; },
     enumerable:true});
+  /* lay the strata the whole depth of the stack, then cut the column back to
+     the surface. setTop keeps whatever a cell already holds, so the layers
+     below survive; only what is above the surface is cleared. */
+  { const b=i*ZN; for(let z=0;z<ZN;z++) CELL[b+z]=stratum(zBot(z)); }
   setTop(i,0);
 }
 for(const t of T) t.nb=DIRS.map(d=>{
@@ -784,7 +826,11 @@ function weather(){
   if(WEATHER<=0) return;
   for(let i=0;i<T.length;i++){
     const t=TOP[i];
-    if(t<0 || CELL[i*ZN+t]!==ROCK) continue;      /* bedrock, or nothing */
+    if(t<0) continue;
+    /* E is 0 for bedrock and for anything that is not stone, so this one test
+       replaces the old `!== ROCK` and covers five rock types at once. */
+    const E=erode(CELL[i*ZN+t]);
+    if(!E) continue;
     if(T[i].life) continue;                        /* roots: see LIFE */
     /* TOOLS AND COVER. Grit dragged across bare rock grinds it -- that is
        how a river actually cuts, and a river carrying nothing barely cuts at
@@ -800,13 +846,16 @@ function weather(){
 
        grit is last tick's, since carry() runs after this. A tick of lag at
        these timescales is nothing. */
-    T[i].wear += (WEATHER + ABRADE*T[i].grit)/(1+T[i].sed/SHIELD);
-    while(T[i].wear>=LAYER && TOP[i]>=0 && CELL[i*ZN+TOP[i]]===ROCK){
+    T[i].wear += (WEATHER + ABRADE*T[i].grit)*E/(1+T[i].sed/SHIELD);
+    while(T[i].wear>=LAYER && TOP[i]>=0 && erode(CELL[i*ZN+TOP[i]])){
       T[i].wear-=LAYER;
       CELL[i*ZN+TOP[i]]=AIR; retop(i);            /* the slab is gone */
       T[i].sed+=LAYER;                            /* and is lying there loose */
     }
-    if(TOP[i]<0 || CELL[i*ZN+TOP[i]]!==ROCK) T[i].wear=0;
+    /* wear is progress against ONE slab of ONE rock. Reaching a different
+       stratum has to reset it, or a Season spent on shale would be carried
+       straight into the granite underneath it. */
+    if(TOP[i]<0 || !erode(CELL[i*ZN+TOP[i]]) || CELL[i*ZN+TOP[i]]!==CELL[i*ZN+t]) T[i].wear=0;
   }
 }
 
@@ -1303,6 +1352,13 @@ const PAL={
   rock:[[128,112,94],[218,204,180]],
   band:[40,32,26], occl:[44,38,40], wet:[52,84,100],
   slag:0x8a6d50, sand:0xd9c69a,
+  /* the strata, ordered hard to soft so the eye can read hardness off the
+     colour: pale speckled granite, dark basalt, warm limestone, blue-grey
+     shale. Each is a two-stop ramp like rock and bedrock, low to high. */
+  granite:[[126,120,132],[214,208,214]],
+  basalt:[[58,60,68],[122,124,134]],
+  limestone:[[150,132,104],[228,214,186]],
+  shale:[[86,92,100],[150,156,164]],
   water:0x2e8aa6, river:0x9ae2f2, rain:0xa8d8f0, cloud:0xe6e0d6,
   life:[[92,140,66],[158,186,78]],
   moss:[[74,108,70],[112,140,80]], reed:[[96,148,110],[150,190,120]],
@@ -1492,11 +1548,22 @@ const prism=new THREE.CylinderGeometry(1,1,1,6);
    today so this draws exactly what it drew before — but a carved column has
    several, and the count has to be able to grow. Worst case is alternating
    cells, so half a stack per column. */
-/* one prism per unbroken run of solid slabs. A column solid from the floor
-   is still ONE run however fine the slabs are, so this is sized for a few
-   caves per column rather than for 96 alternating ones -- at the old
-   ceil(ZN/2) it would now be 45,024 instances and 6MB of edge buffer. */
-const MAXRUN=T.length*4;
+/* One prism per unbroken run of solid slabs, and the budget is SIZED FROM THE
+   STRATA so it cannot drift again.
+
+   It used to say "a column solid from the floor is still ONE run however fine
+   the slabs are", and that was true while everything under the surface was
+   the same material. Layered ground broke it: an untouched column is now one
+   run per stratum, so the flat opening board alone wants five, where the old
+   T.length*4 assumed two plus room for a cave. The board rendered BLACK --
+   not blank, black -- because count ran past the end of the instance arrays
+   and three.js read whatever was after them.
+
+   +2 keeps the same headroom over the baseline that 4 gave over 2. At radius
+   64 that is 87,367 instances and 12.6 MB of edge buffer against 7.2 before;
+   most of that is reclaimable, because rim() is only ever visible on the
+   TOPMOST run of a column and is drawn for every buried one too. */
+const MAXRUN=T.length*(STRATA.length+2);
 const instHex=new Int16Array(MAXRUN).fill(-1);
 const ground=new THREE.InstancedMesh(
   prism, new THREE.MeshLambertMaterial(), MAXRUN);
@@ -1792,7 +1859,8 @@ function tint(t,i,mat){
 }
 /* one ramp per material: bedrock reads darker and cooler than rock, so a
    board of it is plainly a floor rather than plainly a landscape */
-const RAMP={ [BEDROCK]:PAL.bedrock, [ROCK]:PAL.rock };
+const RAMP={ [BEDROCK]:PAL.bedrock, [ROCK]:PAL.rock, [GRANITE]:PAL.granite,
+             [BASALT]:PAL.basalt, [LIMESTONE]:PAL.limestone, [SHALE]:PAL.shale };
 function terrain(t,mat){
   const f=(t.h+H_MAX)/(2*H_MAX);
   const r=RAMP[mat]||RAMP[ROCK];
@@ -1826,6 +1894,11 @@ function rebuild(){
       if(!solid(i,z)){ z++; continue; }
       /* a run is an unbroken stretch of ONE material, so a rock slab lying
          on bedrock draws as two prisms and you can see the join */
+      /* CHECKED BEFORE THE WRITE, and it has to be. The test used to sit
+         after n++ and broke only the inner loop, so the next hex started
+         writing again with n already at the ceiling: place() and setColorAt()
+         both ran past the end of their arrays, once per remaining hex. */
+      if(n>=MAXRUN) break;       /* more runs than the buffer holds */
       const mat=CELL[i*ZN+z];
       let e=z; while(e+1<ZN && CELL[i*ZN+e+1]===mat) e++;
       place(ground,n,t.x,t.y,zBot(z)*RISE,zTop(e)*RISE);
@@ -1833,7 +1906,6 @@ function rebuild(){
       rim(n,t.x,t.y,zTop(e)*RISE+0.004);
       instHex[n]=i; n++;
       z=e+1;
-      if(n>=MAXRUN) break;       /* more runs than the buffer holds */
     }
     /* water draws in WHOLE LAYERS. Anything shallower than one layer is
        held but not shown — that remainder is what makes ground bloom into a
@@ -2015,6 +2087,9 @@ function drawInfo(){
   let h='<h4>'+t.q+', '+t.r+'</h4>';
   h+=row('ground', t.h+'   ('+U(t.h)+' units)');
   h+=row('material', MATS[t.mat]||'—', t.mat?'':'q');
+  { const E=erode(t.mat);
+    h+=row('erodes at', E ? E.toFixed(2)+'× · hardness '+HARDNESS[t.mat].toFixed(2)
+                          : 'never', E?'':'q'); }
   const sl=t.sed>1e-12, sa=t.sand>1e-12;
   h+=row('slag', sl ? U(t.sed)+' units' : '—', sl?'s':'q');
   h+=row('sand', sa ? U(t.sand)+' units' : '—', sa?'s':'q');
@@ -2654,6 +2729,14 @@ function surfaceOf(i){
   if(t.sed>=LAYER-1e-9) return 'slag';
   return MATS[t.mat]||'air';
 }
+/* how fast this ground gives way, in the player's words rather than a
+   multiplier -- the number is in the bench readout for anyone who wants it */
+function wearsAs(i){
+  const E=erode(T[i].mat);
+  return !E ? 'never wears'
+       : E<0.35 ? 'very hard' : E<0.75 ? 'hard'
+       : E<1.05 ? 'ordinary'  : E<1.35 ? 'soft' : 'very soft';
+}
 /* which of the seeds in the hand would take here, if the one held will not.
    This is the whole answer to "where do I put Moss": on a shore of bare
    rock, grass says 'bare' and moss says yes, and nothing used to say so. */
@@ -2667,6 +2750,8 @@ function drawTip(x,y){
   tipEl.style.left=(x-r.left)+'px'; tipEl.style.top=(y-r.top)+'px';
   const t=T[HOVER];
   let h='<b>'+surfaceOf(HOVER)+'</b>';
+  if(!t.life && !Math.floor(t.pool/LAYER+1e-9) && t.sand<LAYER && t.sed<LAYER)
+    h+='<i>'+wearsAs(HOVER)+'</i>';
   if(t.life) h+='<i class="yes">'+KINDS[t.life]+' grows here</i>';
   else if(TOOL==='sow'&&UNLOCK.sow){
     const kind=KINDS[MAT]?MAT:SEED, why=habit(HOVER,kind);
@@ -3272,6 +3357,8 @@ window.POT={T,at,use,tick,settle,rebuild,POWERS,scene,
   KEYS, camKeys, get lockRot(){ return LOCKROT }, set lockRot(v){ LOCKROT=v; drawLock(); },
   falls, get fallCount(){ return falls.count },
   surfaceOf, wouldTake, drawTip, SEEDCARDS, showCodex, WONDER_HOW,
+  HARDNESS, erode, STRATA, stratum, GRANITE, BASALT, LIMESTONE, SHALE, wearsAs,
+  get contrast(){ return CONTRAST }, set contrast(v){ CONTRAST=v },
   /* the POST block is declared below this object, so these have to be
      getters or they read a const in its temporal dead zone */
   get TILT(){ return TILT }, get setTilt(){ return setTilt },

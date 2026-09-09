@@ -572,6 +572,95 @@ refused; the Whim fired on the first Lake and gave Monsoon; Year 1 cleared
 with 5 Dew, Monsoon bought, Year 2 opened with 10 mana and a fresh hand;
 an idle pot rests at Year 1 with Bloom 0.
 
+## B1 — rock types, and erosion that tells them apart
+
+Mold World 2.8 and 5.3, adapted. There the hardness field comes from tectonic
+setting; here it comes from which **stratum** a cell lies in. The erodibility
+law is the same one, and it multiplies the weathering rate:
+
+```
+  E = max(1 - CONTRAST*(2*hardness - 1), 0.05)
+
+  rock         hardness   E      ticks a slab   vs granite
+  granite        0.90    0.20        7000          1.00x
+  basalt         0.70    0.60        2334          3.00x
+  rock           0.55    0.90        1556          4.50x
+  limestone      0.45    1.10        1273          5.50x
+  shale          0.25    1.50         934          7.49x
+```
+
+**BEDROCK is deliberately absent from the table.** Not in it means `E` is 0
+means it never weathers, which is the whole of what makes it bedrock — and it
+stays one test rather than a special case. Verified: 50,000 ticks at the
+maximum rate the slider allows leaves `h` unmoved and 0.000000000 slag.
+
+### It changes the shape, not just the rate
+
+That is the claim worth testing, so it was. Two halves of one slab, identical
+in every way but the rock — shale west, granite east — under one line of cloud
+down the middle:
+
+```
+  ticks   CONTRAST     shale   granite   granite stands higher by
+  20000       0       -0.835    -0.833            0.002
+  20000       1       -2.657     3.958            6.615
+  60000       1       -2.864     3.958            6.823
+```
+
+With contrast off the halves are identical to **0.002 elevations** — the
+control holds. With it on, granite is essentially untouched at 3.958 of its
+original 4.0 while the shale is cut to −2.9: **a 6.8-elevation escarpment
+carved by nothing but which rock was there.** That is where landscape
+character comes from, and nothing else in the engine could produce it,
+because nothing else distinguished one piece of ground from another.
+
+### The column is layered, and the bedrock is halved
+
+Digging was removing the one material there was. It is now discovery:
+
+```
+  elevation   material     erodes at
+     1 and up  rock          0.90x
+    -1 to  1   limestone     1.10x
+    -3 to -1   shale         1.50x
+    -6 to -3   granite       0.20x      the practical floor of a dig
+   below -6    bedrock       never
+```
+
+Bedrock was thirteen elevations and the player met it one step down. It is
+**seven** now, with six of workable stone above it. Granite is the floor you
+actually reach: at the player's rate a slab of it takes 7,000 ticks against a
+15,360-tick run, so it is permanent within a run without being a special case.
+
+The pointer says which and how fast — *granite / very hard*, *shale / very
+soft* — and the bench readout carries the number.
+
+### The board went black, and it was two bugs
+
+Worth writing down because the first is a comment that quietly stopped being
+true and the second is a real out-of-bounds write.
+
+`MAXRUN` was `T.length*4`, justified by *"a column solid from the floor is
+still ONE run however fine the slabs are"*. True while everything under the
+surface was one material. **Layered ground makes an untouched column one run
+per stratum**, so the flat opening board alone wants five where the old figure
+assumed two plus a cave. It is now sized from `STRATA.length` so it cannot
+drift again.
+
+The second was worse. The guard read
+
+```js
+    place(ground,n,...); ground.setColorAt(n,...); n++;
+    if(n>=MAXRUN) break;          // AFTER the write, and only the inner loop
+```
+
+so when `n` hit the ceiling it broke the run loop, the **outer** hex loop
+carried on to the next hex, and `place()` wrote past the end of the instance
+arrays once more for every remaining hex. `ground.count` came out **1935
+against a capacity of 1876** and three.js read whatever followed — which is
+why the board rendered *black* rather than blank or short. The test is now
+before the write.
+
 ## Mana is a rate, not a lump
 
 A debt A1 ran up. Spreading the timescales made a Year **1920 ticks instead
