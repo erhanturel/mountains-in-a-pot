@@ -108,12 +108,19 @@ After this block the game stops resembling anything on the market.
   max. **The sand fraction was tried as an alluvium marker and dropped**:
   measured at 0.00–0.24% of loose ground over four scenarios, far too faint
   to carry a mechanic. Soil is tinted by fertility so a fan reads as soil.
-- [ ] **B3 · Biome as a pure read.** Mold World 6's Whittaker argmax:
-  `pref(v,lo,hi,fall) = max(0, 1 - max(lo-v, v-hi, 0)/fall)`, score is the
-  product over three axes, highest wins. Our axes: elevation, temperature,
-  local moisture. No new state, runs like `wonders()`.
-- [ ] **B4 · Biome colour in the renderer**, and the biome named in the
-  pointer readout beside the surface material.
+- [x] **B3 · Biome as a pure read.** Mold World 6's Whittaker argmax, ported
+  almost unchanged. Eleven biomes over elevation, temperature (altitude alone
+  — C1 in miniature) and moisture (water in reach over the hex and its six
+  neighbours). **The forest is a condition, not a timer**: measured on one hex
+  with time frozen, bare rock → scree → forest → grassland → alpine meadow by
+  changing only the ground; and directly for purity — set the conditions gives
+  Forest, 5000 ticks of drift gives Scree, restoring the conditions gives
+  Forest again.
+- [x] **B4 · Biome colour.** A two-stop ramp per living biome with the per-hex
+  hash still picking a point along it, so no two hexes of a forest are the
+  same green. The pointer names the biome; the bench readout shows the three
+  axes it was decided from. Bare-ground biomes are named but not painted —
+  the ground already shows its rock and soil, and snow arrives in C4.
 
 ## C · Climate — one system, not four
 

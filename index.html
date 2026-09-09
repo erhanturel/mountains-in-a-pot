@@ -148,6 +148,7 @@
   #tip i.no{color:#d08a6a}
   #tip i.yes{color:#9ed46a}
   #tip i.rich{color:#c8a86a}
+  #tip i.biome{color:#9fb8a0;font-weight:600}
   body.play #tip.show{display:block}
   #speed{position:absolute;right:12px;top:12px;display:none;gap:6px;z-index:3}
   body.play #speed.unlocked{display:flex}
@@ -1134,6 +1135,86 @@ const alive=()=>{ let n=0; for(const t of T) if(t.life) n++; return n; };
    it roots on bare rock and has no soil under it to be rich. */
 const FERT_GAIN=0.5;
 const worthOf=i=>WORTH[T[i].life]*(1+FERT_GAIN*fertility(i));
+
+/* ---------------------------------------------------------------------
+   BIOMES. Mold World 6, and it ports almost unchanged because a Whittaker
+   classification is already exactly what this project calls a pure read: an
+   argmax over axes the board can answer, storing nothing.
+
+       pref(v,lo,hi,fall) = max(0, 1 - max(lo-v, v-hi, 0)/fall)
+       score              = pref(elevation) * pref(temperature) * pref(moisture)
+
+   The highest score wins, the first declared wins a tie. Multiplied rather
+   than summed, so a biome that is badly wrong on ONE axis cannot win on the
+   strength of the other two -- a rainforest at -20 C scores zero however wet
+   and low it is.
+
+   THE FOREST IS A CONDITION, NOT A TIMER. This was the one thing the founder
+   asked for that had to be got right: "grass and moss merge into forest after
+   a while" is a counter, which is stored order-dependent state, and this
+   project has been burnt by that twice. Forest is a BAND on these three axes
+   plus depth of soil -- deep ground, water in reach, temperate. Sow a shore
+   and let the soil build and it becomes forest because it now IS forest, not
+   because a clock ran out. Take the water away and it stops being one. */
+
+/* the axes ---------------------------------------------------------------- */
+/* the floor of the range the axes are read against. -H_MAX rather than the
+   strata floor at -13, so the scale matches what a player can actually
+   build between: twelve elevations either way. */
+const BASE_E=-H_MAX;
+const elevAt=i=>Math.min(1,Math.max(0,(T[i].h-BASE_E)/(H_MAX-BASE_E)));
+/* C1 in miniature: a pot has no latitude, so temperature is altitude alone.
+   18 C at the waterline falling 1.6 C an elevation, which puts the top of a
+   twelve-step peak at about -1 C and the floor of a deep dig at 37. Season
+   will be added here in C5; nothing else needs to change when it is. */
+const TEMP_SEA=18, LAPSE=1.6;
+const tempAt=i=>TEMP_SEA-T[i].h*LAPSE;
+/* moisture is water IN REACH, over the hex and its six neighbours -- the same
+   signal rule 6 uses to decide habitability, but counted rather than asked as
+   a yes or no, so it grades from a damp shore to the middle of a lake. */
+const moistAt=i=>{
+  let s=(drowned(i)||riverEdge(i))?1:0, n=1;
+  const nb=T[i].nb;
+  for(let k=0;k<6;k++){ const j=nb[k]; if(j<0) continue; n++;
+    if(drowned(j)||riverEdge(j)) s++; }
+  return s/n;
+};
+
+/* the table. Each cell is lo, hi, fall -- 1 inside the band, falling linearly
+   to 0 over `fall` outside it. Marine classes and Koppen are not ported: a pot
+   has no sea and no latitude. */
+const BIOMES=[
+  /* living ground, richest first so a tie goes to the more particular one */
+  {k:'wetland',  nm:'Wetland',          life:1, soil:0, e:[0,.30,.20], t:[  5,30,14], m:[.70,1,.20]},
+  {k:'rainforest',nm:'Cloud forest',    life:1, soil:3, e:[0,.45,.25], t:[ 22,35, 6], m:[.60,1,.25]},
+  {k:'forest',   nm:'Forest',           life:1, soil:3, e:[.05,.60,.35],t:[ 8,22,10], m:[.35,.80,.28]},
+  {k:'boreal',   nm:'Boreal forest',    life:1, soil:2, e:[.20,.75,.30],t:[-12,8,12], m:[.30,.85,.30]},
+  {k:'meadow',   nm:'Alpine meadow',    life:1, soil:0, e:[.55,.95,.18],t:[ -5,10, 8], m:[.25,.85,.30]},
+  {k:'tundra',   nm:'Tundra',           life:1, soil:0, e:[.30,.90,.35],t:[-20,-2,10], m:[.05,.65,.30]},
+  {k:'grass',    nm:'Grassland',        life:1, soil:0, e:[0,.65,.40],  t:[  3,26,12], m:[.10,.55,.25]},
+  /* ground with nothing on it */
+  {k:'marsh',    nm:'Silt flat',        life:0, soil:2, e:[0,.30,.20],  t:[  0,40,18], m:[.55,1,.25]},
+  {k:'desert',   nm:'Desert',           life:0, soil:1, e:[0,.60,.40],  t:[ 20,40,10], m:[0,.20,.15]},
+  {k:'scree',    nm:'Scree',            life:0, soil:1, e:[.10,1,.40],  t:[-30,40,20], m:[0,.60,.40]},
+  {k:'snow',     nm:'Snowfield',        life:0, soil:0, e:[.70,1,.12],  t:[-40,0, 6],  m:[0,1,.50]},
+];
+const pref=(v,b)=>Math.max(0,1-Math.max(b[0]-v,v-b[1],0)/b[2]);
+function biome(i){
+  const t=T[i];
+  if(drowned(i)) return 'water';
+  const alive=t.life?1:0, courses=soil(i)/LAYER;
+  const e=elevAt(i), c=tempAt(i), m=moistAt(i);
+  let best='rock', score=0;
+  for(const B of BIOMES){
+    if(B.life!==alive) continue;
+    if(courses<B.soil) continue;                 /* forest needs ground to stand in */
+    const sc=pref(e,B.e)*pref(c,B.t)*pref(m,B.m);
+    if(sc>score){ score=sc; best=B.k; }
+  }
+  return score>0 ? best : (alive?'grass':(courses>=1?'scree':'rock'));
+}
+const BIOME_NAME=Object.fromEntries(BIOMES.map(B=>[B.k,B.nm]));
+BIOME_NAME.rock='Bare rock'; BIOME_NAME.water='Open water';
 const worth=()=>{ let w=0; for(let i=0;i<T.length;i++) if(T[i].life) w+=worthOf(i); return w; };
 
 /* ---------------------------------------------------------------------
@@ -1681,9 +1762,25 @@ const soilTint=(i)=>{
   const c=blend(base,SOILDARK,Math.min(1,f*1.15));
   return new THREE.Color(c[0]/255,c[1]/255,c[2]/255).convertSRGBToLinear();
 };
-const lifeTint=(t)=>{
+/* B4. A ramp per biome, low to high, and the per-hex hash still picks a point
+   along it -- so a forest is a forest and no two hexes of it are the same
+   green. The kind of seed no longer chooses the colour; the BIOME does, and
+   the kind is one of the things the biome is read from. That is the whole
+   point of B3 arriving: a hex is not "moss" any more, it is tundra or scree
+   or forest, and it says so. */
+const BIOME_RAMP={
+  wetland:   [[64,116,102],[112,168,132]],
+  rainforest:[[26,84,52],  [62,130,74]],
+  forest:    [[38,88,46],  [88,140,68]],
+  boreal:    [[44,84,74],  [92,132,102]],
+  meadow:    [[122,158,96],[176,200,126]],
+  tundra:    [[110,116,84],[156,158,120]],
+  grass:     [[92,140,66], [158,186,78]],
+};
+const lifeTint=(t,i)=>{
   const h=((t.q*73856093)^(t.r*19349663))>>>0, f=(h%1000)/1000;
-  const ramp=t.life===MOSS?PAL.moss:t.life===REED?PAL.reed:PAL.life;
+  const ramp=BIOME_RAMP[biome(i)] ||
+    (t.life===MOSS?PAL.moss:t.life===REED?PAL.reed:PAL.life);
   const c=blend(ramp[0],ramp[1],f);
   return new THREE.Color(c[0]/255,c[1]/255,c[2]/255).convertSRGBToLinear();
 };
@@ -2053,7 +2150,7 @@ function rebuild(){
     if(t.life){
       P.set(t.x,g*RISE+LIFE_CAP/2,t.y); S.set(0.94,LIFE_CAP,0.94);
       lifeMesh.setMatrixAt(i,M4.compose(P,Q,S));
-      lifeMesh.setColorAt(i,lifeTint(t));
+      lifeMesh.setColorAt(i,lifeTint(t,i));
     } else hide(lifeMesh,i);
     const wd = drawnLayers(i,t.pool)*LAYER;
     if(wd>0) place(water,i,t.x,t.y,g*RISE,(g+wd)*RISE);
@@ -2097,6 +2194,7 @@ function rebuild(){
   ground.instanceColor.needsUpdate=true;
   edgeGeo.attributes.position.needsUpdate=true;
   edgeGeo.computeBoundingSphere();
+  if(lifeMesh.instanceColor) lifeMesh.instanceColor.needsUpdate=true;
   slag.instanceMatrix.needsUpdate=true;
   /* WITHOUT THIS THE SLAG IS WHITE. three.js uploads instanceColor once when
      it is created and never again unless told, so the very first rebuild
@@ -2226,6 +2324,9 @@ function drawInfo(){
   { const E=erode(t.mat);
     h+=row('erodes at', E ? E.toFixed(2)+'× · hardness '+HARDNESS[t.mat].toFixed(2)
                           : 'never', E?'':'q'); }
+  h+=row('biome', BIOME_NAME[biome(HOVER)]||'—','s');
+  h+=row('  elev · temp · moist',
+    elevAt(HOVER).toFixed(2)+' · '+tempAt(HOVER).toFixed(0)+'° · '+moistAt(HOVER).toFixed(2));
   { const f=fertility(HOVER), courses=soil(HOVER)/LAYER;
     h+=row('fertility', f>0 ? f.toFixed(2)+' · '+courses.toFixed(1)+' courses on '+
       (MATS[t.mat]||'—') : '—', f>0?'s':'q');
@@ -2897,6 +2998,8 @@ function drawTip(x,y){
   let h='<b>'+surfaceOf(HOVER)+'</b>';
   if(!t.life && !Math.floor(t.pool/LAYER+1e-9) && t.sand<LAYER && t.sed<LAYER)
     h+='<i>'+wearsAs(HOVER)+'</i>';
+  { const b=biome(HOVER);
+    if(b!=='water') h+='<i class="biome">'+BIOME_NAME[b]+'</i>'; }
   { const f=fertility(HOVER);
     if(f>0.02) h+='<i class="rich">'+richAs(f)+' &middot; life worth &times;'+
                   (1+FERT_GAIN*f).toFixed(2)+'</i>'; }
@@ -3508,6 +3611,7 @@ window.POT={T,at,use,tick,settle,rebuild,POWERS,scene,
   WDRAW, PDRAW, ODRAW, drawnLayers, drawnOut,
   HARDNESS, erode, STRATA, stratum, GRANITE, BASALT, LIMESTONE, SHALE, wearsAs,
   fertility, worthOf, FERT, FERT_GAIN, ALLU_FULL, richAs, soil, SOIL_MIN,
+  biome, BIOMES, BIOME_NAME, elevAt, tempAt, moistAt, pref,
   get contrast(){ return CONTRAST }, set contrast(v){ CONTRAST=v },
   /* the POST block is declared below this object, so these have to be
      getters or they read a const in its temporal dead zone */
