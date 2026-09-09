@@ -572,6 +572,100 @@ refused; the Whim fired on the first Lake and gave Monsoon; Year 1 cleared
 with 5 Dew, Monsoon bought, Year 2 opened with 10 mana and a fresh hand;
 an idle pot rests at Year 1 with Bloom 0.
 
+## B2 — what the erosion is FOR
+
+Transport, deposition and fans have been in the engine since sand was built,
+and their output meant nothing: slag was rubble, and rubble was scenery. The
+playtest asked for the effects of erosion to be visible. They are visible now
+because they are **worth something**.
+
+```
+  fertility = min(1, soil / 4 courses) * F(rock beneath)
+  a living hex is worth  WORTH[kind] * (1 + 0.5 * fertility)
+```
+
+That is Mold World 5.6 with most of it taken away, and the subtractions are
+the interesting part.
+
+**Its `soil` line goes entirely.** Mold World *estimates* how much loose
+ground ought to be somewhere, from warmth, rain and slope, because a generator
+has to. We do not estimate it — we simulate it. `sed + sand` is real soil, made
+by weathering and moved by the water's own routing, and it is already right
+where the estimate would be wrong: a fan below a break of slope, a silted
+basin.
+
+**Its `wet` factor goes**, for a sharper reason: rule 6 already requires water
+in reach before anything can live at all, so every hex this could apply to is
+damp by construction. A term that is near-constant over the domain adds a
+number and no signal.
+
+**Its normalisations go.** `allu = sediment / max(sediment)` is a global read
+over a finished map, which a one-shot generator may do and a live simulation
+may not — one deep new fan would change the fertility of every hex on the
+board at once, and nothing here may depend on more than a hex and its six
+neighbours. Depth is measured against an absolute instead.
+
+### The sand fraction: a good idea the numbers killed
+
+Worth recording so it is not tried again. Sand is made by **travelling** — a
+share of the slag that moves is ground down on arrival — so the fraction of a
+hex's loose ground that is sand ought to be exactly how much of it was carried
+in, which is the whole difference between alluvium and regolith. It is a
+beautiful marker and it is already simulated.
+
+Measured over four scenarios at 30,000 ticks, sand came out at **0.00%,
+0.02%, 0.06% and 0.24%** of the loose ground on the board. Most material
+weathers where it lies and stays there shielded; only a sliver ever moves, and
+five percent of a sliver is nothing. The signal is real and far too faint to
+carry a mechanic.
+
+So a deep mantle on a flat summit reads as fertile as a floodplain, and on
+reflection that is not wrong — deep weathered regolith on flat ground *is*
+good soil. The distinction was a refinement nobody asked for.
+
+### Measured
+
+```
+  courses of soil    0     0.5     1      2      3      4      8     20
+  fertility        0.000  0.000  0.138  0.275  0.413  0.550  0.550  0.550
+```
+
+Below one course nothing can root at all, by rule 6. Above four it saturates,
+because roots only reach so far and because erosion routinely produces twenty
+to forty — the term does its discriminating at the thin end, which is where it
+matters.
+
+```
+  the same four courses on different rock
+  basalt    0.90 -> worth x1.450       rock     0.40 -> x1.200
+  shale     0.60 -> x1.300             granite  0.30 -> x1.150
+  limestone 0.55 -> x1.275             bedrock  0.30 -> x1.150
+```
+
+And the chain closing, on a shale ramp under rain:
+
+```
+   ticks       0    2000    5000   15000   40000
+   courses   0.0     5.3     9.3    18.3    20.3
+   fertility 0.000  0.550   0.600   0.300   0.300
+```
+
+**Fertility falls back at 15,000 ticks, and that is the system working.** The
+hex is wearing down through its own strata: its soil is now sitting on granite
+rather than on shale. Erode past the good rock and the ground under your soil
+gets poorer — a reason not to over-erode, and the first thing in this game
+that has pushed back at all.
+
+**The soil shows it.** Loose ground is tinted from pale ochre to dark brown by
+fertility, so a fan reads as soil rather than as more rubble, and the same
+depth on basalt is visibly darker than on limestone. The pointer says *thin
+soil*, *good soil*, *deep alluvium*, and what a hex would be worth.
+
+**One bug on the way:** three.js multiplies `material.color` by
+`instanceColor`, so leaving `PAL.slag` on the slag material squared the ochre
+and every fan came out near-black. The ground mesh has been white for exactly
+this reason since it was written; the slag mesh is now too.
+
 ## B1 — rock types, and erosion that tells them apart
 
 Mold World 2.8 and 5.3, adapted. There the hardness field comes from tectonic

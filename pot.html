@@ -147,6 +147,7 @@
   #tip i{font-style:normal;display:block;font-size:11.5px;color:#8e96a3;margin-top:1px}
   #tip i.no{color:#d08a6a}
   #tip i.yes{color:#9ed46a}
+  #tip i.rich{color:#c8a86a}
   body.play #tip.show{display:block}
   #speed{position:absolute;right:12px;top:12px;display:none;gap:6px;z-index:3}
   body.play #speed.unlocked{display:flex}
@@ -2959,7 +2960,69 @@ function carry(){
    --------------------------------------------------------------------- */
 const SOIL_MIN=LAYER;            /* one course of loose ground to root in */
 const soil=i=>T[i].sed+T[i].sand;
-const drowned=i=>T[i].pool>=LAYER-1e-9;
+/* FERTILITY. Mold World 5.6, and the adaptation is mostly SUBTRACTION.
+
+   Its formula is
+
+       soil      = temperature * wet * flat * weatherRate + allu * alluviumRate
+       fertility = soil * F(rock) * (0.4 + 0.6*wet) + 0.3*allu
+
+   Its `soil` term is a generator estimating how much loose ground OUGHT to be
+   somewhere, from warmth, rain and slope. We do not need to estimate it: we
+   simulate it. `sed + sand` is real soil, made by weathering and carried by
+   the water's own routing, and it is already correct on ground the estimate
+   would get wrong -- a fan below a break of slope, a silted basin. So the
+   whole first line goes and the depth we already have takes its place.
+
+   The `wet` factor goes too, and for a sharper reason: rule 6 already
+   requires water in reach before anything can live at all, so every hex this
+   could apply to is damp by construction. Multiplying by a term that is
+   near-constant over the whole domain adds a number and no signal.
+
+   Its normalisations go as well. `allu = sediment / max(sediment)` is a
+   global read over the finished map, which a one-shot generator may do and a
+   live simulation may not: one deep new fan would change the fertility of
+   every hex on the board at once, and nothing here is allowed to depend on
+   anything but a hex and its six neighbours. It is measured against an
+   ABSOLUTE depth instead -- four courses of loose ground is full.
+
+   What survives is the half that carries the meaning: how deep the alluvium
+   is, and what rock it came off. Basalt weathers rich and granite poor, which
+   is true, and it means the strata decide not only how the land wears but how
+   much will grow on what the wearing produced. */
+const FERT={[BASALT]:0.90,[SHALE]:0.60,[LIMESTONE]:0.55,[ROCK]:0.40,
+            [GRANITE]:0.30,[BEDROCK]:0.30};
+const ALLU_FULL=4*LAYER;         /* four courses is enough to root in; deeper adds nothing */
+/* Depth and the rock it came off, and nothing else. Two terms were tried and
+   dropped, both for reasons worth keeping so they are not tried again.
+
+   MOLD WORLD'S `wet` FACTOR. Rule 6 already requires water in reach before
+   anything can live at all, so every hex this could apply to is damp by
+   construction. A term that is near-constant over the whole domain adds a
+   number and no signal.
+
+   THE SAND FRACTION, which looked like the right answer and is not. Sand is
+   made by travelling -- a share of the slag that MOVES is ground down on
+   arrival -- so the fraction of a hex's loose ground that is sand ought to be
+   exactly how much of it was carried in, which is the whole difference
+   between alluvium and regolith. Measured over four scenarios at 30,000
+   ticks: sand comes out at 0.00%, 0.02%, 0.06% and 0.24% of the loose ground
+   on the board. Most material weathers where it lies and stays there
+   shielded; only a sliver ever moves, and 5% of a sliver is nothing. The
+   marker is real but far too faint to carry a mechanic.
+
+   So a deep mantle on a flat summit reads as fertile as a floodplain does,
+   and on reflection that is not wrong: deep weathered regolith on flat ground
+   IS good soil. The distinction was a refinement nobody asked for.
+
+   Depth saturates at four courses because roots only reach so far, and
+   because erosion routinely produces twenty to forty -- the term does its
+   discriminating at the thin end, which is where it matters. */
+const fertility=i=>{
+  const d=soil(i);
+  if(d<SOIL_MIN-1e-9) return 0;             /* bare rock grows nothing to feed */
+  return Math.min(1,d/ALLU_FULL)*(FERT[T[i].mat]||0.5);
+};const drowned=i=>T[i].pool>=LAYER-1e-9;
 /* THREE KINDS OF LIFE, each ONE CLAUSE on the rule above, and that is the
    whole constraint on adding more: if a kind needs something the world
    does not already compute, it does not go in.
@@ -3030,7 +3093,15 @@ function grow(){
 let LIFE_EVERY=40, TICKS=0;   /* see THE TIMESCALES, below */
 /* how many hexes are alive, and what they are worth: the seed of the score */
 const alive=()=>{ let n=0; for(const t of T) if(t.life) n++; return n; };
-const worth=()=>{ let w=0; for(const t of T) if(t.life) w+=WORTH[t.life]; return w; };
+/* FERT_GAIN is what makes erosion visible in the SCORE. A living hex on deep
+   alluvium off good rock is worth up to half as much again as one clinging to
+   bare stone, which closes the loop the engine has been half-running since
+   transport was built: the mountain wears, the water carries, it settles on
+   the flat, and THAT is where the Bloom is. Moss is untouched by design --
+   it roots on bare rock and has no soil under it to be rich. */
+const FERT_GAIN=0.5;
+const worthOf=i=>WORTH[T[i].life]*(1+FERT_GAIN*fertility(i));
+const worth=()=>{ let w=0; for(let i=0;i<T.length;i++) if(T[i].life) w+=worthOf(i); return w; };
 
 /* ---------------------------------------------------------------------
    WONDERS, and the BLOOM.
@@ -3542,8 +3613,12 @@ scene.add(ground);
 /* SLAG lies on the rock and is drawn in the same seventy-unit courses the
    water is, so a thin scatter of it is held but not shown -- the same
    arrangement, for the same reason, as everything else loose on this board. */
+/* white, because the colour now comes per instance from soilTint(). three.js
+   MULTIPLIES material.color by instanceColor, so leaving PAL.slag on here
+   squared the ochre and every fan came out near-black. The ground mesh has
+   always been white for the same reason. */
 const slag=new THREE.InstancedMesh(prism,
-  new THREE.MeshLambertMaterial({color:PAL.slag}), T.length);
+  new THREE.MeshLambertMaterial({color:0xffffff}), T.length);
 slag.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
 slag.castShadow=true; slag.receiveShadow=true;
 scene.add(slag);
@@ -3566,6 +3641,13 @@ lifeMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
 lifeMesh.castShadow=true; lifeMesh.receiveShadow=true;
 scene.add(lifeMesh);
 const LIFE_CAP=0.12;             /* world units of green on top of the soil */
+/* PAL.slag is one colour, so this is the ramp it sits at the top of. */
+const SOILDARK=[74,54,38];
+const soilTint=(i)=>{
+  const f=fertility(i), base=[0x8a,0x6d,0x50];
+  const c=blend(base,SOILDARK,Math.min(1,f*1.15));
+  return new THREE.Color(c[0]/255,c[1]/255,c[2]/255).convertSRGBToLinear();
+};
 const lifeTint=(t)=>{
   const h=((t.q*73856093)^(t.r*19349663))>>>0, f=(h%1000)/1000;
   const ramp=t.life===MOSS?PAL.moss:t.life===REED?PAL.reed:PAL.life;
@@ -3880,8 +3962,12 @@ function rebuild(){
        stops a sixth of a layer being drawn floating with nothing under it. */
     /* slag first: it is ground, so the water and the rivers stand on it */
     const sd = Math.floor(t.sed/LAYER+1e-9)*LAYER;
-    if(sd>0) place(slag,i,t.x,t.y,t.h*RISE,(t.h+sd)*RISE);
-    else     hide(slag,i);
+    if(sd>0){ place(slag,i,t.x,t.y,t.h*RISE,(t.h+sd)*RISE);
+      /* rich ground READS rich. Fresh scree off a slope is pale ochre; deep
+         alluvium off good rock goes dark and brown, so the fan below a break
+         of slope is visible as soil rather than as more rubble. */
+      slag.setColorAt(i,soilTint(i));
+    } else hide(slag,i);
     const ad = Math.floor(t.sand/LAYER+1e-9)*LAYER;
     if(ad>0) place(sand,i,t.x,t.y,(t.h+sd)*RISE,(t.h+sd+ad)*RISE);
     else     hide(sand,i);
@@ -4057,6 +4143,10 @@ function drawInfo(){
   { const E=erode(t.mat);
     h+=row('erodes at', E ? E.toFixed(2)+'× · hardness '+HARDNESS[t.mat].toFixed(2)
                           : 'never', E?'':'q'); }
+  { const f=fertility(HOVER), courses=soil(HOVER)/LAYER;
+    h+=row('fertility', f>0 ? f.toFixed(2)+' · '+courses.toFixed(1)+' courses on '+
+      (MATS[t.mat]||'—') : '—', f>0?'s':'q');
+    if(t.life) h+=row('worth here', worthOf(HOVER).toFixed(2), 's'); }
   const sl=t.sed>1e-12, sa=t.sand>1e-12;
   h+=row('slag', sl ? U(t.sed)+' units' : '—', sl?'s':'q');
   h+=row('sand', sa ? U(t.sand)+' units' : '—', sa?'s':'q');
@@ -4698,6 +4788,11 @@ function surfaceOf(i){
 }
 /* how fast this ground gives way, in the player's words rather than a
    multiplier -- the number is in the bench readout for anyone who wants it */
+/* how rich the ground is, in the player's words. The number is on the bench. */
+function richAs(f){
+  return f<0.15?'thin soil' : f<0.35?'soil' : f<0.55?'good soil'
+       : f<0.75?'rich soil' : 'deep alluvium';
+}
 function wearsAs(i){
   const E=erode(T[i].mat);
   return !E ? 'never wears'
@@ -4719,6 +4814,9 @@ function drawTip(x,y){
   let h='<b>'+surfaceOf(HOVER)+'</b>';
   if(!t.life && !Math.floor(t.pool/LAYER+1e-9) && t.sand<LAYER && t.sed<LAYER)
     h+='<i>'+wearsAs(HOVER)+'</i>';
+  { const f=fertility(HOVER);
+    if(f>0.02) h+='<i class="rich">'+richAs(f)+' &middot; life worth &times;'+
+                  (1+FERT_GAIN*f).toFixed(2)+'</i>'; }
   if(t.life) h+='<i class="yes">'+KINDS[t.life]+' grows here</i>';
   else if(TOOL==='sow'&&UNLOCK.sow){
     const kind=KINDS[MAT]?MAT:SEED, why=habit(HOVER,kind);
@@ -5325,6 +5423,7 @@ window.POT={T,at,use,tick,settle,rebuild,POWERS,scene,
   falls, get fallCount(){ return falls.count },
   surfaceOf, wouldTake, drawTip, SEEDCARDS, showCodex, WONDER_HOW,
   HARDNESS, erode, STRATA, stratum, GRANITE, BASALT, LIMESTONE, SHALE, wearsAs,
+  fertility, worthOf, FERT, FERT_GAIN, ALLU_FULL, richAs, soil, SOIL_MIN,
   get contrast(){ return CONTRAST }, set contrast(v){ CONTRAST=v },
   /* the POST block is declared below this object, so these have to be
      getters or they read a const in its temporal dead zone */

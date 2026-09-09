@@ -99,12 +99,15 @@ After this block the game stops resembling anything on the market.
   elevations to 7, so a dig has somewhere to go. Caught two bugs doing it: a
   `MAXRUN` comment that stopped being true, and a bounds guard that ran after
   the write and only broke the inner loop, so the board rendered black.
-- [ ] **B2 · Soil and fertility from alluvium.** Mold World 5.6, adapted:
-  `soil = warmth * wet * flat * rate + alluvium * rate`,
-  `fertility = soil * F(rock) * (0.4 + 0.6*wet) + 0.3*alluvium`.
-  Closes the loop the engine already half-runs: mountain erodes → water
-  carries → deposits on the flat → that ground is *fertile* → forest grows
-  there. Erosion becomes visible because its output finally means something.
+- [x] **B2 · Fertility, and what the erosion is for.** `fertility =
+  min(1, soil/4 courses) × F(rock beneath)`; a living hex is worth
+  `×(1 + 0.5·fertility)`, so basalt ground pays **1.450** against granite's
+  **1.150**. Mold World 5.6 with its `soil` line, its `wet` factor and its
+  global normalisations all removed — we simulate soil rather than estimating
+  it, rule 6 already guarantees wetness, and a live sim may not read a global
+  max. **The sand fraction was tried as an alluvium marker and dropped**:
+  measured at 0.00–0.24% of loose ground over four scenarios, far too faint
+  to carry a mechanic. Soil is tinted by fertility so a fan reads as soil.
 - [ ] **B3 · Biome as a pure read.** Mold World 6's Whittaker argmax:
   `pref(v,lo,hi,fall) = max(0, 1 - max(lo-v, v-hi, 0)/fall)`, score is the
   product over three axes, highest wins. Our axes: elevation, temperature,
