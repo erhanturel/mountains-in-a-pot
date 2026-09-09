@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Mountains in a Pot - a short build report: where the game stands, what changed, and what is next.">
+<style>
+  /* the reset the artifact wrapper supplies, so this file stands alone */
+  :root{color-scheme:light dark}
+  html,body{margin:0}
+  img{max-width:100%}
+  [hidden]{display:none!important}
+</style>
+<title>The Pot So Far</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,600;1,400&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  /* the game's own palette: limestone dust, dusk, teal water,
+     ochre rubble, moss green, and the granite underneath */
+  --ground:#ECE8DF;
+  --raise:#F6F3EC;
+  --sunk:#E3DED2;
+  --ink:#22252C;
+  --muted:#6B6E77;
+  --faint:#9B9D9F;
+  --rule:#D4CEC1;
+  --rule-soft:#E1DBCF;
+  --water:#2C767C;
+  --ochre:#A06B26;
+  --moss:#5F8036;
+  --granite:#6E747C;
+
+  --f-display:"Spectral",Georgia,serif;
+  --f-body:"IBM Plex Sans",system-ui,-apple-system,sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#15171E; --raise:#1D2029; --sunk:#101218;
+    --ink:#E4E1D9; --muted:#979CA5; --faint:#6B7077;
+    --rule:#2F333D; --rule-soft:#252932;
+    --water:#5CACB1; --ochre:#D0934A; --moss:#8FB35C; --granite:#8A9098;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#15171E; --raise:#1D2029; --sunk:#101218;
+  --ink:#E4E1D9; --muted:#979CA5; --faint:#6B7077;
+  --rule:#2F333D; --rule-soft:#252932;
+  --water:#5CACB1; --ochre:#D0934A; --moss:#8FB35C; --granite:#8A9098;
+}
+
+*{box-sizing:border-box}
+body{
+  background:var(--ground);
+  color:var(--ink);
+  font-family:var(--f-body);
+  font-size:16.5px;
+  line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+  padding:0 1.5rem 5rem;
+}
+.wrap{max-width:36rem;margin:0 auto}
+
+header{padding:4rem 0 2rem;border-bottom:2px solid var(--ink)}
+.eyebrow{
+  font-family:var(--f-mono);font-size:11px;font-weight:500;
+  letter-spacing:.17em;text-transform:uppercase;color:var(--water);
+}
+h1{
+  font-family:var(--f-display);font-weight:600;
+  font-size:clamp(2rem,6vw,2.7rem);line-height:1.1;
+  letter-spacing:-.015em;margin:.6rem 0 0;text-wrap:balance;
+}
+.sub{
+  font-family:var(--f-display);font-style:italic;font-size:1.1rem;
+  color:var(--muted);margin:.8rem 0 0;text-wrap:balance;
+}
+.facts{
+  display:flex;flex-wrap:wrap;gap:.4rem 2rem;margin-top:1.8rem;
+  font-family:var(--f-mono);font-size:11.5px;color:var(--muted);
+}
+.facts div{display:flex;flex-direction:column}
+.facts b{
+  color:var(--ink);font-family:var(--f-display);font-weight:600;
+  font-size:1.2rem;line-height:1.2;font-variant-numeric:tabular-nums;
+}
+
+section{margin-top:3rem}
+h2{
+  font-family:var(--f-display);font-weight:600;font-size:1.4rem;
+  line-height:1.25;margin:0 0 1rem;letter-spacing:-.01em;
+  padding-top:1rem;border-top:1px solid var(--rule);
+}
+p{margin:0 0 .9rem}
+section > p:last-child{margin-bottom:0}
+strong{font-weight:600}
+code{
+  font-family:var(--f-mono);font-size:.85em;
+  background:var(--sunk);border-radius:3px;padding:.06em .3em;
+}
+.lead{font-size:1.02rem}
+
+/* short items: a label, a line, a number */
+.items{display:flex;flex-direction:column;gap:0;border-top:1px solid var(--rule-soft)}
+.item{padding:.95rem 0;border-bottom:1px solid var(--rule-soft)}
+.item b{display:block;font-weight:600;font-size:1rem;margin-bottom:.15rem}
+.item p{margin:0;color:var(--muted);font-size:.93rem;line-height:1.55}
+.item .num{
+  font-family:var(--f-mono);font-size:.86rem;color:var(--ink);
+  font-variant-numeric:tabular-nums;display:block;margin-top:.35rem;
+}
+.num .was{color:var(--faint)}
+.num .now{color:var(--moss);font-weight:500}
+.num .bad{color:var(--ochre);font-weight:500}
+
+/* the one table worth keeping */
+figure{margin:1.4rem 0 0}
+.tbl{overflow-x:auto;border-top:1.5px solid var(--ink);border-bottom:1px solid var(--rule)}
+table{
+  border-collapse:collapse;width:100%;font-family:var(--f-mono);
+  font-size:12.5px;font-variant-numeric:tabular-nums;white-space:nowrap;
+}
+th{
+  text-align:right;font-weight:500;color:var(--muted);font-size:11px;
+  padding:.5rem .7rem;border-bottom:1px solid var(--rule);
+}
+th:first-child,td:first-child{text-align:left;padding-left:0}
+td{padding:.42rem .7rem;border-bottom:1px solid var(--rule-soft);text-align:right}
+tr:last-child td{border-bottom:none}
+.good{color:var(--moss)} .bad{color:var(--ochre)} .dim{color:var(--faint)}
+figcaption{font-size:.87rem;color:var(--muted);margin-top:.6rem;line-height:1.5}
+
+.pull{margin:1.6rem 0;padding-left:1.2rem;border-left:3px solid var(--ochre)}
+.pull p{font-family:var(--f-display);font-size:1.12rem;line-height:1.45;margin:0}
+
+ol.next{margin:0;padding-left:1.3rem}
+ol.next li{margin-bottom:.7rem;padding-left:.2rem}
+ol.next li::marker{font-family:var(--f-mono);font-size:.85em;color:var(--water)}
+ol.next b{font-weight:600}
+ol.next span{color:var(--muted);font-size:.93rem}
+
+.ask{
+  background:var(--raise);border:1px solid var(--rule-soft);
+  border-radius:4px;padding:1rem 1.2rem;margin-top:.8rem;
+}
+.ask b{display:block;font-weight:600;margin-bottom:.2rem}
+.ask p{margin:0;color:var(--muted);font-size:.93rem;line-height:1.55}
+
+footer{
+  margin-top:3.5rem;padding-top:1.3rem;border-top:1px solid var(--rule);
+  font-family:var(--f-mono);font-size:11.5px;color:var(--faint);line-height:1.9;
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+:focus-visible{outline:2px solid var(--water);outline-offset:2px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">Mountains in a Pot</div>
+  <h1>The Pot So Far</h1>
+  <p class="sub">Three days of building, in short. Every number here came from a measurement, not a guess.</p>
+  <div class="facts">
+    <div><b>7–9 Sep</b>2026</div>
+    <div><b>49</b>commits</div>
+    <div><b>14</b>test scripts</div>
+    <div><b>30 min</b>one run</div>
+  </div>
+</header>
+
+<section>
+  <h2>Where it stands</h2>
+  <p class="lead">You get one pot. You cut the ground, hang clouds, and the water finds its own level. Life takes hold on the shores it makes. Eight Years, about half an hour.</p>
+  <p>It is playable now — <code>pot.html</code> is a single file that opens from a double click. No server, no install.</p>
+</section>
+
+<section>
+  <h2>What changed</h2>
+
+  <div class="items">
+    <div class="item">
+      <b>The pot is generated</b>
+      <p>Every run used to open on the same flat disc of rock. Now the terrain is made from a seed, and the valleys are cut by our own erosion engine rather than painted on.</p>
+      <span class="num"><span class="was">was: 1 of 5 rocks visible, 1 of 11 biomes, no relief</span> · <span class="now">now: 4 of 5 rocks, 7–10 elevations of relief</span></span>
+    </div>
+
+    <div class="item">
+      <b>Rain now costs something</b>
+      <p>Water is the only thing that moves ground, and some of it goes over the edge for good. What it uncovers is granite, which will not make soil again inside a run. Life binds the ground, so planting is the only defence.</p>
+      <span class="num"><span class="now">2 clouds → 0.25% of the pot lost</span> · <span class="bad">14 clouds → 13%, and 106 hexes turned barren</span></span>
+    </div>
+
+    <div class="item">
+      <b>Score is life times what the pot has left</b>
+      <p>It used to be life times the shapes the water made. On real terrain the water makes those by itself, so the score was measuring the seed instead of the player.</p>
+    </div>
+
+    <div class="item">
+      <b>The world reports on itself</b>
+      <p>A feed beside the board: <em>“Granite is showing on 4 more hexes. It makes no soil.”</em> Erosion is the one thing that happens to you rather than because of you, and nothing used to say it was happening.</p>
+    </div>
+
+    <div class="item">
+      <b>Pacing was one speed for everything</b>
+      <p>Water, soil and life all moved at nearly the same rate, so every speed button made the whole world fast or the whole world slow. They are spread apart now — water in seconds, life in a minute, soil across the run.</p>
+      <span class="num"><span class="was">was: 1.6× between fastest and slowest</span> · <span class="now">now: 16.5×</span></span>
+    </div>
+
+    <div class="item">
+      <b>Rock is layered, and erosion can tell the types apart</b>
+      <p>Five kinds, from soft shale to hard granite. Digging is discovery rather than removing the one material there was.</p>
+      <span class="num">two halves of one slab under one cloud: <span class="was">0.002 elevations apart with it off</span> · <span class="now">6.8 apart with it on</span></span>
+    </div>
+
+    <div class="item">
+      <b>Smaller things</b>
+      <p>Meteors you can watch land. Waterfalls are drawn at last. Camera on the keyboard. Flickering water fixed. The wheel of fortune waits for you instead of interrupting. “Harvest” is now “The Reading” — nothing is reaped, the year turns and the pot is read out.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>The decision the game now has</h2>
+  <p>This is the part worth reading twice. Rain is a loan against the pot, and the interest comes due late in the run.</p>
+
+  <figure>
+    <div class="tbl">
+      <table>
+        <caption class="dim" style="caption-side:top;text-align:left;font-family:var(--f-mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;padding-bottom:.55rem;color:var(--muted)">Same pot, two ways of playing it · score by Year</caption>
+        <thead>
+          <tr><th>how it was played</th><th>Y1</th><th>Y2</th><th>Y3</th><th>Y4</th><th>Y5</th><th>Y6</th><th>Y7</th><th>Y8</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>careful, 3 clouds</td><td>49</td><td>100</td><td>117</td><td>113</td><td class="good">155</td><td class="good">157</td><td class="good">147</td><td class="good">154</td></tr>
+          <tr><td>greedy, 16 clouds</td><td>56</td><td>90</td><td>84</td><td>74</td><td>74</td><td class="bad">65</td><td class="bad">60</td><td class="bad">58</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <figcaption>Careful play climbs. Greedy play peaks in Year 2 and falls for the rest of the run — the pot it spent early cannot grow anything late.</figcaption>
+  </figure>
+
+  <div class="pull">
+    <p>Before this, everything that made the game hard came from outside the simulation: a spending budget, a target number, a quest list. Now the world itself pushes back.</p>
+  </div>
+</section>
+
+<section>
+  <h2>What's next</h2>
+  <ol class="next">
+    <li><b>Someone plays a full run.</b> <span>The score targets are still set by a script, not a person. This is the next thing that matters and it needs a human.</span></li>
+    <li><b>Climate.</b> <span>Temperature, wind, and clouds that drift instead of sitting where you put them. Rain shadows make deserts on their own. There is finally terrain for it to act on.</span></li>
+    <li><b>Pots you can share.</b> <span>A seed picks the terrain already; it just needs to be offered to the player. This is the answer to “why start a second run”.</span></li>
+    <li><b>Grass that moves in the wind.</b> <span>Last on purpose — polishing while the systems underneath are still moving means doing it twice.</span></li>
+  </ol>
+</section>
+
+<section>
+  <h2>Open for you</h2>
+
+  <div class="ask">
+    <b>Should a cloud rain on seven hexes instead of one?</b>
+    <p>Stacked clouds drop everything on a single column and pile the water up. Spreading it over the hex below and its six neighbours halves that, and makes shaping the land the way you steer water. It changes a core rule, so it wants a decision rather than a quiet edit.</p>
+  </div>
+
+  <div class="ask">
+    <b>Is “slag” the right word?</b>
+    <p>It is the loose material erosion makes. “Regolith” is the true word and the more interesting one; “slag” sounds industrial.</p>
+  </div>
+
+  <div class="ask">
+    <b>How punishing should the pot's decline be?</b>
+    <p>Right now the physics decides it and the range is wide — a careless run costs fifty times what a careful one does. Making it harsher was tried and measured: it punishes careful play just as much, so it was left alone. Worth feeling before we change it.</p>
+  </div>
+</section>
+
+<footer>
+  <div>Branch <code style="background:none;padding:0">steps</code> · 7–9 September 2026 · 49 commits</div>
+  <div>Playable: <code style="background:none;padding:0">pot.html</code> — one file, opens from a double click.</div>
+  <div><code style="background:none;padding:0">?seed=42</code> picks a pot · <code style="background:none;padding:0">?flat=1</code> brings back the old flat disc.</div>
+</footer>
+
+</div>
+</body>
+</html>
