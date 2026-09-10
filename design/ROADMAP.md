@@ -124,18 +124,34 @@ After this block the game stops resembling anything on the market.
 
 ## C · Climate — one system, not four
 
-- [ ] **C1 · Temperature.** No latitude in a pot, so it is elevation and
+- [x] **C1 · Temperature.** `t = base − elevation×lapse + the Season's swing`,
+  and **two of them on purpose**: `tempAt` is the Year's mean and the biome
+  reads it, `tempNow` carries the swing and snow and the palette read that.
+  Measured on a still board, **0 biome changes across two full Years** — the
+  map keeps its identity and the Year gets a rhythm. Relief is worth 11.7 °C
+  on a radius-12 pot and the Season 10.0. Shown in two places: the pot's
+  range beside the clock, the hex's own reading under the pointer. Also made
+  `genPot` reset TICKS, or a run opened its first Spring at whatever phase
+  the generator stopped on.
+- [ ] ~~C1 · Temperature.~~ No latitude in a pot, so it is elevation and
   season: `t = base - elevation*lapse + seasonSwing`. This is what puts snow
   on a peak and nowhere else.
-- [ ] **C2 · Wind and drifting clouds.** Six directions. Clouds are no longer
-  parked where you placed them; they move. This alone makes the board stop
-  being solved once and for all.
-- [ ] **C3 · Orographic rainfall.** Mold World 4.3, almost unchanged:
-  `lift = max(0, z - zUpwind)`, `rain = q*(base + gain*lift)`,
-  `q -= rain`. A cloud gives up its water climbing the windward slope and
-  arrives at the lee with less to give. **The rain shadow is where the
-  desert comes from** — not a desert feature, a consequence of where you put
-  the mountain.
+- [x] **C2 · Wind and drifting clouds.** A cloud crosses one hex every 120
+  ticks — 14 s at 1×, sixteen hexes a Year — and the wind holds for a **Year**
+  (it turned each Season until C3 measured that clouds then *orbited* rather
+  than traversed). Moved from a snapshot, and `i → nb[d]` is injective so two
+  stacks can never collide. What it does: **rain is something to catch.** A
+  closed basin in the path holds **20.6 / 47.3 / 128.6** courses at 1, 2 and 4
+  elevations deep, two Years after the cloud has gone; flat ground keeps
+  nothing. So digging is the verb that decides the run.
+- [x] **C3 · Orographic rainfall.** Mold World 4.3 with `q` adapted rather
+  than added: a cloud's **stack is its charge**, so climbing spends tiles —
+  `floor(lift × 1.5)` — and no third number is stored on a hex. Measured
+  windward/lee on a ridge: **1.0× (no ridge, the control), 1.2×, 1.8×, 2.5×,
+  total at 4 elevations**, where the cloud dies on the climb. Twelve tiles is
+  the cap, so a full cloud crosses eight elevations and a small one crosses
+  nothing.
+
 ### The founder's note, 10 Sep — the Seasons have to MEAN something
 
 > "bulutlar taşınıyor ok ama kış gelince kar yağışı, yazın kuraklık vb —
