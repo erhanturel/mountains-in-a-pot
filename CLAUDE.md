@@ -117,6 +117,11 @@ steps              a sim-board roguelike.  Years, Omens, a Spring shop with
 
 Both forked from `f6eda45`, so **both already have the settle optimisation**.
 
+The split in one line, in the founder's words: **she is working on the
+diegetic approach and this line is working on the simulation approach.** Art,
+biomes, Years and the shop belong to `steps`; rules, measurement and the
+physics belong here. That is also the rule for where new work should land.
+
 ### The disagreement, and it is a real one
 
 The two lines answered the same question opposite ways, both on purpose and
