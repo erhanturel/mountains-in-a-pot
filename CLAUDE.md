@@ -155,9 +155,15 @@ freezing sits at 14 / 3.4 = 4.1 elev
   merged world, max 24 elev  ->  snow line an EIGHTH of the way up
 ```
 
-Seven eighths of every mountain permanently white, every snow and melt
-measurement on `steps` invalidated, and nothing anywhere flags it. `SNOW_FULL`,
-`TEMP_SEA`, `SWING` and `DROUGHT` are all calibrated against a 12-elev world.
+Seven eighths of every mountain permanently white, and every snow and melt
+measurement on `steps` invalidated. `SNOW_FULL`, `TEMP_SEA`, `SWING` and
+`DROUGHT` are all calibrated against a 12-elev world.
+
+**Nothing flags it at merge time** — but it would not stay hidden, and that is
+to `steps`' credit rather than luck. `design/unity/fixtures.json` pins
+`ZN: 192`, `Z0: -78` and `CLOUD_Z: 180` in its `constants` block, so
+`node test/fixtures.js` fails loudly the moment anyone runs it. The danger is
+the window between the merge and that run, not the merge being undetectable.
 
 ### Porting between them
 
