@@ -31,7 +31,10 @@ const hi = () => Math.max(...M.T.map((t, i) => M.tempNow(i)));
 
 console.log('THE SEASON, ON A BOARD THAT IS OTHERWISE STILL\n');
 console.log('  season    swing    coldest   warmest   biomes changed   drawn ground changed');
+/* sample at the MIDDLE of each Season: since the phase was corrected the
+   peak sits at a Season's centre, so its edges read the average of two. */
 for (let s = 0; s < 8; s++) {
+  for (let n = 0; n < M.SEASON_LEN / 2; n++) M.tick();
   const nm = SEASONS[s % 4] + (s >= 4 ? ' (Y2)' : '');
   const now = biomesNow();
   let ch = 0; for (let i = 0; i < base.length; i++) if (now[i] !== base[i]) ch++;
@@ -39,7 +42,7 @@ for (let s = 0; s < 8; s++) {
   console.log('  ' + nm.padEnd(12) + M.seasonSwing().toFixed(2).padStart(6) +
     lo().toFixed(1).padStart(11) + hi().toFixed(1).padStart(10) +
     String(ch).padStart(17) + String(moved).padStart(23));
-  for (let n = 0; n < M.SEASON_LEN; n++) M.tick();
+  for (let n = 0; n < M.SEASON_LEN / 2; n++) M.tick();
 }
 console.log('\n  relief is worth ' + ((Math.max(...M.T.map(t => t.h)) - Math.min(...M.T.map(t => t.h))) * M.LAPSE).toFixed(1) +
   ' degrees on this pot; the Season is worth ' + (2 * M.SWING).toFixed(1) + '.');

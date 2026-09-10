@@ -34,13 +34,14 @@ console.log('  sampled mid-      snow hexes   snow held   standing water   relea
   const high = () => M.T.map((t, i) => i).sort((a, b) => (M.T[b].h - M.T[a].h) || (a - b))[0];
   let last = 0;
   for (let s = 0; s < 8; s++) {
-    for (let k = 0; k < M.SEASON_LEN / 2; k++) { if (k === 0) M.addCloud(high(), 4); M.tick(); }
+    /* keep a cloud over the high ground: it drifts, so it is replaced */
+    for (let k = 0; k < M.SEASON_LEN / 2; k++) { if (k % 120 === 0) M.addCloud(high(), 4); M.tick(); }
     const held = snow(M), rel = Math.max(0, last - held); last = held;
     console.log('  ' + (season(M) + (s >= 4 ? ' (Y2)' : '')).padEnd(18) +
       String(snowy(M)).padStart(8) + held.toFixed(1).padStart(13) +
       pool(M).toFixed(1).padStart(16) +
       (rel > 0.5 ? rel.toFixed(0) + ' courses' : '\u2014').padStart(22));
-    for (let k = 0; k < M.SEASON_LEN / 2; k++) M.tick();
+    for (let k = 0; k < M.SEASON_LEN / 2; k++) { if (k % 120 === 0) M.addCloud(high(), 4); M.tick(); }
   }
 }
 

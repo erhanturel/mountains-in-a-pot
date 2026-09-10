@@ -3437,10 +3437,66 @@ const elevAt=i=>Math.min(1,Math.max(0,(T[i].h-BASE_E)/(H_MAX-BASE_E)));
    the peaks and nothing else -- and building higher earns a real snowpack.
    The lowlands do not move, and the map gets one more biome rather than
    only getting colder. */
-const TEMP_SEA=18, LAPSE=3.4, SWING=5;
+/* AND THE BASE CAME DOWN WHEN THE PHASE WAS FIXED. With the peak of the
+   Season moved to its middle, midwinter is genuinely the coldest moment
+   rather than a point on the way down -- and at a base of 18 that left a
+   snow line touching eight hexes of 469, a dusting on the very top and
+   nothing a player would call a winter. Steepening the lapse again would
+   only have cooled the peaks, which were already the only thing freezing.
+   Lowering the base cools everything, which is what was wanted:
+
+     base   midwinter coldest   frozen at midwinter   lowland winter/summer
+       18              -4.0             8 of 469              13 / 23
+       14              -8.0            44 of 469               9 / 19
+       10             -12.0           103 of 469               5 / 15
+
+   14 puts a snow CAP on the pot -- about a tenth of it, reaching down the
+   mountain rather than sitting on its point -- and leaves the lowlands at a
+   temperate 9 to 19. Biome count is unchanged at four, so this buys winter
+   without making the map colder in identity, which is C1's whole split. */
+const TEMP_SEA=14, LAPSE=3.4, SWING=5;
 const SEASON_LEN=480;              /* ticks. The clock in the UI reads this. */
-/* 0 at Spring, +1 at Summer, 0 at Autumn, -1 at Winter */
-const seasonSwing=()=>Math.sin(Math.PI*(TICKS/SEASON_LEN)/2);
+/* THE PEAK BELONGS IN THE MIDDLE OF THE SEASON, NOT ON ITS EDGE.
+   This was `sin(pi*s/2)`, which puts +1 at the instant Summer BEGINS and
+   sends it downhill from there -- so the label said Summer while the world
+   was already cooling, and the hottest moment of the Year fell on a
+   boundary nobody can see. C5's drought made it obvious: sampled at the
+   middle of Spring and the middle of Summer, the rain rate read the same
+   0.51x both times, because the curve was straddling them.
+
+   Half a Season of phase fixes it: 0 at MIDspring, +1 at MIDsummer, 0 at
+   MIDautumn, -1 at MIDwinter. Each Season now has a characteristic value at
+   its own centre, which is what a player means by the word. */
+const seasonSwing=()=>Math.sin(Math.PI*(TICKS/SEASON_LEN-0.5)/2);
+/* WHERE IN THE YEAR, not just how warm. The swing is 0 in BOTH Spring and
+   Autumn, so anything that has to tell them apart -- the palette, and one
+   day the harvest -- needs the phase itself. 0 Spring, 1 Summer, 2 Autumn,
+   3 Winter, continuous between. */
+const seasonPhase=()=>((TICKS/SEASON_LEN)%4+4)%4;
+
+/* ================= C5 . THE SUMMER DROUGHT ==========================
+   The founder's note: winter should bring snow and summer drought. C4 did
+   the snow. This is the drought, and it is deliberately the CHEAP version of
+   the two that were written up yesterday.
+
+   CLAUDE.md states and measures an invariant -- water is created only by
+   clouds and lost only over the edge, 0 ticks in 300 boards x 85 created
+   any. Real evaporation would break it and take the test that proves the
+   board is a closed system with it. Rain that varies with the Season keeps
+   it whole: nothing new is created or destroyed, it arrives at a different
+   RATE.
+
+   It is symmetric about 1 and it multiplies the sky, not RAIN_MULT. Two
+   reasons for both. Symmetric because sin averages to zero over a Year, so
+   the pot gets exactly as much water as before and the Season REDISTRIBUTES
+   it rather than nerfing it -- a dry summer is paid for by a wet winter, and
+   the winter's share is what C4 turns into snow. And separate from RAIN_MULT
+   because that is the Boons' lever: Monsoon sets it and the Whim multiplies
+   and divides it, and CLAUDE.md is explicit that the multiplicative `off()`
+   has to stay exact. A Season reaching into the same number would break
+   that in a way nobody would find for a week. */
+const DROUGHT=0.7;
+const seasonRain=()=>1-DROUGHT*seasonSwing();   /* summer 0.3x, winter 1.7x */
 const tempAt=i=>TEMP_SEA-T[i].h*LAPSE;            /* the Year's mean */
 const tempNow=i=>tempAt(i)+SWING*seasonSwing();   /* what it is right now */
 /* moisture is water IN REACH, over the hex and its six neighbours -- the same
@@ -3806,7 +3862,7 @@ function tick(){
   for(let i=0;i<T.length;i++){
     const n=clouds(i);
     if(!n) continue;
-    const amt=n*RAINFALL*RAIN_MULT;          /* a stack of n drops n times the rain */
+    const amt=n*RAINFALL*RAIN_MULT*seasonRain();   /* n tiles, the Boons' lever, the Season's */
     if(tempNow(i)<FREEZE) T[i].snow+=amt;    /* it arrives as snow and stays */
     else                  T[i].pool+=amt;
   }
@@ -4420,11 +4476,38 @@ const BIOME_RAMP={
   tundra:    [[110,116,84],[156,158,120]],
   grass:     [[92,140,66], [158,186,78]],
 };
+/* ================= C5 . THE SEASON IN THE COLOUR =====================
+   Snow says winter and nothing says the other three. The living ground is
+   what turns -- so the same green a biome already chose is pushed toward a
+   Season's colour, and nothing else about the hex changes.
+
+   IT IS A TINT, NOT AN IDENTITY. `biome(i)` still picks the ramp, still from
+   `tempAt`, still the Year's mean; a forest in November is a forest that has
+   gone gold, not a different biome. That is C1's split doing its job in the
+   one place a player would most easily mistake weather for what a place IS.
+
+   The strengths are unequal on purpose. Autumn is the loud one, because it
+   is the Season with no other signal -- winter has snow, spring has the melt
+   and the green returning, summer has the lakes drawing back. Autumn had
+   nothing, so it gets the colour. */
+const SEASON_TINT=[
+  [[186,214,120],0.22],   /* Spring  a young, yellow green      */
+  [[ 96,148, 64],0.10],   /* Summer  deep, and barely touched   */
+  [[214,150, 58],0.52],   /* Autumn  gold, and it is the point  */
+  [[124,132,116],0.34],   /* Winter  the colour goes out of it  */
+];
+const seasonTint=()=>{
+  const p=seasonPhase(), a=Math.floor(p)%4, b=(a+1)%4, f=p-Math.floor(p);
+  const A=SEASON_TINT[a], B=SEASON_TINT[b];
+  return [blend(A[0],B[0],f), A[1]+(B[1]-A[1])*f];
+};
 const lifeTint=(t,i)=>{
   const h=((t.q*73856093)^(t.r*19349663))>>>0, f=(h%1000)/1000;
   const ramp=BIOME_RAMP[biome(i)] ||
     (t.life===MOSS?PAL.moss:t.life===REED?PAL.reed:PAL.life);
-  const c=blend(ramp[0],ramp[1],f);
+  let c=blend(ramp[0],ramp[1],f);
+  const [col,amt]=seasonTint();
+  c=blend(c,col,amt);
   return new THREE.Color(c[0]/255,c[1]/255,c[2]/255).convertSRGBToLinear();
 };
 
@@ -6740,7 +6823,8 @@ window.POT={T,at,use,tick,settle,rebuild,POWERS,scene,
   get lost(){ return LOST }, set lost(v){ LOST=v },
   get dug(){ return DUG }, get filled(){ return FILLED },
   fertility, worthOf, FERT, FERT_GAIN, ALLU_FULL, richAs, soil, SOIL_MIN, wetAt, DRY,
-  tempAt, tempNow, seasonSwing, SWING, LAPSE, TEMP_SEA, SEASON_LEN, FREEZE, MELT,
+  tempAt, tempNow, seasonSwing, seasonPhase, seasonRain, DROUGHT,
+  SWING, LAPSE, TEMP_SEA, SEASON_LEN, FREEZE, MELT,
   windDir, blow, DRIFT, SHED, YEAR_LEN,
   clumped, draining, underFall, growQuick, CLUMP_MIN,
   holdsBack, travel, seedReset, SEEDFLAG, LEAK_BASE, SOWN, sowDormant, wake,
