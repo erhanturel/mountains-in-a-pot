@@ -3776,7 +3776,9 @@ function harvest(){
    -- the exact class of bug this project has been burnt by twice. The map
    i -> nb[d] is injective, so no two stacks can ever land on one hex and the
    CLOUD_MAX cap can never silently eat one. */
-const DRIFT=120;                   /* ticks a cloud takes to cross one hex */
+let DRIFT=120;                     /* ticks a cloud takes to cross one hex.
+                                      A knob so rules 1-5 can be tested with the
+                                      sky held still -- see test/fixtures.js */
 const YEAR_LEN=SEASON_LEN*4;       /* the wind's Year, fixed: Long Summer must not turn it */
 const windDir=()=>Math.floor(TICKS/YEAR_LEN)%6;
 /* ================= C3 . OROGRAPHIC RAINFALL =========================
@@ -3858,7 +3860,14 @@ const FREEZE=0;                    /* degrees. tempNow, so it carries the Season
    Matching the rates makes a Season of snow release over about a Season. */
 const MELT=RAINFALL;
 function tick(){
-  blow();                          /* move first, then rain from where it is */
+  /* THE WIND BLOWS AT THE END OF THE TICK, NOT THE START.
+     It moved first, which meant a cloud placed on a tick where TICKS%DRIFT
+     was 0 was carried off before it had rained once -- and since C3 spends
+     tiles on the climb, a single-tile cloud placed beside rising ground died
+     on the spot and the three mana bought nothing. Found by the first run of
+     the golden fixtures: the one-hex basin never filled at all.
+     Moving it to the end also puts the drawn position and the rained
+     position in agreement, since the renderer draws after the tick. */
   for(let i=0;i<T.length;i++){
     const n=clouds(i);
     if(!n) continue;
@@ -3879,6 +3888,7 @@ function tick(){
   TICKS++;
   if(TICKS%LIFE_EVERY===0){ wake(); grow(); travel(); }   /* life, on its own slower clock */
   else if(UP_FLOOD||UP_CASCADE) growQuick();   /* and where an upgrade says now */
+  blow();                       /* and last, the sky moves on */
 }
 
 /* ERASE is the mirror of PLACE, and like Place it is driven by the palette:
@@ -6825,7 +6835,8 @@ window.POT={T,at,use,tick,settle,rebuild,POWERS,scene,
   fertility, worthOf, FERT, FERT_GAIN, ALLU_FULL, richAs, soil, SOIL_MIN, wetAt, DRY,
   tempAt, tempNow, seasonSwing, seasonPhase, seasonRain, DROUGHT,
   SWING, LAPSE, TEMP_SEA, SEASON_LEN, FREEZE, MELT,
-  windDir, blow, DRIFT, SHED, YEAR_LEN,
+  windDir, blow, SHED, YEAR_LEN,
+  get DRIFT(){ return DRIFT }, set DRIFT(v){ DRIFT=v },
   clumped, draining, underFall, growQuick, CLUMP_MIN,
   holdsBack, travel, seedReset, SEEDFLAG, LEAK_BASE, SOWN, sowDormant, wake,
   get expA(){ return EXP_A }, set expA(v){ EXP_A=v },

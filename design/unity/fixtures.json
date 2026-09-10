@@ -1,0 +1,1333 @@
+{
+ "format": 1,
+ "note": "golden fixtures for a port; see design/UNITY-PORT.md",
+ "constants": {
+  "LAYER": 0.16666666666666666,
+  "SLAB": 6,
+  "ZN": 192,
+  "Z0": -78,
+  "CLOUD_Z": 180,
+  "CLOUD_MAX": 12,
+  "RAINFALL": 0.16666666666666666,
+  "SEASON_LEN": 480,
+  "DIRS": [
+   [
+    1,
+    0
+   ],
+   [
+    1,
+    -1
+   ],
+   [
+    0,
+    -1
+   ],
+   [
+    -1,
+    0
+   ],
+   [
+    -1,
+    1
+   ],
+   [
+    0,
+    1
+   ]
+  ],
+  "materials": {
+   "AIR": 0,
+   "BEDROCK": 1,
+   "ROCK": 2,
+   "GRANITE": 9,
+   "SHALE": 12,
+   "LIMESTONE": 11,
+   "CLOUD": 3
+  },
+  "life": {
+   "SEED": 6,
+   "MOSS": 7,
+   "REED": 8
+  }
+ },
+ "fixtures": [
+  {
+   "name": "basin-one-hex",
+   "why": "Rule 4 as recorded: 70 units a tick into a one-hex basin at -1, 420 at the rim by tick 6, and on the 7th the surplus is shared seven ways.",
+   "radius": 6,
+   "ops": [
+    {
+     "op": "knob",
+     "name": "DRIFT",
+     "value": 0
+    },
+    {
+     "op": "knob",
+     "name": "WEATHER",
+     "value": 0
+    },
+    {
+     "op": "flat",
+     "h": 0
+    },
+    {
+     "op": "setTop",
+     "q": 0,
+     "r": 0,
+     "h": -1
+    },
+    {
+     "op": "cloud",
+     "q": 0,
+     "r": 0,
+     "n": 1
+    }
+   ],
+   "steps": [
+    {
+     "ticks": 6,
+     "hash": "cb9c0c1c",
+     "readings": {
+      "water": 8.945406,
+      "snow": 0,
+      "slag": 0,
+      "sand": 0,
+      "ground": -1,
+      "alive": 0,
+      "wet": 1,
+      "clouds": 1,
+      "maxPool": 6.420772,
+      "swing": -0.693087,
+      "phase": 0.0125,
+      "rain": 1.485161,
+      "wind": 0,
+      "tempAtOrigin": 13.934563
+     }
+    },
+    {
+     "ticks": 1,
+     "hash": "2c61dcbb",
+     "readings": {
+      "water": 10.430567,
+      "snow": 0,
+      "slag": 0,
+      "sand": 0,
+      "ground": -1,
+      "alive": 0,
+      "wet": 1,
+      "clouds": 1,
+      "maxPool": 6.498985,
+      "swing": -0.690725,
+      "phase": 0.014583,
+      "rain": 1.483507,
+      "wind": 0,
+      "tempAtOrigin": 13.946377
+     }
+    },
+    {
+     "ticks": 60,
+     "hash": "a33eaf9b",
+     "readings": {
+      "water": 28.914987,
+      "snow": 0,
+      "slag": 0,
+      "sand": 0,
+      "ground": -1,
+      "alive": 0,
+      "wet": 1,
+      "clouds": 1,
+      "maxPool": 6.914135,
+      "swing": -0.536379,
+      "phase": 0.139583,
+      "rain": 1.375466,
+      "wind": 0,
+      "tempAtOrigin": 14.718104
+     }
+    }
+   ]
+  },
+  {
+   "name": "cliff-shed",
+   "why": "A tile with seven courses, two neighbours two steps down: all of it goes into the deep ones. Levelling with only the highest lower neighbour gives a different answer and is the classic wrong implementation.",
+   "radius": 6,
+   "ops": [
+    {
+     "op": "knob",
+     "name": "DRIFT",
+     "value": 0
+    },
+    {
+     "op": "knob",
+     "name": "WEATHER",
+     "value": 0
+    },
+    {
+     "op": "flat",
+     "h": 0
+    },
+    {
+     "op": "setTop",
+     "q": 1,
+     "r": 0,
+     "h": -2
+    },
+    {
+     "op": "setTop",
+     "q": 0,
+     "r": 1,
+     "h": -2
+    },
+    {
+     "op": "pool",
+     "q": 0,
+     "r": 0,
+     "courses": 7
+    }
+   ],
+   "steps": [
+    {
+     "ticks": 1,
+     "hash": "672538ed",
+     "readings": {
+      "water": 7,
+      "snow": 0,
+      "slag": 0,
+      "sand": 0,
+      "ground": -4,
+      "alive": 0,
+      "wet": 2,
+      "clouds": 0,
+      "maxPool": 3.5,
+      "swing": -0.704789,
+      "phase": 0.002083,
+      "rain": 1.493352,
+      "wind": 0,
+      "tempAtOrigin": 10.476055
+     }
+    },
+    {
+     "ticks": 20,
+     "hash": "a2e8964b",
+     "readings": {
+      "water": 7,
+      "snow": 0,
+      "slag": 0,
+      "sand": 0,
+      "ground": -4,
+      "alive": 0,
+      "wet": 2,
+      "clouds": 0,
+      "maxPool": 3.5,
+      "swing": -0.656882,
+      "phase": 0.04375,
+      "rain": 1.459817,
+      "wind": 0,
+      "tempAtOrigin": 10.715591
+     }
+    }
+   ]
+  },
+  {
+   "name": "flat-symmetry",
+   "why": "One rain tile on a flat board. The distinct depths per ring must come out 1,1,2,2,3,3,4 -- exactly the symmetry orbits of each ring. An in-place update instead of a snapshot breaks this and nothing else shows it.",
+   "radius": 6,
+   "ops": [
+    {
+     "op": "knob",
+     "name": "DRIFT",
+     "value": 0
+    },
+    {
+     "op": "knob",
+     "name": "WEATHER",
+     "value": 0
+    },
+    {
+     "op": "flat",
+     "h": 0
+    },
+    {
+     "op": "cloud",
+     "q": 0,
+     "r": 0,
+     "n": 1
+    }
+   ],
+   "steps": [
+    {
+     "ticks": 40,
+     "hash": "7dc1d4c2",
+     "readings": {
+      "water": 23.719795,
+      "snow": 0,
+      "slag": 0,
+      "sand": 0,
+      "ground": 0,
+      "alive": 0,
+      "wet": 0,
+      "clouds": 1,
+      "maxPool": 0.992511,
+      "swing": -0.608761,
+      "phase": 0.083333,
+      "rain": 1.426133,
+      "wind": 0,
+      "tempAtOrigin": 10.956193
+     }
+    }
+   ]
+  },
+  {
+   "name": "conservation-void",
+   "why": "Water is created only by clouds and lost only over the edge. Nothing in a tick may invent any.",
+   "radius": 6,
+   "ops": [
+    {
+     "op": "knob",
+     "name": "DRIFT",
+     "value": 0
+    },
+    {
+     "op": "knob",
+     "name": "WEATHER",
+     "value": 0
+    },
+    {
+     "op": "flat",
+     "h": 0
+    },
+    {
+     "op": "cloud",
+     "q": -2,
+     "r": 1,
+     "n": 2
+    },
+    {
+     "op": "cloud",
+     "q": 3,
+     "r": -1,
+     "n": 1
+    }
+   ],
+   "steps": [
+    {
+     "ticks": 120,
+     "hash": "ec5c9ef2",
+     "readings": {
+      "water": 54.797354,
+      "snow": 0,
+      "slag": 0,
+      "sand": 0,
+      "ground": 0,
+      "alive": 0,
+      "wet": 14,
+      "clouds": 3,
+      "maxPool": 1.815896,
+      "swing": -0.382683,
+      "phase": 0.25,
+      "rain": 1.267878,
+      "wind": 0,
+      "tempAtOrigin": 12.086583
+     }
+    },
+    {
+     "ticks": 400,
+     "hash": "a3c045eb",
+     "readings": {
+      "water": 19.564914,
+      "snow": 0,
+      "slag": 0,
+      "sand": 0,
+      "ground": 0,
+      "alive": 0,
+      "wet": 0,
+      "clouds": 3,
+      "maxPool": 0.644031,
+      "swing": 0.793353,
+      "phase": 1.083333,
+      "rain": 0.444653,
+      "wind": 0,
+      "tempAtOrigin": 17.966767
+     }
+    }
+   ]
+  },
+  {
+   "name": "bedrock-never",
+   "why": "Bedrock does not weather at any rate. That is the whole of what makes it bedrock, and a port that treats it as ordinary rock loses the floor of the world.",
+   "radius": 6,
+   "ops": [
+    {
+     "op": "knob",
+     "name": "DRIFT",
+     "value": 0
+    },
+    {
+     "op": "knob",
+     "name": "WEATHER",
+     "value": 0.0016666666666666666
+    },
+    {
+     "op": "flat",
+     "h": -8
+    },
+    {
+     "op": "cloud",
+     "q": 0,
+     "r": 0,
+     "n": 2
+    }
+   ],
+   "steps": [
+    {
+     "ticks": 2000,
+     "hash": "100e032d",
+     "readings": {
+      "water": 46.211245,
+      "snow": 0,
+      "slag": 0,
+      "sand": 0,
+      "ground": -1016,
+      "alive": 0,
+      "wet": 13,
+      "clouds": 2,
+      "maxPool": 1.904383,
+      "swing": -0.5,
+      "phase": 0.166667,
+      "rain": 1.35,
+      "wind": 1,
+      "tempAtOrigin": 38.7
+     }
+    }
+   ]
+  },
+  {
+   "name": "shield-self-limits",
+   "why": "Weathering divides by (1 + sed/SHIELD), so a peak with nothing to carry its debris away acquires a coat and stops. Weathering alone can never lower a mountain.",
+   "radius": 6,
+   "ops": [
+    {
+     "op": "knob",
+     "name": "DRIFT",
+     "value": 0
+    },
+    {
+     "op": "knob",
+     "name": "WEATHER",
+     "value": 0.0016666666666666666
+    },
+    {
+     "op": "knob",
+     "name": "THRESH",
+     "value": 99
+    },
+    {
+     "op": "flat",
+     "h": 2
+    }
+   ],
+   "steps": [
+    {
+     "ticks": 1000,
+     "hash": "7a41880b",
+     "readings": {
+      "water": 0,
+      "snow": 0,
+      "slag": 127,
+      "sand": 0,
+      "ground": 232.833333,
+      "alive": 0,
+      "wet": 0,
+      "clouds": 0,
+      "maxPool": 0,
+      "swing": 0.608761,
+      "phase": 2.083333,
+      "rain": 0.573867,
+      "wind": 0,
+      "tempAtOrigin": 10.810474
+     }
+    },
+    {
+     "ticks": 9000,
+     "hash": "dee793dc",
+     "readings": {
+      "water": 0,
+      "snow": 0,
+      "slag": 635,
+      "sand": 0,
+      "ground": 148.166667,
+      "alive": 0,
+      "wet": 0,
+      "clouds": 0,
+      "maxPool": 0,
+      "swing": 0.5,
+      "phase": 0.833333,
+      "rain": 0.65,
+      "wind": 5,
+      "tempAtOrigin": 12.533333
+     }
+    }
+   ]
+  },
+  {
+   "name": "transport-conserves",
+   "why": "Rock lost equals slag on the board plus sand plus what went over the edge, and never goes negative.",
+   "radius": 6,
+   "ops": [
+    {
+     "op": "knob",
+     "name": "DRIFT",
+     "value": 0
+    },
+    {
+     "op": "knob",
+     "name": "WEATHER",
+     "value": 0.0016666666666666666
+    },
+    {
+     "op": "flat",
+     "h": 1
+    },
+    {
+     "op": "setTop",
+     "q": 0,
+     "r": 0,
+     "h": 4
+    },
+    {
+     "op": "cloud",
+     "q": 0,
+     "r": 0,
+     "n": 3
+    }
+   ],
+   "steps": [
+    {
+     "ticks": 500,
+     "hash": "c1cf5e88",
+     "readings": {
+      "water": 23.745341,
+      "snow": 550.635035,
+      "slag": 137.960073,
+      "sand": 0.159275,
+      "ground": 103.5,
+      "alive": 0,
+      "wet": 0,
+      "clouds": 3,
+      "maxPool": 0.816027,
+      "swing": 0.75184,
+      "phase": 1.041667,
+      "rain": 0.473712,
+      "wind": 0,
+      "tempAtOrigin": 5.859199
+     }
+    },
+    {
+     "ticks": 4000,
+     "hash": "a6cd9062",
+     "readings": {
+      "water": 8.056557,
+      "snow": 0,
+      "slag": 385.092298,
+      "sand": 0,
+      "ground": -90.833333,
+      "alive": 0,
+      "wet": 2,
+      "clouds": 3,
+      "maxPool": 1.072412,
+      "swing": 0.980785,
+      "phase": 1.375,
+      "rain": 0.31345,
+      "wind": 2,
+      "tempAtOrigin": 29.670593
+     }
+    }
+   ]
+  },
+  {
+   "name": "life-binds",
+   "why": "Rule 8: a living hex sheds no soil and weathers no rock. Bare, the slag is carried off; green, most of it stays.",
+   "radius": 6,
+   "ops": [
+    {
+     "op": "knob",
+     "name": "DRIFT",
+     "value": 0
+    },
+    {
+     "op": "knob",
+     "name": "WEATHER",
+     "value": 0.0016666666666666666
+    },
+    {
+     "op": "flat",
+     "h": 1
+    },
+    {
+     "op": "setTop",
+     "q": 0,
+     "r": 0,
+     "h": 2
+    },
+    {
+     "op": "sed",
+     "q": 0,
+     "r": 0,
+     "courses": 3
+    },
+    {
+     "op": "life",
+     "q": 0,
+     "r": 0,
+     "kind": "MOSS"
+    },
+    {
+     "op": "cloud",
+     "q": 0,
+     "r": 0,
+     "n": 1
+    }
+   ],
+   "steps": [
+    {
+     "ticks": 200,
+     "hash": "a7425e7c",
+     "readings": {
+      "water": 15.465052,
+      "snow": 0,
+      "slag": 21.8,
+      "sand": 0.2,
+      "ground": 124.833333,
+      "alive": 0,
+      "wet": 0,
+      "clouds": 1,
+      "maxPool": 0.442925,
+      "swing": -0.130526,
+      "phase": 0.416667,
+      "rain": 1.091368,
+      "wind": 0,
+      "tempAtOrigin": 7.114036
+     }
+    }
+   ]
+  },
+  {
+   "name": "life-clock",
+   "why": "Life steps once every LIFE_EVERY ticks, one hex, and only onto ground habitable at that moment. It is not a per-tick flood fill.",
+   "radius": 6,
+   "ops": [
+    {
+     "op": "knob",
+     "name": "DRIFT",
+     "value": 0
+    },
+    {
+     "op": "knob",
+     "name": "WEATHER",
+     "value": 0
+    },
+    {
+     "op": "flat",
+     "h": 0
+    },
+    {
+     "op": "setTop",
+     "q": 0,
+     "r": 0,
+     "h": -2
+    },
+    {
+     "op": "setTop",
+     "q": 1,
+     "r": 0,
+     "h": -2
+    },
+    {
+     "op": "setTop",
+     "q": 0,
+     "r": 1,
+     "h": -2
+    },
+    {
+     "op": "pool",
+     "q": 0,
+     "r": 0,
+     "courses": 8
+    },
+    {
+     "op": "pool",
+     "q": 1,
+     "r": 0,
+     "courses": 8
+    },
+    {
+     "op": "pool",
+     "q": 0,
+     "r": 1,
+     "courses": 8
+    },
+    {
+     "op": "sed",
+     "q": -1,
+     "r": 0,
+     "courses": 3
+    },
+    {
+     "op": "sed",
+     "q": -1,
+     "r": 1,
+     "courses": 3
+    },
+    {
+     "op": "sed",
+     "q": 0,
+     "r": -1,
+     "courses": 3
+    },
+    {
+     "op": "sed",
+     "q": 1,
+     "r": -1,
+     "courses": 3
+    },
+    {
+     "op": "sed",
+     "q": 2,
+     "r": 0,
+     "courses": 3
+    },
+    {
+     "op": "sed",
+     "q": 2,
+     "r": -1,
+     "courses": 3
+    },
+    {
+     "op": "life",
+     "q": -1,
+     "r": 0,
+     "kind": "SEED"
+    }
+   ],
+   "steps": [
+    {
+     "ticks": 40,
+     "hash": "c8fdb0cc",
+     "readings": {
+      "water": 24,
+      "snow": 0,
+      "slag": 18,
+      "sand": 0,
+      "ground": -6,
+      "alive": 3,
+      "wet": 3,
+      "clouds": 0,
+      "maxPool": 8,
+      "swing": -0.608761,
+      "phase": 0.083333,
+      "rain": 1.426133,
+      "wind": 0,
+      "tempAtOrigin": 17.756193
+     }
+    },
+    {
+     "ticks": 200,
+     "hash": "2f035022",
+     "readings": {
+      "water": 24,
+      "snow": 0,
+      "slag": 18,
+      "sand": 0,
+      "ground": -6,
+      "alive": 6,
+      "wet": 3,
+      "clouds": 0,
+      "maxPool": 8,
+      "swing": 0,
+      "phase": 0.5,
+      "rain": 1,
+      "wind": 0,
+      "tempAtOrigin": 20.8
+     }
+    },
+    {
+     "ticks": 600,
+     "hash": "2f035022",
+     "readings": {
+      "water": 24,
+      "snow": 0,
+      "slag": 18,
+      "sand": 0,
+      "ground": -6,
+      "alive": 6,
+      "wet": 3,
+      "clouds": 0,
+      "maxPool": 8,
+      "swing": 0.92388,
+      "phase": 1.75,
+      "rain": 0.353284,
+      "wind": 0,
+      "tempAtOrigin": 25.419398
+     }
+    }
+   ]
+  },
+  {
+   "name": "season-phase",
+   "why": "The swing peaks in the MIDDLE of a Season, not on its edge. Sampled at midspring, midsummer, midautumn and midwinter it must read 0, +1, 0, -1. Getting this a quarter out stays invisible until something downstream reads two Seasons the same.",
+   "radius": 6,
+   "ops": [
+    {
+     "op": "knob",
+     "name": "DRIFT",
+     "value": 0
+    },
+    {
+     "op": "knob",
+     "name": "WEATHER",
+     "value": 0
+    },
+    {
+     "op": "flat",
+     "h": 0
+    },
+    {
+     "op": "ticks0",
+     "value": 240
+    }
+   ],
+   "steps": [
+    {
+     "ticks": 0,
+     "hash": "ec94cfd5",
+     "readings": {
+      "water": 0,
+      "snow": 0,
+      "slag": 0,
+      "sand": 0,
+      "ground": 0,
+      "alive": 0,
+      "wet": 0,
+      "clouds": 0,
+      "maxPool": 0,
+      "swing": 0,
+      "phase": 0.5,
+      "rain": 1,
+      "wind": 0,
+      "tempAtOrigin": 14
+     }
+    },
+    {
+     "ticks": 480,
+     "hash": "ec94cfd5",
+     "readings": {
+      "water": 0,
+      "snow": 0,
+      "slag": 0,
+      "sand": 0,
+      "ground": 0,
+      "alive": 0,
+      "wet": 0,
+      "clouds": 0,
+      "maxPool": 0,
+      "swing": 1,
+      "phase": 1.5,
+      "rain": 0.3,
+      "wind": 0,
+      "tempAtOrigin": 19
+     }
+    },
+    {
+     "ticks": 480,
+     "hash": "ec94cfd5",
+     "readings": {
+      "water": 0,
+      "snow": 0,
+      "slag": 0,
+      "sand": 0,
+      "ground": 0,
+      "alive": 0,
+      "wet": 0,
+      "clouds": 0,
+      "maxPool": 0,
+      "swing": 0,
+      "phase": 2.5,
+      "rain": 1,
+      "wind": 0,
+      "tempAtOrigin": 14
+     }
+    },
+    {
+     "ticks": 480,
+     "hash": "ec94cfd5",
+     "readings": {
+      "water": 0,
+      "snow": 0,
+      "slag": 0,
+      "sand": 0,
+      "ground": 0,
+      "alive": 0,
+      "wet": 0,
+      "clouds": 0,
+      "maxPool": 0,
+      "swing": -1,
+      "phase": 3.5,
+      "rain": 1.7,
+      "wind": 0,
+      "tempAtOrigin": 9
+     }
+    }
+   ]
+  },
+  {
+   "name": "wind-drift-and-shed",
+   "why": "A cloud crosses one hex every DRIFT ticks along the Year’s heading, and climbing spends floor(lift x SHED) of its tiles. A six-tile cloud crosses four elevations and arrives with nothing.",
+   "radius": 8,
+   "ops": [
+    {
+     "op": "knob",
+     "name": "WEATHER",
+     "value": 0
+    },
+    {
+     "op": "flat",
+     "h": 0
+    },
+    {
+     "op": "setTop",
+     "q": 0,
+     "r": 0,
+     "h": 4
+    },
+    {
+     "op": "setTop",
+     "q": 1,
+     "r": 0,
+     "h": 4
+    },
+    {
+     "op": "cloud",
+     "q": -6,
+     "r": 0,
+     "n": 6
+    }
+   ],
+   "steps": [
+    {
+     "ticks": 120,
+     "hash": "8b693b5c",
+     "readings": {
+      "water": 80.695211,
+      "snow": 0,
+      "slag": 0,
+      "sand": 0,
+      "ground": 8,
+      "alive": 0,
+      "wet": 17,
+      "clouds": 6,
+      "maxPool": 4.136388,
+      "swing": -0.382683,
+      "phase": 0.25,
+      "rain": 1.267878,
+      "wind": 0,
+      "tempAtOrigin": -1.513417
+     }
+    },
+    {
+     "ticks": 360,
+     "hash": "157cd8a9",
+     "readings": {
+      "water": 70.615023,
+      "snow": 0,
+      "slag": 0,
+      "sand": 0,
+      "ground": 8,
+      "alive": 0,
+      "wet": 13,
+      "clouds": 6,
+      "maxPool": 2.158811,
+      "swing": 0.707107,
+      "phase": 1,
+      "rain": 0.505025,
+      "wind": 0,
+      "tempAtOrigin": 3.935534
+     }
+    },
+    {
+     "ticks": 480,
+     "hash": "6ddb6c1d",
+     "readings": {
+      "water": 0.000023,
+      "snow": 0,
+      "slag": 0,
+      "sand": 0,
+      "ground": 8,
+      "alive": 0,
+      "wet": 0,
+      "clouds": 0,
+      "maxPool": 0,
+      "swing": 0.707107,
+      "phase": 2,
+      "rain": 0.505025,
+      "wind": 0,
+      "tempAtOrigin": 3.935534
+     }
+    }
+   ]
+  },
+  {
+   "name": "snow-and-melt",
+   "why": "Water arriving below freezing is held as snow, does not flow, and melts back above zero at MELT a tick. Only ARRIVING water freezes: a pool already standing keeps flowing however cold it is.",
+   "radius": 6,
+   "ops": [
+    {
+     "op": "knob",
+     "name": "DRIFT",
+     "value": 0
+    },
+    {
+     "op": "knob",
+     "name": "WEATHER",
+     "value": 0
+    },
+    {
+     "op": "flat",
+     "h": 0
+    },
+    {
+     "op": "setTop",
+     "q": 0,
+     "r": 0,
+     "h": 5
+    },
+    {
+     "op": "snow",
+     "q": 0,
+     "r": 0,
+     "courses": 20
+    },
+    {
+     "op": "ticks0",
+     "value": 1680
+    }
+   ],
+   "steps": [
+    {
+     "ticks": 0,
+     "hash": "043f08c8",
+     "readings": {
+      "water": 0,
+      "snow": 20,
+      "slag": 0,
+      "sand": 0,
+      "ground": 5,
+      "alive": 0,
+      "wet": 0,
+      "clouds": 0,
+      "maxPool": 0,
+      "swing": -1,
+      "phase": 3.5,
+      "rain": 1.7,
+      "wind": 0,
+      "tempAtOrigin": -8
+     }
+    },
+    {
+     "ticks": 240,
+     "hash": "043f08c8",
+     "readings": {
+      "water": 0,
+      "snow": 20,
+      "slag": 0,
+      "sand": 0,
+      "ground": 5,
+      "alive": 0,
+      "wet": 0,
+      "clouds": 0,
+      "maxPool": 0,
+      "swing": -0.707107,
+      "phase": 0,
+      "rain": 1.494975,
+      "wind": 1,
+      "tempAtOrigin": -6.535534
+     }
+    },
+    {
+     "ticks": 960,
+     "hash": "9a76d3eb",
+     "readings": {
+      "water": 0,
+      "snow": 0,
+      "slag": 0,
+      "sand": 0,
+      "ground": 5,
+      "alive": 0,
+      "wet": 0,
+      "clouds": 0,
+      "maxPool": 0,
+      "swing": 0.707107,
+      "phase": 2,
+      "rain": 0.505025,
+      "wind": 1,
+      "tempAtOrigin": 0.535534
+     }
+    }
+   ]
+  },
+  {
+   "name": "genpot-42",
+   "why": "The pot is a pure function of the seed. Height is hashed from a hex’s own axial coordinates, never drawn from a stream, so it cannot depend on the order hexes are visited. Then the shipping erosion engine cuts the valleys and TICKS is set to zero.",
+   "radius": 12,
+   "ops": [
+    {
+     "op": "genPot",
+     "seed": 42
+    }
+   ],
+   "steps": [
+    {
+     "ticks": 0,
+     "hash": "de421f49",
+     "readings": {
+      "water": 0,
+      "snow": 0,
+      "slag": 435.959881,
+      "sand": 4.232516,
+      "ground": 164.833333,
+      "alive": 0,
+      "wet": 0,
+      "clouds": 0,
+      "maxPool": 0,
+      "swing": -0.707107,
+      "phase": 0,
+      "rain": 1.494975,
+      "wind": 0,
+      "tempAtOrigin": 0.264466
+     }
+    },
+    {
+     "ticks": 480,
+     "hash": "d72d6e9c",
+     "readings": {
+      "water": 0,
+      "snow": 0,
+      "slag": 467.959881,
+      "sand": 4.232516,
+      "ground": 159.5,
+      "alive": 0,
+      "wet": 0,
+      "clouds": 0,
+      "maxPool": 0,
+      "swing": 0.707107,
+      "phase": 1,
+      "rain": 0.505025,
+      "wind": 0,
+      "tempAtOrigin": 7.335534
+     }
+    }
+   ]
+  },
+  {
+   "name": "genpot-7",
+   "why": "The pot is a pure function of the seed. Height is hashed from a hex’s own axial coordinates, never drawn from a stream, so it cannot depend on the order hexes are visited. Then the shipping erosion engine cuts the valleys and TICKS is set to zero.",
+   "radius": 12,
+   "ops": [
+    {
+     "op": "genPot",
+     "seed": 7
+    }
+   ],
+   "steps": [
+    {
+     "ticks": 0,
+     "hash": "bcce4b03",
+     "readings": {
+      "water": 0,
+      "snow": 0,
+      "slag": 407.848278,
+      "sand": 6.472408,
+      "ground": -184.333333,
+      "alive": 0,
+      "wet": 0,
+      "clouds": 0,
+      "maxPool": 0,
+      "swing": -0.707107,
+      "phase": 0,
+      "rain": 1.494975,
+      "wind": 0,
+      "tempAtOrigin": 7.064466
+     }
+    },
+    {
+     "ticks": 480,
+     "hash": "cb169455",
+     "readings": {
+      "water": 0,
+      "snow": 0,
+      "slag": 428.848278,
+      "sand": 6.472408,
+      "ground": -187.833333,
+      "alive": 0,
+      "wet": 0,
+      "clouds": 0,
+      "maxPool": 0,
+      "swing": 0.707107,
+      "phase": 1,
+      "rain": 0.505025,
+      "wind": 0,
+      "tempAtOrigin": 14.135534
+     }
+    }
+   ]
+  },
+  {
+   "name": "genpot-1337",
+   "why": "The pot is a pure function of the seed. Height is hashed from a hex’s own axial coordinates, never drawn from a stream, so it cannot depend on the order hexes are visited. Then the shipping erosion engine cuts the valleys and TICKS is set to zero.",
+   "radius": 12,
+   "ops": [
+    {
+     "op": "genPot",
+     "seed": 1337
+    }
+   ],
+   "steps": [
+    {
+     "ticks": 0,
+     "hash": "68e289c9",
+     "readings": {
+      "water": 0,
+      "snow": 296.974787,
+      "slag": 327.177694,
+      "sand": 5.650289,
+      "ground": -364.166667,
+      "alive": 0,
+      "wet": 0,
+      "clouds": 0,
+      "maxPool": 0,
+      "swing": -0.707107,
+      "phase": 0,
+      "rain": 1.494975,
+      "wind": 0,
+      "tempAtOrigin": 20.664466
+     }
+    },
+    {
+     "ticks": 480,
+     "hash": "036cb4c8",
+     "readings": {
+      "water": 4.65834,
+      "snow": 132.695602,
+      "slag": 338.00584,
+      "sand": 5.654298,
+      "ground": -366.5,
+      "alive": 0,
+      "wet": 0,
+      "clouds": 0,
+      "maxPool": 0.599488,
+      "swing": 0.707107,
+      "phase": 1,
+      "rain": 0.505025,
+      "wind": 0,
+      "tempAtOrigin": 27.735534
+     }
+    }
+   ]
+  },
+  {
+   "name": "long-mixed-run",
+   "why": "Everything at once for a Year: generated terrain, drifting clouds, orographic shedding, weathering, transport, life, snow and the seasonal drought. If a port matches every other fixture and not this one, the fault is in how the parts are ORDERED inside a tick.",
+   "radius": 12,
+   "ops": [
+    {
+     "op": "genPot",
+     "seed": 42
+    },
+    {
+     "op": "knob",
+     "name": "WEATHER",
+     "value": 0.0002380952380952381
+    },
+    {
+     "op": "cloud",
+     "q": -6,
+     "r": 0,
+     "n": 4
+    },
+    {
+     "op": "cloud",
+     "q": 2,
+     "r": -3,
+     "n": 3
+    },
+    {
+     "op": "life",
+     "q": 0,
+     "r": 0,
+     "kind": "MOSS"
+    }
+   ],
+   "steps": [
+    {
+     "ticks": 480,
+     "hash": "aed7fbf7",
+     "readings": {
+      "water": 156.992226,
+      "snow": 0,
+      "slag": 424.856265,
+      "sand": 1.536384,
+      "ground": 141.666667,
+      "alive": 55,
+      "wet": 47,
+      "clouds": 5,
+      "maxPool": 9.739384,
+      "swing": 0.707107,
+      "phase": 1,
+      "rain": 0.505025,
+      "wind": 0,
+      "tempAtOrigin": 7.335534
+     }
+    },
+    {
+     "ticks": 960,
+     "hash": "18c7231c",
+     "readings": {
+      "water": 3.283276,
+      "snow": 0,
+      "slag": 541.288751,
+      "sand": 3.299152,
+      "ground": 118.833333,
+      "alive": 6,
+      "wet": 1,
+      "clouds": 0,
+      "maxPool": 2.87863,
+      "swing": -0.707107,
+      "phase": 3,
+      "rain": 1.494975,
+      "wind": 0,
+      "tempAtOrigin": 0.831133
+     }
+    },
+    {
+     "ticks": 1920,
+     "hash": "3353f586",
+     "readings": {
+      "water": 3.283276,
+      "snow": 0,
+      "slag": 680.288751,
+      "sand": 3.299152,
+      "ground": 95.666667,
+      "alive": 6,
+      "wet": 1,
+      "clouds": 0,
+      "maxPool": 2.87863,
+      "swing": -0.707107,
+      "phase": 3,
+      "rain": 1.494975,
+      "wind": 1,
+      "tempAtOrigin": 0.831133
+     }
+    }
+   ]
+  }
+ ]
+}
