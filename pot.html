@@ -3678,10 +3678,20 @@ function harvest(){
    that leaves makes water finite without a budget, a cap or a number pulled
    out of the air.
 
-   THE WIND TURNS WITH THE SEASON, one of the six hex axes, read straight off
-   the clock. No randomness and no seed: the same pot plays the same way, and
-   the wind is a thing you can see coming rather than a thing that happens to
-   you.
+   THE WIND HOLDS FOR A YEAR, one of the six hex axes, read straight off the
+   clock. No randomness and no seed: the same pot plays the same way, and the
+   wind is a thing you can see coming rather than one that happens to you.
+
+   It turned every SEASON first, and C3 measured why that was wrong. A Season
+   is 480 ticks and a cloud crosses a hex every 120, so it moved four hexes
+   and then the wind swung sixty degrees: clouds ORBITED instead of
+   traversing. Measured on a ridge across the pot, the trail read
+   `q-6 q-5 q-4 q-3 q-2 q-1 q0 q1 q1 q1 q0 q-1` -- it reached the crest and
+   came back. Nothing ever arrived in the lee, so C3's rain shadow could not
+   exist however the rule was written. A Year is 1920 ticks, so a cloud walks
+   sixteen hexes on one heading, which crosses most of a pot. The Year is
+   also the unit the player already plans in -- the Omen, the allowance, the
+   hand -- so "this Year the wind blows east" is one more thing a Year means.
 
    IT MOVES FROM A SNAPSHOT. Every cloud's destination is read before any of
    them is written, or the answer would depend on the order hexes are visited
@@ -3689,17 +3699,51 @@ function harvest(){
    i -> nb[d] is injective, so no two stacks can ever land on one hex and the
    CLOUD_MAX cap can never silently eat one. */
 const DRIFT=120;                   /* ticks a cloud takes to cross one hex */
-const windDir=()=>Math.floor(TICKS/SEASON_LEN)%6;
+const YEAR_LEN=SEASON_LEN*4;       /* the wind's Year, fixed: Long Summer must not turn it */
+const windDir=()=>Math.floor(TICKS/YEAR_LEN)%6;
+/* ================= C3 . OROGRAPHIC RAINFALL =========================
+   Mold World 4.3: `lift = max(0, z - zUpwind)`, `rain = q*(base+gain*lift)`,
+   `q -= rain`. A cloud gives up its water climbing the windward slope and
+   arrives at the lee with less to give. The rain shadow is not a desert
+   feature -- it is a consequence of where the mountain is.
+
+   THE ADAPTATION IS ABOUT `q`, AND IT IS THE WHOLE OF C3.
+
+   Mold World advects a moisture field over a finished map. We have clouds
+   that drift, and they carry nothing: a cloud is CLOUD cells in the same
+   stack as the ground, with no per-cloud data anywhere. Giving them a stored
+   charge would put a third remembered number on a hex.
+
+   It is already there. A cloud is n tiles tall and rule 1 already says n
+   tiles drop n times the rain -- so the STACK IS the charge, and it is the
+   one thing about a cloud a player can already see. Climbing spends it:
+
+     tiles lost on a move = floor(lift x SHED)
+
+   evaluated once per drift step, from the same snapshot as the move, so it
+   is a pure function of the step and needs no accumulator. Descending gives
+   nothing back, because the water it rained out is on the ground behind it.
+
+   Three things fall out of that and none of them is a new system:
+     a cloud that crosses a range arrives at the lee thinner, or not at all;
+     the windward slope is where the water lands, so building height is how
+     you HARVEST rain rather than only how you steer it;
+     and a cloud finally dies of something other than the board's edge --
+     which is the finite water test/one-cut.js said was missing. */
+const SHED=1.5;                    /* cloud tiles spent per elevation climbed */
 function blow(){
   if(DRIFT<=0 || TICKS%DRIFT) return;
   const d=windDir(), n=T.length, was=new Uint8Array(n);
-  for(let i=0;i<n;i++) was[i]=clouds(i);
+  const from=new Float64Array(n);
+  for(let i=0;i<n;i++){ was[i]=clouds(i); from[i]=gnd(i); }
   for(let i=0;i<n;i++) if(was[i]) delCloud(i,CLOUD_MAX);
   for(let i=0;i<n;i++){
     if(!was[i]) continue;
     const j=T[i].nb[d];
     if(j<0) continue;              /* over the side, and gone */
-    addCloud(j,was[i]);
+    const lift=Math.max(0,from[j]-from[i]);
+    const left=was[i]-Math.floor(lift*SHED);
+    if(left>0) addCloud(j,left);   /* what did not make it over rained out */
   }
 }
 /* the rain tiles rain, and then everything sheds once */
@@ -5051,7 +5095,7 @@ function setPause(on){ PAUSED=on; drawRates(); }
 const WINDGLYPH=['\u2192','\u2198','\u2199','\u2190','\u2196','\u2197'];
 const windMark=()=>{
   const d=windDir();
-  return '<u class="wind" title="the wind, and it turns each Season">'+
+  return '<u class="wind" title="the wind, and it holds for the Year">'+
     WINDGLYPH[d]+'<em>'+WINDGLYPH[(d+1)%6]+'</em></u>';
 };
 /* TWO PLACES, BECAUSE THEY ANSWER DIFFERENT QUESTIONS.
@@ -6615,7 +6659,7 @@ window.POT={T,at,use,tick,settle,rebuild,POWERS,scene,
   get dug(){ return DUG }, get filled(){ return FILLED },
   fertility, worthOf, FERT, FERT_GAIN, ALLU_FULL, richAs, soil, SOIL_MIN, wetAt, DRY,
   tempAt, tempNow, seasonSwing, SWING, LAPSE, TEMP_SEA, SEASON_LEN,
-  windDir, blow, DRIFT,
+  windDir, blow, DRIFT, SHED, YEAR_LEN,
   clumped, draining, underFall, growQuick, CLUMP_MIN,
   holdsBack, travel, seedReset, SEEDFLAG, LEAK_BASE, SOWN, sowDormant, wake,
   get expA(){ return EXP_A }, set expA(v){ EXP_A=v },
