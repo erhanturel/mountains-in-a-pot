@@ -188,16 +188,35 @@ stop being a closed system we can check.
 Recommend starting with the cheap one and measuring whether the drawdown
 reads at all; only pay for the second if it does not.
 
-- [ ] **C4 · Snow and the spring melt.** Above the freezing line water is
-  held as snow and does not flow; in spring it releases. One number a hex,
-  no flow, no order dependence — the same shape as `pool`. `tempNow` from C1
-  is already the driver, so this needs no new climate. **Snow is also the
-  first thing on this board that is white**, so it is the strongest visual
-  the Season has.
-- [ ] **C5 · Seasonal colour and effect.** The palette shifts with
-  `seasonSwing()`, and the Season drives rainfall through levers that
-  already exist. The biome must NOT move with it — that is C1's split and
-  the reason it exists.
+- [x] **C4 · Snow and the spring melt.** Rule 9, one clause on rule 1: water
+  arriving below freezing is held as **snow**, does not flow, and melts back
+  above zero. Measured on a generated pot — **392 courses held through winter
+  and released the next spring**. The first melt rate was two orders out
+  (a Season cleared 12 courses against a pack of 3,000, so the snow never
+  came back and the Season was scenery); snow now melts about as fast as it
+  falls, so *a winter's fall is a spring's flood*. Height became a decision
+  with a trap: **h≤3 never holds snow, h 4–6 gives it back in spring, h≥7 is
+  a glacier and the water never returns.** Two deliberate limits — only
+  *arriving* water freezes (a lake keeps flowing), and snow is **not ground**
+  (`gnd` is what water routes on; a pack in it would dam the board every
+  winter). Drawn as the ground going white with depth.
+- [x] **C5 · Seasonal colour and effect.** **Drought**, and the cheap version
+  on purpose: rain varies with the Season instead of evaporating, so the
+  measured conservation invariant survives. Symmetric about 1 — summer
+  **0.30×**, winter **1.70×** — so the Year redistributes water rather than
+  removing it, and it multiplies the sky and not `RAIN_MULT`, which is the
+  Boons' lever. Lakes draw down visibly (164 wet hexes in winter, 14 in
+  summer) and it **tests** the shores rather than killing them: summer holds
+  66% of the living ground and autumn takes it back. **Colour**: the green a
+  biome already chose is pushed toward the Season's, autumn loudest (0.52)
+  because it is the only Season with no other signal.
+- [x] **C1's phase was a quarter-Season out**, found by C5. The swing put its
+  peak on a Season's *edge*, so the label said Summer while the world cooled.
+  Fixed to peak at each Season's middle — which took the snow away and made
+  the base come down from 18 to 14, putting a snow **cap** on the pot (44 of
+  469 hexes) instead of a dusting (8).
+
+
 
 ## D · Where a pot comes from
 
