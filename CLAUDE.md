@@ -102,6 +102,83 @@ oversight — see *What was taken out* below before putting any of it back.
 
 ---
 
+## TWO LINES, DELIBERATELY — do not merge them
+
+Decided 10 September 2026. There are two living branches and they are two
+different projects. **Neither is behind the other. Do not merge them.**
+
+```
+main / climate     the physics bench.  No goal, no score.  Water, erosion,
+                   and an open climate model with EVAPORATION (rule 6)
+steps              a sim-board roguelike.  Years, Omens, a Spring shop with
+                   Boons and seed cards, mana, Gaia's Whim, a run seed, and
+                   a Unity port.  Its climate is a CLOSED system
+```
+
+Both forked from `f6eda45`, so **both already have the settle optimisation**.
+
+### The disagreement, and it is a real one
+
+The two lines answered the same question opposite ways, both on purpose and
+both in writing.
+
+This branch built **evaporation**: water leaves by two sinks now, over the
+edge and into the air, and CLAUDE.md retired the old invariant to say so.
+`steps` deliberately refused it and built a seasonal *rain rate* instead —
+symmetric about 1, so a Year's total is unchanged and a dry summer is paid
+for by a wet winter:
+
+> Real evaporation would break it and take the test that proves the board is
+> a closed system with it. Rain that varies with the Season keeps it whole:
+> nothing new is created or destroyed, it arrives at a different RATE.
+
+Neither is wrong. They are different games.
+
+### The landmine, if anyone tries anyway
+
+A merge of `steps` into `main` throws only **seven conflicts** in
+`index.html` — four evaporation, three the bounding sphere — which makes it
+look easy. It is not. **The taller world auto-merges with no conflict marker
+at all**, and silently produces:
+
+```
+const H_MAX=24;                          <- from main
+const TEMP_SEA=14, LAPSE=3.4, SWING=5;   <- from steps, calibrated for 12
+
+freezing sits at 14 / 3.4 = 4.1 elev
+  steps' world, max 12 elev  ->  snow line a third of the way up
+  merged world, max 24 elev  ->  snow line an EIGHTH of the way up
+```
+
+Seven eighths of every mountain permanently white, every snow and melt
+measurement on `steps` invalidated, and nothing anywhere flags it. `SNOW_FULL`,
+`TEMP_SEA`, `SWING` and `DROUGHT` are all calibrated against a 12-elev world.
+
+### Porting between them
+
+By hand, one thing at a time, and record it here.
+
+```
+PORTED          nothing yet
+CLEAN TO PORT   5e71fe0  the static bounding sphere.  Pure renderer perf,
+                no design implication.  Conflicts in 3 small hunks because
+                rebuild() diverged, so it wants a hand not a cherry-pick
+NEEDS A DECISION FIRST
+                1b0f506  the taller world.  Breaks steps' lapse calibration
+                666da31  evaporation.  Contradicts steps' closed system
+```
+
+### Housekeeping
+
+`origin/claude/mountains-pot-design-jbdw7t` is **fully contained in `steps`**
+and can be deleted.
+
+`polyperfect/` is a Unity asset pack — 473 MB over 25,668 files — and is
+gitignored on this branch. **`steps` needs the same line**, or a `git add -A`
+there puts half a gigabyte of third-party assets into the history.
+
+---
+
 ## Words, and what they mean here
 
 Fixed deliberately, because several of these were being used two ways.
