@@ -102,18 +102,28 @@ oversight — see *What was taken out* below before putting any of it back.
 
 ---
 
-## TWO LINES, DELIBERATELY — do not merge them
+## THREE LINES, DELIBERATELY — do not merge them
 
-Decided 10 September 2026. There are two living branches and they are two
-different projects. **Neither is behind the other. Do not merge them.**
+Decided 10 September 2026. Three living projects, two of them branches here
+and one of them a separate repository. **None is behind the others. Do not
+merge them.**
 
 ```
-main / climate     the physics bench.  No goal, no score.  Water, erosion,
-                   and an open climate model with EVAPORATION (rule 6)
-steps              a sim-board roguelike.  Years, Omens, a Spring shop with
-                   Boons and seed cards, mana, Gaia's Whim, a run seed, and
-                   a Unity port.  Its climate is a CLOSED system
+main / climate     THIS REPO.  The physics bench, in three.js.  No goal, no
+                   score.  Water, erosion, and an open climate model with
+                   EVAPORATION (rule 6)
+steps              THIS REPO.  A sim-board roguelike, in three.js.  Years,
+                   Omens, a Spring shop with Boons and seed cards, mana,
+                   Gaia's Whim, a run seed.  Its climate is a CLOSED system
+unity              A SEPARATE REPOSITORY, and a separate chat session.  The
+                   shipping build.  Split off because git stores every
+                   version of a binary whole and Unity churns binaries
+                   constantly -- and history bloat is the one mistake on
+                   this project that cannot be undone
 ```
+
+**This session is the three.js line.** Unity work happens in its own repo and
+its own session; come back here for anything in this file.
 
 Both forked from `f6eda45`, so **both already have the settle optimisation**.
 
@@ -165,7 +175,22 @@ to `steps`' credit rather than luck. `design/unity/fixtures.json` pins
 `node test/fixtures.js` fails loudly the moment anyone runs it. The danger is
 the window between the merge and that run, not the merge being undetectable.
 
-### Porting between them
+### The seam to Unity
+
+`design/unity/fixtures.json` on `steps` is the contract: 16 fixtures, 36
+checkpoints, FNV-1a hashes. The port is correct when it reproduces every
+hash, and **the JavaScript CORE stays the oracle forever** -- when the two
+disagree you settle it by running both. See `design/UNITY-PORT.md`.
+
+Across two repositories the risk is no longer a bad merge, it is **drift**:
+the Unity side verifying against a fixture set the JavaScript has since moved
+past. The fixtures already pin `LAYER`, `SLAB`, `ZN`, `Z0`, `CLOUD_Z`, the
+materials and `DIRS`, which catches a changed world. **What they do not
+record is which CORE generated them.** Stamping the commit SHA in at write
+time is one line in `test/fixtures.js` and makes a stale set announce itself
+instead of quietly passing.
+
+### Porting between the two branches here
 
 By hand, one thing at a time, and record it here.
 
