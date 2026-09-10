@@ -2469,7 +2469,7 @@ for(let q=-R;q<=R;q++){
   for(let r=lo;r<=hi;r++){
     idx.set(q+','+r,T.length);
     T.push({q,r,x:Math.sqrt(3)*(q+r/2),y:1.5*r,pool:0,flow:0,out:new Float64Array(6),
-            sed:0,sand:0,wear:0,grit:0,life:0});
+            sed:0,sand:0,wear:0,grit:0,life:0,snow:0});
   }
 }
 
@@ -3415,7 +3415,29 @@ const elevAt=i=>Math.min(1,Math.max(0,(T[i].h-BASE_E)/(H_MAX-BASE_E)));
    The swing is 5 degrees either side. The lapse is 1.6 a step over a board
    that spans about 14 of them, so relief is worth roughly 22 degrees and the
    Season about 10: the mountain still decides, and the Season modulates. */
-const TEMP_SEA=18, LAPSE=1.6, SWING=5;
+/* THE LAPSE IS STEEP BECAUSE C4 NEEDED A FREEZING LINE TO EXIST.
+   At 1.6 a step, midwinter on the highest natural ground read 6.6 degrees
+   and NOTHING on a generated pot ever froze -- a player had to build to
+   h=9 of a ceiling of 12 before one hex reached zero, so most runs would
+   never have seen winter at all.
+
+   Cooling the whole pot with TEMP_SEA would have moved the lowlands too.
+   Steepening the lapse leaves them exactly where they were and only cools
+   what stands high, which is what a mountain climate does. Measured across
+   three seeds:
+
+     lapse   midwinter at h=4   frozen hexes   biomes present   lowland summer
+       1.6              6.6            0/469          3 of 11             23
+       2.8              1.8            1/469          4 of 11             23
+       3.4             -0.6            8/469          4 of 11             23
+       4.0             -3.0            8/469          4 of 11             23
+
+   3.4 is where a freezing line first lands ON the pot rather than above it:
+   eight hexes of the highest ground take snow at midwinter -- a dusting on
+   the peaks and nothing else -- and building higher earns a real snowpack.
+   The lowlands do not move, and the map gets one more biome rather than
+   only getting colder. */
+const TEMP_SEA=18, LAPSE=3.4, SWING=5;
 const SEASON_LEN=480;              /* ticks. The clock in the UI reads this. */
 /* 0 at Spring, +1 at Summer, 0 at Autumn, -1 at Winter */
 const seasonSwing=()=>Math.sin(Math.PI*(TICKS/SEASON_LEN)/2);
@@ -3747,11 +3769,53 @@ function blow(){
   }
 }
 /* the rain tiles rain, and then everything sheds once */
+/* ================= C4 . SNOW, AND THE SPRING MELT ====================
+   Rule 9, and it is one clause on rule 1 rather than a system:
+
+     9  water arriving where it is below freezing is held as SNOW. Snow does
+        not flow. When the hex rises above freezing it melts back into pool.
+
+   Everything about it is per hex and reads nothing but that hex, so there is
+   no order dependence to get wrong -- the same shape as `pool`, which is
+   what the build list asked for.
+
+   TWO DELIBERATE LIMITS, both so that this stays one clause and not a
+   rewrite of the water:
+
+   ONLY ARRIVING WATER FREEZES. A lake that goes below zero keeps flowing.
+   Freezing standing water would stop rivers dead every winter, which is a
+   far bigger change to the five rules than C4 is allowed to be, and a lake
+   has thermal mass an argument could be built on either way.
+
+   SNOW IS NOT GROUND. `gnd` is what the water routes on, and adding a
+   snowpack to it would dam the board every winter and release the dam every
+   spring by moving the ground itself. Snow sits on top and waits.
+
+   The melt runs BEFORE settle, so meltwater is water on the same tick it
+   appears -- a spring release moves the moment it happens rather than a tick
+   late. */
+const FREEZE=0;                    /* degrees. tempNow, so it carries the Season */
+/* SNOW MELTS ABOUT AS FAST AS IT FALLS, so a winter's fall is a spring's
+   flood. Measured at RAINFALL/40 first: a Season cleared twelve courses
+   against a pack of three thousand, so the snow never came back and the
+   whole point of the Season was lost -- it was scenery, not a mechanic.
+   Matching the rates makes a Season of snow release over about a Season. */
+const MELT=RAINFALL;
 function tick(){
   blow();                          /* move first, then rain from where it is */
   for(let i=0;i<T.length;i++){
     const n=clouds(i);
-    if(n) T[i].pool+=n*RAINFALL*RAIN_MULT;   /* a stack of n drops n times the rain */
+    if(!n) continue;
+    const amt=n*RAINFALL*RAIN_MULT;          /* a stack of n drops n times the rain */
+    if(tempNow(i)<FREEZE) T[i].snow+=amt;    /* it arrives as snow and stays */
+    else                  T[i].pool+=amt;
+  }
+  for(let i=0;i<T.length;i++){
+    const w=T[i].snow;
+    if(w>0 && tempNow(i)>=FREEZE){
+      const m=Math.min(w,MELT);
+      T[i].snow=w-m; T[i].pool+=m;
+    }
   }
   settle();
   weather();
@@ -4647,7 +4711,21 @@ function drawnOut(i,k,v){
   return ODRAW[n] = v>=was ? v : was*ODECAY;
 }
 
+/* SNOW IS THE FIRST WHITE THING ON THIS BOARD, so it is also the strongest
+   thing a Season has to say. Drawn as the ground top going white with depth
+   rather than as its own prisms: a peak dusts, then whitens, then holds, and
+   it costs no mesh and no instance budget. Full white at four courses, the
+   same depth at which soil saturates -- one quantum for both, so a player
+   reading one has learned the other. */
+const SNOW_FULL=4*LAYER;
+const PAL_SNOW=[236,242,248];
 function tint(t,i,mat){
+  if(!SCAR && t.snow>LAYER*0.15){
+    const f=Math.min(1,t.snow/SNOW_FULL);
+    const base=DRAIN&&ACC ? terrain(t,mat) : terrain(t,mat);
+    const c=blend(base,PAL_SNOW,0.25+0.7*f);
+    return new THREE.Color(c[0]/255,c[1]/255,c[2]/255).convertSRGBToLinear();
+  }
   if(SCAR && SCAR0){
     /* what this hex has lost since the Year turned. Cut reads ochre, fill
        reads green -- a delta building is the same story told the other way
@@ -5246,6 +5324,7 @@ function snap(){
            pool:Float64Array.from(T,t=>t.pool),
            flow:Float64Array.from(T,t=>t.flow),
            sed:Float64Array.from(T,t=>t.sed),
+           snow:Float64Array.from(T,t=>t.snow),
            sand:Float64Array.from(T,t=>t.sand),
            wear:Float64Array.from(T,t=>t.wear),
            grit:Float64Array.from(T,t=>t.grit),
@@ -5266,6 +5345,7 @@ function restore(s){
     retop(i);
     T[i].pool=s.pool[i]; T[i].flow=s.flow[i];
     T[i].sed=s.sed[i];   T[i].sand=s.sand[i]; T[i].wear=s.wear[i];
+    T[i].snow=s.snow?s.snow[i]:0;
     T[i].grit=s.grit[i]; T[i].life=s.life[i]|0;
     T[i].out.set(s.out.subarray(i*6,i*6+6));
   }
@@ -5356,6 +5436,7 @@ function serialise(){
     cells:btoa(bin),
     pool:T.map(t=>round(t.pool)), flow:T.map(t=>round(t.flow)),
     sed:T.map(t=>round(t.sed)),   sand:T.map(t=>round(t.sand)),
+    snow:T.map(t=>round(t.snow)),
     wear:T.map(t=>round(t.wear)), grit:T.map(t=>round(t.grit)), out,
     life:T.map(t=>t.life|0), ticks:TICKS,
     /* the pot's opening barren count. Health is measured against where THIS
@@ -5376,6 +5457,7 @@ function apply(d){
     retop(i);
     T[i].pool=d.pool[i]||0; T[i].flow=d.flow[i]||0;
     T[i].sed =d.sed[i]||0;  T[i].sand=d.sand[i]||0;
+    T[i].snow=(d.snow&&d.snow[i])||0;   /* older saves have no winter in them */
     T[i].wear=d.wear[i]||0; T[i].grit=(d.grit&&d.grit[i])||0;
     T[i].life=(d.life&&d.life[i])|0; if(T[i].life===1) T[i].life=SEED;   /* older saves: 1 meant grass */
     for(let k=0;k<6;k++) T[i].out[k]=(d.out&&d.out[i*6+k])||0;
@@ -6658,7 +6740,7 @@ window.POT={T,at,use,tick,settle,rebuild,POWERS,scene,
   get lost(){ return LOST }, set lost(v){ LOST=v },
   get dug(){ return DUG }, get filled(){ return FILLED },
   fertility, worthOf, FERT, FERT_GAIN, ALLU_FULL, richAs, soil, SOIL_MIN, wetAt, DRY,
-  tempAt, tempNow, seasonSwing, SWING, LAPSE, TEMP_SEA, SEASON_LEN,
+  tempAt, tempNow, seasonSwing, SWING, LAPSE, TEMP_SEA, SEASON_LEN, FREEZE, MELT,
   windDir, blow, DRIFT, SHED, YEAR_LEN,
   clumped, draining, underFall, growQuick, CLUMP_MIN,
   holdsBack, travel, seedReset, SEEDFLAG, LEAK_BASE, SOWN, sowDormant, wake,
